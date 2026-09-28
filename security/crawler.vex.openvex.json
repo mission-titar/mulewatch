@@ -1,9 +1,9 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://github.com/GeoffreyCoulaud/mulewatch/blob/main/security/crawler.vex.openvex.json",
-  "author": "GeoffreyCoulaud",
-  "timestamp": "2026-09-16T00:00:00Z",
-  "version": 3,
+  "@id": "https://github.com/mission-titar/mulewatch/blob/main/security/crawler.vex.openvex.json",
+  "author": "mission-titar",
+  "timestamp": "2026-09-28T00:00:00Z",
+  "version": 4,
   "statements": [
     {
       "vulnerability": {

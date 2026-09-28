@@ -144,7 +144,7 @@ accumulé, mais vous redémarrez d'un état connu.
   téléchargement : ne pointez donc pas cet amuled sur une grande bibliothèque partagée
   préexistante, la détection de complétion en deviendrait plus lente et plus bruyante. Contexte et
   sources :
-  [`reference/2026-06-17-amuled-completion-behavior.md`](https://github.com/GeoffreyCoulaud/mulewatch/blob/main/agents/reference/2026-06-17-amuled-completion-behavior.md)
+  [`reference/2026-06-17-amuled-completion-behavior.md`](https://github.com/mission-titar/mulewatch/blob/main/agents/reference/2026-06-17-amuled-completion-behavior.md)
   (ses contraintes 1 et 2, sur un volume de quarantaine partagé, ne s'appliquent plus : l'étape de
   quarantaine a été retirée le 2026-09-13).
 

@@ -105,7 +105,7 @@ docker run -d --rm --name mulewatch-test-amuled -p 4711:4711 \
     -v "$PWD/tests/smoke/crawler.yml:/app/config/crawler.yml:ro" \
     -v "$PWD/tests/smoke/targets.yml:/app/config/targets.yml:ro" \
     -v "$PWD/deploy/matcher.yml:/app/config/matcher.yml:ro" \
-    ghcr.io/geoffreycoulaud/mulewatch:latest
+    ghcr.io/mission-titar/mulewatch:latest
 until curl -fsS http://127.0.0.1:4711/api/v1/health >/dev/null; do sleep 2; done
 
 export MULEWATCH_TEST_API_HOST=127.0.0.1
@@ -281,7 +281,7 @@ timeouts de 900 s).
 > **Jamais exécutée.** Au 2026-09-16 il n'y a aucun runtime de conteneurs sur la machine de
 > développement : cette suite (et l'image qu'elle construit) n'a donc pas été lancée une seule fois.
 > Voir le
-> [handoff mono-conteneur](https://github.com/GeoffreyCoulaud/mulewatch/blob/main/agents/handoffs/2026-09-16%20-%20handoff%20-%20single%20container%20with%20embedded%20aMule.md),
+> [handoff mono-conteneur](https://github.com/mission-titar/mulewatch/blob/main/agents/handoffs/2026-09-16%20-%20handoff%20-%20single%20container%20with%20embedded%20aMule.md),
 > section 5.
 
 ---

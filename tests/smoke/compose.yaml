@@ -8,7 +8,7 @@
 # container, so there is nothing left to wire between services.
 services:
   mulewatch:
-    image: ghcr.io/geoffreycoulaud/mulewatch:${IMAGE_TAG:-latest}
+    image: ghcr.io/mission-titar/mulewatch:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: packages/crawler/Dockerfile

@@ -18,7 +18,7 @@ _SKIP_REASON = (
     "aMule 3.1.0, so the daemon to start is our own image:\n"
     "  docker run -d --rm --name mulewatch-test-amuled -p 4711:4711 \\\n"
     "      -e PUID=$(id -u) -e PGID=$(id -g) -e AMULE_EC_PASSWORD=indexer-ec-test \\\n"
-    "      -e AMULE_API_PASSWORD=indexer-api-test ghcr.io/geoffreycoulaud/mulewatch:latest\n"
+    "      -e AMULE_API_PASSWORD=indexer-api-test ghcr.io/mission-titar/mulewatch:latest\n"
     f"then export {HOST_VAR}=127.0.0.1 {PORT_VAR}=4711 {PASSWORD_VAR}=indexer-api-test\n"
     "(full instructions: docs/contributing/testing.md)"
 )
