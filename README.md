@@ -12,10 +12,6 @@ personne.
 **[Documentation complète](https://mission-titar.github.io/mulewatch/)** : installer un nœud, le
 faire tourner, le dépanner, et ce qu'il faut savoir côté légalité et vie privée.
 
-Le projet vit dans l'organisation `mission-titar` depuis septembre 2026. Les versions antérieures
-(releases, images jusqu'à la 3.1.0) restent sur le
-[dépôt d'origine, archivé](https://github.com/GeoffreyCoulaud/mulewatch).
-
 ## Développement
 
 ```bash
