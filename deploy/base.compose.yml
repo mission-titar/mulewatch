@@ -3,7 +3,7 @@
 
 services:
   mulewatch:
-    image: ghcr.io/geoffreycoulaud/mulewatch:latest
+    image: ghcr.io/mission-titar/mulewatch:latest
     security_opt:
       - "no-new-privileges:true"
     pids_limit: 512

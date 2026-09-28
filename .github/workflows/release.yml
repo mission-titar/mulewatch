@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/geoffreycoulaud/mulewatch
+  IMAGE: ghcr.io/mission-titar/mulewatch
 
 jobs:
   # Full gate + per-arch build/integration/push-by-digest (push: true). The image is

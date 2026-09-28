@@ -13,10 +13,15 @@ Prérequis : [cosign](https://github.com/sigstore/cosign) installé.
 L'identité attendue est le workflow de release du dépôt :
 
 ```bash
-IMAGE=ghcr.io/geoffreycoulaud/mulewatch:latest
-IDENTITY='^https://github.com/GeoffreyCoulaud/mulewatch/.github/workflows/release.yml@refs/'
+IMAGE=ghcr.io/mission-titar/mulewatch:latest
+IDENTITY='^https://github.com/mission-titar/mulewatch/.github/workflows/release.yml@refs/'
 ISSUER=https://token.actions.githubusercontent.com
 ```
+
+Les images publiées avant le passage dans l'organisation (jusqu'à la 3.1.0) viennent du
+[dépôt d'origine, archivé](https://github.com/GeoffreyCoulaud/mulewatch) : elles sont sous
+`ghcr.io/geoffreycoulaud/`, et leur identité est
+`^https://github.com/GeoffreyCoulaud/mulewatch/.github/workflows/release.yml@refs/`.
 
 Vérifier la **signature** de l'image :
 

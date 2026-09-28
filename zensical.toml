@@ -1,12 +1,12 @@
 [project]
 site_name = "mulewatch"
-site_url = "https://geoffreycoulaud.github.io/mulewatch/"
+site_url = "https://mission-titar.github.io/mulewatch/"
 site_description = "Surveillance continue du réseau eMule pour retrouver des médias perdus"
 docs_dir = "docs"
 site_dir = "site"
 
-repo_url = "https://github.com/GeoffreyCoulaud/mulewatch"
-repo_name = "GeoffreyCoulaud/mulewatch"
+repo_url = "https://github.com/mission-titar/mulewatch"
+repo_name = "mission-titar/mulewatch"
 
 nav = [
   { "Accueil" = "index.md" },
