@@ -33,6 +33,8 @@ manquante, ce qui vaut mieux qu'un nœud qui démarre et ne se connecte à rien.
 
 ## Retour arrière
 
-Remettez `WEBUI_PWD` et `amule_ec_password`, épinglez votre ancien tag `2.x` dans `compose.yml`,
+Remettez `WEBUI_PWD` et `amule_ec_password`, épinglez votre ancienne image
+(`ghcr.io/geoffreycoulaud/mulewatch:2.0.0`, sources sur le
+[dépôt d'origine, archivé](https://github.com/GeoffreyCoulaud/mulewatch)) dans `compose.yml`,
 puis `docker compose up -d`. Rien n'a été supprimé côté données ; la section `[AmuleApi]` et le
 fichier `amuleapi-passwords` écrits dans `amule/` sont ignorés par une 2.x.
