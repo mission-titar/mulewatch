@@ -83,8 +83,7 @@ docker compose ps        # un seul service, `mulewatch`, Up (healthy) en ~30 s
 ## Retour arrière
 
 L'image 1.x reste publiée sous `ghcr.io/geoffreycoulaud/mulewatch-crawler`, figée et jamais
-supprimée, avec ses sources sur le [dépôt d'origine, archivé](https://github.com/GeoffreyCoulaud/mulewatch).
-Restaurez votre ancien `compose.yaml`, votre `.env` et votre `config/crawler/`, remettez
+supprimée. Restaurez votre ancien `compose.yaml`, votre `.env` et votre `config/crawler/`, remettez
 votre tag 1.x dans `IMAGE_TAG` (la 2.0 n'a plus cette variable), puis `docker compose up -d`. Les
 volumes ont été copiés, jamais supprimés : le vieux nœud retrouve ses données.
 

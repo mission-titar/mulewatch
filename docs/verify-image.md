@@ -18,9 +18,8 @@ IDENTITY='^https://github.com/mission-titar/mulewatch/.github/workflows/release.
 ISSUER=https://token.actions.githubusercontent.com
 ```
 
-Les images publiées avant le passage dans l'organisation (jusqu'à la 3.1.0) viennent du
-[dépôt d'origine, archivé](https://github.com/GeoffreyCoulaud/mulewatch) : elles sont sous
-`ghcr.io/geoffreycoulaud/`, et leur identité est
+Les images publiées avant le transfert du dépôt dans l'organisation (jusqu'à la 3.1.0) sont
+restées sous `ghcr.io/geoffreycoulaud/`, et leur identité est
 `^https://github.com/GeoffreyCoulaud/mulewatch/.github/workflows/release.yml@refs/`.
 
 Vérifier la **signature** de l'image :
