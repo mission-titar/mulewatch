@@ -30,28 +30,35 @@ Syft-JSON SBOM (`.github/workflows/grype-scan.yml`), applying the image's VEX. R
 appear in the repository's **Security > Code scanning** tab as SARIF findings, under the
 `grype-crawler` category. The scan never fails the workflow: findings are triaged through VEX.
 
-### A renamed package stops matching, silently
+### A misnamed or undeclared component stops matching, silently
 
-Grype matches an OS or nix package by the **CPE Syft derives from its name**. Rename the package
-and the lookup asks the NVD for a name it has never heard of: no error, no warning, just zero
-findings. A scan that got quieter is indistinguishable from one that got safer.
+Grype matches a package by the **CPE Syft derives from its name**. Rename the package, or leave it
+out of the SBOM, and the lookup asks the NVD for a name it has never heard of: no error, no
+warning, just zero findings. A scan that got quieter is indistinguishable from one that got safer.
 
-Measured on the same deliberately vulnerable version (Syft 1.51.1, Grype 0.118.0):
+Measured on the same deliberately vulnerable version (Syft 1.51.1, Grype 0.118.0), back when aMule
+came from nixpkgs and an override renamed its derivation:
 
 ```
 amule            2.3.1  ->  cpe:2.3:a:amule:amule:2.3.1            ->  2 findings
 amule-web-daemon 2.3.1  ->  cpe:2.3:a:amule-web-daemon:...:2.3.1   ->  0 findings
 ```
 
-This is why the nixpkgs expression building aMule forces `pname` back to `amule`: the
-`httpServer = true` override otherwise renames the derivation to `amule-web-daemon`, which would
-have dropped aMule out of our vulnerability surface without dropping it out of the image.
+aMule is now compiled from a pinned git commit, so it carries no package metadata at all: the
+Dockerfile **declares** it by hand in `/usr/local/share/amule/amule.cdx.json`, a CycloneDX file
+generated from `ARG AMULE_VERSION` (`pkg:generic/amule@...` with the CPE Grype matches on, plus the
+Boost headers compiled in). Syft reads that file only when its `sbom-cataloger` is selected
+(`SYFT_SELECT_CATALOGERS=+sbom-cataloger`); without it, aMule is silently absent from the SBOM.
 
-**Standing rule: any component whose name we alter must be re-checked the same way** — build it
-at a version with known CVEs, scan it, and confirm the findings actually appear. This covers a
-nix `pname` override, a renamed Debian package, and any binary catalogued under a name of our
-choosing. The release enforces the aMule case mechanically (`release.yml` fails before signing
-if no `pkg:nix/amule@...` is in the SBOM); every other rename is on whoever makes it.
+**Standing rule: any component we declare by hand is proven red then green**: declare it at a
+version with a known CVE, scan it, confirm the finding appears, then confirm it disappears at the
+real version. Pick the red version with care: it must match a CVE the real one does not. For aMule
+that is 2.2.4 (CVE-2009-1440); later releases only share with the current one two amuleweb CVEs
+that carry no version bound, so they prove nothing. The same care applies to a renamed Debian
+package or any binary catalogued under a name of our choosing. The aMule case is enforced
+mechanically: every PR (`validate.yml`) checks that the SBOM of the built image holds
+`pkg:generic/amule@` at the pinned version, and `release.yml` fails before signing if either SBOM
+lacks it. Every other declared or renamed component is on whoever makes it.
 
 ## Triage process (VEX)
 

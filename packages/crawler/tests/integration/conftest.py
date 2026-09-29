@@ -14,8 +14,8 @@ PORT_VAR = "MULEWATCH_TEST_API_PORT"
 PASSWORD_VAR = "MULEWATCH_TEST_API_PASSWORD"
 
 _SKIP_REASON = (
-    f"{HOST_VAR} is not set: these suites need an amuleapi you provide. amuleapi ships with\n"
-    "aMule 3.1.0, so the daemon to start is our own image:\n"
+    f"{HOST_VAR} is not set: these suites need an amuleapi you provide. No third-party\n"
+    "image ships amuleapi, so the daemon to start is our own image:\n"
     "  docker run -d --rm --name mulewatch-test-amuled -p 4711:4711 \\\n"
     "      -e PUID=$(id -u) -e PGID=$(id -g) -e AMULE_EC_PASSWORD=indexer-ec-test \\\n"
     "      -e AMULE_API_PASSWORD=indexer-api-test ghcr.io/mission-titar/mulewatch:latest\n"

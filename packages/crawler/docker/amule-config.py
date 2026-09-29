@@ -63,7 +63,7 @@ parser = configparser.RawConfigParser(strict=False)
 parser.optionxform = str
 if not parser.read(conf_path):
     # aMule reads its settings through wxConfig, so an absent key takes its declared default.
-    # Only the settings whose 3.1.0 default is wrong for us go in (ECPort already defaults to 4712).
+    # Only the settings whose default is wrong for us go in (ECPort already defaults to 4712).
     parser["eMule"] = {"IncomingDir": INCOMING_DIR, "TempDir": TEMP_DIR}
     parser["ExternalConnect"] = {"AcceptExternalConnections": "1"}
 
