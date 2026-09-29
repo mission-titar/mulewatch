@@ -18,7 +18,7 @@ class DebPackage:
 def load_dpkg_packages(path: Path) -> list[DebPackage]:
     """The dpkg packages of a Syft JSON SBOM, in document order.
 
-    Syft types those "deb". The rest (aMule's nix closure, our Python wheels) does
+    Syft types those "deb". The rest (aMule, declared by hand; our Python wheels) does
     not come from dpkg, so a dpkg guard has nothing to say about it.
     """
     doc = json.loads(path.read_text())
