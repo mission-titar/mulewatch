@@ -103,18 +103,14 @@ jobs:
         env:
           AMULE_VERSION: ${{ steps.amule.outputs.value }}
           LOCAL_IMAGE: ${{ env.IMAGE }}:ci-${{ github.sha }}
+        # --version exits 255 even on success, so only its output is checked.
         run: |
-          for pair in amuled:aMuleD amuleapi:amuleapi; do
-            binary=${pair%%:*} banner=${pair#*:}
-            # --version exits 255 even on success, so only its output is checked.
-            output=$(docker run --rm --entrypoint "$binary" "$LOCAL_IMAGE" --version 2>&1 || true)
-            reported=$(printf '%s\n' "$output" | sed -nE "s/^$banner (\S+) compiled.*/\1/p")
-            if [ "$reported" != "$AMULE_VERSION" ]; then
-              echo "::error::$binary reports '$reported', the pin is '$AMULE_VERSION': $output"
-              exit 1
-            fi
-            echo "$binary: $reported"
-          done
+          amuled=$(docker run --rm --entrypoint amuled "$LOCAL_IMAGE" --version || true)
+          amuleapi=$(docker run --rm --entrypoint amuleapi "$LOCAL_IMAGE" --version || true)
+          echo "$amuled"
+          echo "$amuleapi"
+          grep -qF "aMuleD $AMULE_VERSION compiled" <<< "$amuled"
+          grep -qF "amuleapi $AMULE_VERSION compiled" <<< "$amuleapi"
       # The same action, Syft and cataloger selection as release.yml, so a PR proves what a
       # release will attest. The sbom-cataloger is not an image cataloger: off unless selected.
       - name: Generate the SBOM of the local image (${{ matrix.arch }})
