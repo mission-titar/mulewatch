@@ -118,13 +118,14 @@ derives from them or is checked against them.
 Debian's libraries are dpkg packages, which Syft catalogues on its own. aMule, compiled by us,
 has no package metadata: it is declared.
 
-- The Dockerfile **generates** `/usr/local/share/amule/amule.cdx.json` (CycloneDX 1.6) from
-  `AMULE_VERSION`, so the declaration cannot drift from the pin: one component, `type:
+- `packages/crawler/docker/amule.cdx.json` (CycloneDX 1.6) is a template: the Dockerfile fills
+  its `@AMULE_VERSION@` with `sed` into `/usr/local/share/amule/amule.cdx.json`, so the
+  declaration cannot drift from the pin. One component, `type:
   application`, `name: amule`, `purl: pkg:generic/amule@X`, `cpe:
-  cpe:2.3:a:amule:amule:X:*:*:*:*:*:*:*`, licence `GPL-2.0-or-later`. Boost is declared too: its
-  headers are compiled in, and the build reads their version from `boost/version.hpp`. Vendored
-  picojson is not: its version exists only as prose in `docs/THIRDPARTY.md`. libutp is not compiled
-  at all (`ENABLE_UTP` is off).
+  cpe:2.3:a:amule:amule:X:*:*:*:*:*:*:*`, licence `GPL-2.0-or-later`. Nothing else is declared:
+  the Boost headers compiled in would need their version parsed out of a header (nix never showed
+  them either), vendored picojson has a version only in prose (`docs/THIRDPARTY.md`), and libutp
+  is not compiled (`ENABLE_UTP` is off).
 - Syft reads it only with **`--select-catalogers "+sbom-cataloger"`**: that cataloger is tagged
   `package, sbom`, not `image`, so it is off by default. Its globs include `**/*.cdx.*`.
 - The CPE is what Grype matches on. Verified: `+sbom-cataloger` makes aMule appear (`amule 3.1.0
@@ -149,17 +150,14 @@ so a bump PR (automated or not) proves itself before merge.
 | Syft on the built image with `+sbom-cataloger`: `pkg:generic/amule@${AMULE_VERSION}` present | the SBOM file missing, misnamed, or out of the cataloger's globs; the cataloger not selected |
 | `amuled --version` and `amuleapi --version` match `^aMuleD (\S+) compiled` / `^amuleapi (\S+) compiled` and equal `AMULE_VERSION` | a binary that did not take its version from the tag (`GIT`: no `git` in the builder, a checkout without the tag); a stale binary. The exit code is 255 even on success: do not test it. |
 | Compose smoke + API/download/orchestration integration (existing) | amuleapi contract or behaviour changes |
-| Gate check: no aMule version written outside the pin | prose and comments going stale (below) |
 
 `release.yml` keeps its gate, switched from `pkg:nix/amule@` to `pkg:generic/amule@`, and both
 `sbom-action` steps get the cataloger selection (how `sbom-action` takes it is to verify).
 
-**No version outside the pin.** About eight places write "aMule 3.1.0" today (`AGENTS.md`,
+**No version outside the pin.** About eight places wrote "aMule 3.1.0" (`AGENTS.md`,
 `docs/troubleshooting.md`, `docs/contributing/testing.md`, `validate.yml`, the integration
-`conftest.py`, `amule-config.py`, `amule.nix`). They are reworded to name the pin instead, and a
-gate task fails if a version re-appears next to "aMule"/"amuleapi" outside the Dockerfile,
-`agents/` (dated history) and test fixtures. It must not trip on mulewatch's own versions, which
-are also 3.x. Proven red by re-adding one mention.
+`conftest.py`, `amule-config.py`, `amule.nix`). They are reworded to name the pin instead. No gate
+task enforces it (dropped at PR review as not worth its script).
 
 Each check is proven red once before it is trusted. The prototype already did the checksum (both
 cases) and the `GIT` binary; the implementation redoes them against the real Dockerfile.
@@ -233,7 +231,7 @@ statements, out of this spec's scope but worth a BACKLOG line.
 1. **Image:** Debian builder, git source pinned by the two `ARG`s, generated SBOM file,
    `LICENSE.md`; delete `amule.nix`.
 2. **Checks:** the section 5 table in `validate.yml`; `release.yml` gate and cataloger selection;
-   the version-mention gate task; each proven red once, including the 2.2.4 SBOM cycle.
+   each proven red once, including the 2.2.4 SBOM cycle.
 3. **Bump workflow** and the operator's GitHub App.
 4. **Docs and tooling:** section 7.
 

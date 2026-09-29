@@ -46,8 +46,7 @@ amule-web-daemon 2.3.1  ->  cpe:2.3:a:amule-web-daemon:...:2.3.1   ->  0 finding
 
 aMule is now compiled from a pinned git commit, so it carries no package metadata at all: the
 Dockerfile **declares** it by hand in `/usr/local/share/amule/amule.cdx.json`, a CycloneDX file
-generated from `ARG AMULE_VERSION` (`pkg:generic/amule@...` with the CPE Grype matches on, plus the
-Boost headers compiled in). Syft reads that file only when its `sbom-cataloger` is selected
+generated from `ARG AMULE_VERSION` (`pkg:generic/amule@...` with the CPE Grype matches on). Syft reads that file only when its `sbom-cataloger` is selected
 (`SYFT_SELECT_CATALOGERS=+sbom-cataloger`); without it, aMule is silently absent from the SBOM.
 
 **Standing rule: any component we declare by hand is proven red then green**: declare it at a
