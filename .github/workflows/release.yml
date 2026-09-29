@@ -92,7 +92,7 @@ jobs:
       # The per-arch images already exist in ghcr by digest (pushed, gated behind integration,
       # by the `validate` job). We generate the SBOM from the amd64 digest so the three VEX
       # checks below run BEFORE any consumable tag, signature, or attestation is published. Our
-      # two arches share one Dockerfile and identical dpkg/nix/python versions, so the amd64 SBOM
+      # two arches share one Dockerfile and identical dpkg/python versions, so the amd64 SBOM
       # carries the same package set the arm64 image would. Staleness is deliberately NOT gated
       # here: a suppressed CVE that Grype stops reporting has been fixed upstream, which never
       # makes the image less safe. The daily grype-scan surfaces it as a non-blocking SARIF
@@ -106,7 +106,9 @@ jobs:
           echo "ref=${{ env.IMAGE }}@sha256:${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Generate the Syft-JSON SBOM (native, for the checks and the VEX-aware daily scan)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        env:
+          SYFT_SELECT_CATALOGERS: +sbom-cataloger
         with:
           image: ${{ steps.prepublish.outputs.ref }}
           format: syft-json
@@ -116,7 +118,9 @@ jobs:
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate the CycloneDX SBOM (portable, for external consumers)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        env:
+          SYFT_SELECT_CATALOGERS: +sbom-cataloger
         with:
           image: ${{ steps.prepublish.outputs.ref }}
           format: cyclonedx-json
@@ -125,15 +129,15 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Both the nix cataloger running and the `pname` override (docker/amule.nix) fail SILENTLY
-      # when they regress: Grype scores a vulnerable aMule zero. Assert the outcome instead.
-      - name: Gate that the aMule closure is in the SBOM under its CPE-matching name
+      # aMule is declared by a file only the sbom-cataloger reads, and that cataloger is off unless
+      # selected (the SYFT_SELECT_CATALOGERS above): a regression is SILENT, Grype scores it zero.
+      - name: Gate that aMule is in the SBOM under its CPE-matching declaration
         run: |
           for sbom in /tmp/sbom.syft.json /tmp/sbom.cyclonedx.json; do
-            if ! grep -q '"pkg:nix/amule@' "$sbom"; then
-              echo "::error::no nix package 'amule' in $sbom: either the nix cataloger did not"
-              echo "::error::run (re-enable with --select-catalogers +nix), the closure is not in"
-              echo "::error::the image, or the pname override regressed. Grype would score it zero."
+            if ! grep -q '"pkg:generic/amule@' "$sbom"; then
+              echo "::error::no pkg:generic/amule in $sbom: either the sbom-cataloger did not run"
+              echo "::error::(SYFT_SELECT_CATALOGERS=+sbom-cataloger) or the image lost its"
+              echo "::error::/usr/local/share/amule/amule.cdx.json. Grype would score aMule zero."
               exit 1
             fi
           done
