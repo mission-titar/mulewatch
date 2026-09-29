@@ -35,7 +35,7 @@ The crawler is Clean/Hexagonal: `domain/` pure, `application/` async use-cases, 
 | Observability | c: `domain/observability/`, `adapters/observability/` | events → policy → dispatcher; Prometheus + apprise |
 | Port-sync (High-ID) | c: `application/` | gluetun port → PATCH /preferences → restart amuled |
 | Standalone catalog tools | c: `merge/`, `compact/` | `python -m mulewatch.{merge,compact}` — N→1 fusion / daily rollup |
-| Packaging | `deploy/base.compose.yml` + `deploy/compose.yml` (direct) + `deploy/gluetun.compose.yml` (VPN) + `tests/smoke/compose.yaml`, `packages/crawler/Dockerfile` | one image, one `mulewatch` service (crawler + amuled under s6, amuled starting amuleapi), no compose profile; smoke stack; container hardening |
+| Packaging | `deploy/base.compose.yml` + `deploy/compose.yml` (direct) + `deploy/gluetun.compose.yml` (VPN) + `tests/smoke/compose.yaml`, `packages/crawler/Dockerfile` | one image, one `mulewatch` service (crawler + amuled under s6, amuled starting amuleapi), no compose profile; smoke stack; container hardening. aMule is built on Debian from the git commit pinned by `ARG AMULE_VERSION` + `ARG AMULE_COMMIT` (bumped weekly by `.github/workflows/amule-bump.yml`); never write its version anywhere else (`amule-version-check`) |
 | Supply-chain artefacts | `security/` + `.github/workflows/grype-scan.yml` + `release.yml` (`publish-manifest`) | keyless cosign signature + 3 signed attestations (CycloneDX/Syft-JSON SBOM, OpenVEX) on the image's multi-arch index; daily Grype scan → Code scanning. See `SECURITY.md`. |
 
 ## Design invariants (do not violate)
@@ -59,7 +59,7 @@ uv run poe check     # THE FULL GATE (lint-all + test) — the pre-push hook and
 uv run poe fix       # auto-fix everything mechanical: ruff --fix + ruff format + sqlfluff fix
 ```
 
-Gate sub-tasks, runnable in isolation: `lint` · `format-check` · `type-check` · `sql-lint` · `template-check` (grouped as **`lint-all`**), and **`test`** (runs each package's suite in its own process, so per-package coverage stays isolated). Fixers: `lint-fix` · `format-fix` · `sql-fix` (grouped as **`fix`**).
+Gate sub-tasks, runnable in isolation: `lint` · `format-check` · `type-check` · `sql-lint` · `template-check` · `amule-version-check` (grouped as **`lint-all`**), and **`test`** (runs each package's suite in its own process, so per-package coverage stays isolated). Fixers: `lint-fix` · `format-fix` · `sql-fix` (grouped as **`fix`**).
 
 **Before hand-fixing lint / formatting / SQL, run `uv run poe fix`** — don't spend turns rewriting by hand what a fixer applies mechanically; review its diff instead.
 
@@ -166,7 +166,7 @@ Invariants: the decision is order-independent (target_ids are unique); `MatchDec
 - Don't validate config order-dependently (parse pass = structural; graph pass = full table). Recursive validators need an explicit depth guard → a clean `DepthExceededError`, not `RecursionError` (which is a Python runtime artifact, not a domain error).
 
 **amuleapi / amuled (empirical — facts established by hardware probes / source reading, see `agents/reference/`):**
-- *amuleapi = the daemon aMule 3.1.0 ships to expose amuled over `/api/v1/*` REST plus SSE, and to serve aMule's web UI. amuled starts it itself (`[AmuleApi] Enabled=1`) and hands it a one-off EC token; EC is now an internal link between the two, not something we speak.*
+- *amuleapi = the daemon aMule (the version pinned by `ARG AMULE_VERSION` in `packages/crawler/Dockerfile`) ships to expose amuled over `/api/v1/*` REST plus SSE, and to serve aMule's web UI. amuled starts it itself (`[AmuleApi] Enabled=1`) and hands it a one-off EC token; EC is now an internal link between the two, not something we speak.*
 - **Every list endpoint silently returns only the first 100 rows.** `limit` defaults to 100 on `/downloads`, `/shared`, `/search/{id}/results` and every other list route, so omitting it returns the first hundred items, not the collection. For `shared_files()` that is a silent completion failure on any node with more than a hundred shared files. The adapter keyset-pages (`sort=hash` + `after=<last hash>`), never `offset`, because `offset` is a position and a row deleted below the cursor slides one row past the window for good.
 - **A `401` is terminal for the session.** amuleapi counts every rejected token per IP (30 in 60 s → a 300 s lockout), so a client that retries a `401` locks itself out. The adapter re-logs in exactly ONCE per request and never loops. Restarting amuleapi, or any password change, invalidates every issued token.
 - **`media` on a search result is what the responding server advertised**, never a local probe: it can contradict the file (a `.pdf` reporting a runtime and a video codec is a real observed result), and it is `null` on most global and Kad hits. The key is always present, so test for `null`, not for the key.
