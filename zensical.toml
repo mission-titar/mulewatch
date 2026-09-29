@@ -34,6 +34,7 @@ nav = [
   { "Contribuer" = [
     { "Architecture du code" = "contributing/architecture.md" },
     { "Lancer les tests" = "contributing/testing.md" },
+    { "Mettre à jour aMule" = "contributing/amule-bump.md" },
   ] },
 ]
 
