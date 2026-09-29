@@ -52,7 +52,8 @@ accumulé, mais vous redémarrez d'un état connu.
 - **Version d'aMule.** Elle n'est plus un paramètre de déploiement : aMule est compilé sur Debian
   dans notre propre image, depuis un commit git épinglé dans le `Dockerfile`. Il n'y a plus d'image
   tierce à vérifier ni à épingler ; la version d'aMule suit celle de l'image mulewatch. Pour savoir
-  laquelle tourne : `docker compose exec mulewatch amuled --version`.
+  laquelle tourne : `docker compose -f gluetun.compose.yml exec mulewatch amuled --version` (sans
+  VPN : `compose.yml`). La commande sort en code 255 même quand tout va bien.
 
 ### s6 a redémarré un processus et le conteneur est resté debout
 
