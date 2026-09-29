@@ -13,14 +13,18 @@ Not merged, not released: the next release is proposed as **v3.2.0** (spec secti
   compiles amuled + amuleapi from `ADD --keep-git-dir=true --checksum=${AMULE_COMMIT}
   …amule.git#${AMULE_VERSION}`; the two `ARG`s are the only place the aMule version lives. UPnP,
   GeoIP, NLS, BFD, the version check and `ed2k` are off. Image 364 MB to 270 MB.
-- The build generates `/usr/local/share/amule/amule.cdx.json` declaring aMule and the Boost headers
-  as `pkg:generic`, read by Syft only with `SYFT_SELECT_CATALOGERS=+sbom-cataloger`.
+- `packages/crawler/docker/amule.cdx.json` is a CycloneDX template the build fills with `sed`
+  into `/usr/local/share/amule/amule.cdx.json` (`pkg:generic/amule@<pin>`), read by Syft only with
+  `SYFT_SELECT_CATALOGERS=+sbom-cataloger`.
 - `validate.yml`, per arch, per PR: `--version` of both binaries equals the pin; the SBOM of the
   built image holds `pkg:generic/amule@<pin>`. `release.yml` gates on `pkg:generic/amule@`.
   sbom-action moved to v0.24.2.
-- `.github/workflows/amule-bump.yml` + `scripts/amule-bump.sh`: weekly PR bumping the two `ARG`s,
-  with the upstream changelog, the `options.cmake` and `REFERENCE.md` diffs and a checklist.
-- `amule-version-check` (in `lint-all`) fails on an aMule version written outside the pin.
+- New dev/CI package `packages/amule_bump` (`python -m amule_bump`): reads the pin, finds the latest
+  release and its peeled commit, rewrites the two `ARG`s and writes the PR body (changelog,
+  `options.cmake` and `REFERENCE.md` diffs, checklist). `.github/workflows/amule-bump.yml` runs it
+  weekly and opens the PR with `peter-evans/create-pull-request`.
+- PR review (operator): no inline Python in the Dockerfile, no substantial bash script, no
+  version-mention gate task. All three were removed; keep it that way.
 - `SECURITY.md`, `AGENTS.md`, `docs/`: nix wording gone; new page `docs/contributing/amule-bump.md`.
 
 ## Pitfalls
