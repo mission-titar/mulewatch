@@ -13,13 +13,13 @@ def _write_sbom(tmp_path: Path, artifacts: list[dict[str, str]]) -> Path:
 
 
 def test_load_dpkg_packages_keeps_only_deb_artifacts(tmp_path: Path) -> None:
-    # "apk" belongs to another distro and "nix" to aMule: neither comes from dpkg.
+    # aMule is compiled by us and declared by hand, so Syft types it "UnknownPackage", not "deb".
     path = _write_sbom(
         tmp_path,
         [
             {"type": "deb", "name": "libcurl4t64", "version": "8.14.1-2"},
             {"type": "deb", "name": "zlib1g", "version": "1:1.3.dfsg+really1.3.1-1"},
-            {"type": "nix", "name": "amule", "version": "3.0.1"},
+            {"type": "UnknownPackage", "name": "amule", "version": "3.1.0"},
             {"type": "python", "name": "packaging", "version": "24.0"},
         ],
     )
