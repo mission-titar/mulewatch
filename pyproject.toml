@@ -67,9 +67,20 @@ format-fix     = { cmd = "ruff format .", help = "Apply ruff formatting" }
 sql-fix        = { cmd = "sqlfluff fix packages/crawler/src", help = "Auto-fix the SQLite migrations" }
 docs-build     = { cmd = "zensical build --clean --strict", help = "Build the documentation site (fails on broken links)" }
 docs-serve     = { cmd = "zensical serve", help = "Preview the documentation site locally" }
-lint-all       = { help = "Run every static check (no tests)", sequence = ["lint", "format-check", "type-check", "sql-lint", "template-check"] }
+lint-all       = { help = "Run every static check (no tests)", sequence = ["lint", "format-check", "type-check", "sql-lint", "template-check", "amule-version-check"] }
 fix            = { help = "Auto-fix everything mechanical (ruff lint + format + sqlfluff)", sequence = ["lint-fix", "format-fix", "sql-fix"], ignore_fail = "return_non_zero" }
 check          = { help = "The full gate: every static check + all unit tests", sequence = ["lint-all", "test"] }
+
+# A version is 3 dotted numbers right after aMule/amuled/amuleapi (spaces, markdown, @ or - between).
+[tool.poe.tasks.amule-version-check]
+help = "Assert no aMule version is written outside ARG AMULE_VERSION (the Dockerfile) and agents/"
+shell = '''
+rc=0
+git grep -nIiE 'amule(api|d)?[[:space:]*_`@-]{1,4}v?[0-9]+\.[0-9]+\.[0-9]+' \
+  -- . ':!agents/' ':!packages/crawler/Dockerfile' || rc=$?
+[ $rc -eq 0 ] && echo "error: name the pin (ARG AMULE_VERSION in packages/crawler/Dockerfile) instead" >&2
+[ $rc -eq 1 ]
+'''
 
 # `test` runs each package's suite in its own process (cwd) so per-package coverage
 # stays isolated: a single root pytest run would mix coverage and break --cov-fail-under=100.
