@@ -88,8 +88,8 @@ avec un port publié fonctionne partout.
 
 Depuis le passage à amuleapi, le démon à lancer est **notre propre image** : amuleapi n'existe que
 dans les versions récentes d'aMule, qu'aucune image tierce ne porte (la nôtre compile celle
-qu'épingle `ARG AMULE_VERSION` dans `packages/crawler/Dockerfile`). Elle démarre ses trois processus, donc les fichiers de
-config du smoke sont montés pour que le crawler reste debout.
+qu'épingle `ARG AMULE_VERSION` dans `packages/crawler/Dockerfile`). Elle démarre ses trois
+processus, donc les fichiers de config du smoke sont montés pour que le crawler reste debout.
 
 | Variable | Requise | Défaut | Signification |
 |---|---|---|---|
