@@ -19,6 +19,10 @@ jobs:
           ref: main
           persist-credentials: false
 
+      - uses: ./.github/actions/setup-uv-env
+        with:
+          save-cache: 'false'  # the validate jobs own the uv cache
+
       # A PR opened with GITHUB_TOKEN triggers no workflow, so its required gate would never run.
       - name: Create a GitHub App installation token
         id: app
@@ -29,7 +33,23 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
 
-      - name: Open the bump PR if upstream released a new aMule
+      - name: Rewrite the aMule pin if upstream released a new version
+        id: bump
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: scripts/amule-bump.sh
+        run: uv run python -m amule_bump
+
+      # An existing branch is rebuilt from main and force-pushed only if it differs; an open PR
+      # is updated in place, and a closed one does not stop a new PR from opening.
+      - name: Open or update the bump PR
+        if: ${{ steps.bump.outputs.version }}
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          token: ${{ steps.app.outputs.token }}
+          sign-commits: true
+          base: main
+          branch: chore/amule-${{ steps.bump.outputs.version }}
+          add-paths: packages/crawler/Dockerfile
+          commit-message: 'chore(amule): bump to ${{ steps.bump.outputs.version }}'
+          title: 'chore(amule): bump to ${{ steps.bump.outputs.version }}'
+          body-path: ${{ steps.bump.outputs.body-path }}
