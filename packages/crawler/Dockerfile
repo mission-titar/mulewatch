@@ -1,19 +1,60 @@
 # syntax=docker/dockerfile:1
 
-# --- aMule stage: build aMule 3.1.0 from a pinned nixpkgs, export its runtime closure ---
-FROM nixos/nix:2.35.2@sha256:7a007c766426c1877758ddc5cb87a965ac131fc78c582ce0083d922d51ae945c AS amule
+# --- aMule stage: build amuled + amuleapi from a pinned git commit, on the runtime's Debian ---
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS amule
 
-COPY packages/crawler/docker/amule.nix /build/amule.nix
+# The single source of truth for the aMule version: the bump workflow rewrites these two lines.
+ARG AMULE_VERSION=3.1.0
+ARG AMULE_COMMIT=909d304d993ee07df6c6f6acf501a6d791d53666
 
-# Only the store paths are exported: nix itself never reaches the final image. Syft reads the
-# store path names, so the SBOM still lists every component of the closure with its version.
-# The compile happens once per nixpkgs bump; everything else comes from the binary cache.
-RUN nix-build /build/amule.nix -o /amule \
-    && mkdir -p /closure/nix/store /closure/bin \
-    && nix-store -qR "$(readlink -f /amule)" | xargs -r cp -a -t /closure/nix/store \
-    && for binary in amuled amuleapi ed2k; do \
-         ln -s "$(readlink -f /amule)/bin/$binary" "/closure/bin/$binary"; \
-       done
+# libwxgtk3.2-dev even for a daemon: trixie has no wxbase dev package. Its wx-config defines
+# __WXGTK__, which makes aMule's CMake require glib. git lets CMake read the version from the tag.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         cmake g++ make pkgconf python3 git \
+         libwxgtk3.2-dev libcrypto++-dev libboost-dev zlib1g-dev libcurl4-openssl-dev libglib2.0-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Tags are unsigned and can move: the checksum pins the peeled commit, and a version bumped
+# without its commit fails here because the tag resolves to another one.
+ADD --keep-git-dir=true --checksum=${AMULE_COMMIT} \
+    https://github.com/amule-org/amule.git#${AMULE_VERSION} /src/amule
+
+RUN cmake -S /src/amule -B /build -DCMAKE_BUILD_TYPE=Release \
+         -DBUILD_MONOLITHIC=OFF -DBUILD_DAEMON=ON -DBUILD_AMULEAPI=ON -DBUILD_ED2K=OFF \
+         -DENABLE_VERSION_CHECK=OFF -DENABLE_UPNP=OFF -DENABLE_IP2COUNTRY=OFF \
+         -DENABLE_NLS=OFF -DENABLE_BFD=OFF -DENABLE_CCACHE=OFF \
+    && cmake --build /build -j"$(nproc)" \
+    && DESTDIR=/out cmake --install /build --strip
+
+# aMule has no package metadata for Syft to find, so it is declared, from the same ARG as the
+# source. Boost is header-only here: its version is the one of the headers compiled in.
+RUN python3 - <<'PY'
+import json, os, re
+
+def component(kind, name, version, license_id):
+    purl = f"pkg:generic/{name}@{version}"
+    return {
+        "type": kind,
+        "bom-ref": purl,
+        "name": name,
+        "version": version,
+        "purl": purl,
+        "cpe": f"cpe:2.3:a:{name}:{name}:{version}:*:*:*:*:*:*:*",
+        "licenses": [{"license": {"id": license_id}}],
+    }
+
+header = open("/usr/include/boost/version.hpp").read()
+boost = int(re.search(r"#define BOOST_VERSION (\d+)", header)[1])
+components = [
+    component("application", "amule", os.environ["AMULE_VERSION"], "GPL-2.0-or-later"),
+    component("library", "boost", f"{boost // 100000}.{boost // 100 % 1000}.{boost % 100}",
+              "BSL-1.0"),
+]
+bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1, "components": components}
+with open("/out/usr/local/share/amule/amule.cdx.json", "w") as f:
+    json.dump(bom, f, indent=2)
+PY
 
 # Keep the stage: Dependabot only reads FROM lines, so inlining it as a COPY --from=<image>
 # would freeze this digest with no update path.
@@ -66,11 +107,13 @@ LABEL org.opencontainers.image.version=${VERSION}
 # security feed covers it.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 s6 \
+         libwxbase3.2-1t64 libcrypto++8t64 libglib2.0-0t64 libcurl4t64 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
-# The aMule closure carries its own glibc, so it runs on Debian untouched.
-COPY --from=amule /closure/nix/store/ /nix/store/
-COPY --from=amule /closure/bin/ /usr/local/bin/
+COPY --from=amule /out/usr/local/bin/amuled /out/usr/local/bin/amuleapi /usr/local/bin/
+# amuleapi serves its web UI from this compiled-in path; the SBOM file sits beside it.
+COPY --from=amule /out/usr/local/share/amule/ /usr/local/share/amule/
+COPY --from=amule /src/amule/LICENSE.md /usr/local/share/doc/amule/LICENSE.md
 
 COPY --from=python /app/.venv /app/.venv
 COPY packages/crawler/docker/entrypoint.sh packages/crawler/docker/amule-config.py /usr/local/bin/
