@@ -49,8 +49,8 @@ its download loop.
 
 A builder stage on the same `debian:trixie-slim` digest as the rest of the image:
 
-- **Build packages:** `cmake g++ make pkgconf python3 libwxgtk3.2-dev libcrypto++-dev
-  libboost-dev zlib1g-dev libcurl4-openssl-dev libglib2.0-dev`.
+- **Build packages:** `cmake g++ make pkgconf python3 git libwxgtk3.2-dev libcrypto++-dev
+  libboost-dev zlib1g-dev libcurl4-openssl-dev libglib2.0-dev` (`git`: see the source, below).
   - `libwxgtk3.2-dev` even for a daemon: trixie has no `libwxbase3.2-dev`, and `wx-config` plus
     the `libwx_baseu` dev links live in the gtk3 package. The builder is 1.56 GB; it never ships.
   - `libglib2.0-dev` because that `wx-config` defines `__WXGTK__`, and aMule's CMake then
@@ -81,32 +81,37 @@ UPnP, GeoIP and NLS were on under nix: these are behaviour changes, hence sectio
 
 ### The source
 
+A git checkout of the tag, pinned by commit (`git` joins the build packages):
+
 ```dockerfile
 ARG AMULE_VERSION=3.1.0
-ARG AMULE_SHA256=a05f9b655f4407f18179640f65ae50c93bd36a90c268c8fff7adc575fe8eb041
-ADD --checksum=sha256:${AMULE_SHA256} \
-    https://github.com/amule-org/amule/releases/download/${AMULE_VERSION}/aMule-${AMULE_VERSION}-src.tar.gz \
-    /src/amule.tar.gz
+ARG AMULE_COMMIT=909d304d993ee07df6c6f6acf501a6d791d53666
+ADD --keep-git-dir=true --checksum=${AMULE_COMMIT} \
+    https://github.com/amule-org/amule.git#${AMULE_VERSION} /src/amule
 ```
 
 These two `ARG`s are **the single source of truth for the aMule version**. Everything else
 derives from them or is checked against them.
 
 - **Why a checksum:** upstream tags are unsigned (created by `github-actions[bot]`) and a tag can
-  move. A wrong checksum fails the build (`digest mismatch`, verified red).
-- **Why the release asset, not `/archive/refs/tags/X.tar.gz`:** the auto-generated archive
-  expands `ref-names` in `.git_archival.txt`, so its bytes (and hash) change whenever another ref
-  lands on the same commit. The asset is a plain `tar` of `git ls-files`: stable bytes.
-- **Pitfall, the version string.** Because the asset is not a `git archive`, its
-  `.git_archival.txt` keeps its `$Format:` placeholders, CMake ignores it, and the binaries call
-  themselves `aMule GIT` (also on the network, as the client's mod version). The build rewrites it
-  (`describe-name: ${AMULE_VERSION}`) before configuring. A `-D` cannot do it: `VERSION` is a plain
-  `set()`.
-- **A non-tautological version check.** The rewrite makes the binaries report whatever
-  `AMULE_VERSION` says. So the build also asserts that the tarball is that version, from content
-  the rewrite does not touch: `grep -q "^## Version ${AMULE_VERSION} " docs/CHANGELOG.md`.
-- **To verify at implementation:** that `ADD --checksum` expands a build `ARG` (else the bump
-  workflow edits a literal).
+  move. For a git source, BuildKit's `--checksum` is the commit SHA: the content is pinned by its
+  hash, whatever the tag does.
+- **Why git, not a tarball:** with `.git` present, aMule's CMake runs `git describe --tags
+  --exact-match HEAD` and takes the version **from the tag itself** (`building tagged release:
+  aMule 3.1.0`). The release asset has no `.git` and an unexpanded `.git_archival.txt`, so its
+  binaries call themselves `aMule GIT`, also on the network as the client's mod version; fixing
+  that meant rewriting the file from `AMULE_VERSION`, which made `--version` report the pin back to
+  itself. The auto-generated `/archive/` tarball has unstable bytes (its `ref-names` expand per
+  ref), so it cannot be pinned by sha256.
+- **What the two `ARG`s guarantee together** (all verified, red included):
+  - a wrong commit fails the build (`expected checksum to match …`);
+  - a version bumped without its commit fails too: BuildKit resolves the tag, which points at
+    another commit (3.0.1 resolves to `02db0d7…`);
+  - the pin is the **peeled** commit (`refs/tags/X^{}`), not the annotated tag object (`6ccbfdf…`
+    for 3.1.0), or the checksum never matches.
+- **What they do not guarantee:** a builder without `git` still builds, but CMake finds no tag and
+  the binaries say `aMule GIT` (verified). That is what the `--version` check of section 5 is for.
+- `.git` stays in the builder: only the installed files reach the runtime.
 
 ## 4. aMule in the SBOM
 
@@ -138,11 +143,10 @@ so a bump PR (automated or not) proves itself before merge.
 
 | Check | What it catches |
 |---|---|
-| Build: `ADD --checksum` | a tarball other than the pinned one |
-| Build: CHANGELOG assertion | a pin whose version and tarball disagree |
+| Build: `ADD --checksum` | a commit other than the pinned one; a version and commit that disagree |
 | Build: CMake minimums | a trixie library below aMule's floor |
 | Syft on the built image with `+sbom-cataloger`: `pkg:generic/amule@${AMULE_VERSION}` present | the SBOM file missing, misnamed, or out of the cataloger's globs; the cataloger not selected |
-| `amuled --version` and `amuleapi --version` match `^aMuleD (\S+) compiled` / `^amuleapi (\S+) compiled` and equal `AMULE_VERSION` | the `GIT` version pitfall coming back; a stale binary. The exit code is 255 even on success: do not test it. |
+| `amuled --version` and `amuleapi --version` match `^aMuleD (\S+) compiled` / `^amuleapi (\S+) compiled` and equal `AMULE_VERSION` | a binary that did not take its version from the tag (`GIT`: no `git` in the builder, a checkout without the tag); a stale binary. The exit code is 255 even on success: do not test it. |
 | Compose smoke + API/download/orchestration integration (existing) | amuleapi contract or behaviour changes |
 | Gate check: no aMule version written outside the pin | prose and comments going stale (below) |
 
@@ -156,7 +160,8 @@ gate task fails if a version re-appears next to "aMule"/"amuleapi" outside the D
 `agents/` (dated history) and test fixtures. It must not trip on mulewatch's own versions, which
 are also 3.x. Proven red by re-adding one mention.
 
-Each check is proven red once before it is trusted (checksum: done by the prototype).
+Each check is proven red once before it is trusted. The prototype already did the checksum (both
+cases) and the `GIT` binary; the implementation redoes them against the real Dockerfile.
 
 ## 6. The bump
 
@@ -167,13 +172,14 @@ arbitrary repo; Renovate could, but a second dependency bot for one package is n
 
 1. Read `AMULE_VERSION` from the Dockerfile; ask `repos/amule-org/amule/releases/latest` (stable
    releases only). Same version: stop.
-2. Download the `-src.tar.gz` asset, hash it, and **compare with the `digest` GitHub reports for
-   the asset**. Mismatch: fail, open nothing.
+2. Resolve the tag to its **peeled** commit (`git ls-remote … refs/tags/X^{}`, falling back to
+   `refs/tags/X` for a lightweight tag).
 3. Rewrite the two `ARG`s on branch `chore/amule-X.Y.Z`. A branch or PR already open for that
    version: stop (idempotent).
-4. Open the PR with a body carrying: the upstream changelog section, the diff between the two tags
-   of `cmake/options.cmake` (new or changed build switches) and of `docs/api/REFERENCE.md` (the
-   amuleapi contract), and the manual checklist below.
+4. Open the PR (its CI then builds exactly that commit) with a body carrying: the upstream
+   changelog section, the diff between the two tags of `cmake/options.cmake` (new or changed build
+   switches) and of `docs/api/REFERENCE.md` (the amuleapi contract), and the manual checklist
+   below.
 
 **Token.** A PR opened with `GITHUB_TOKEN` does not trigger workflows, so its required
 `validate / gate` would never run. The workflow uses a **GitHub App** installation token
@@ -223,8 +229,8 @@ statements, out of this spec's scope but worth a BACKLOG line.
 
 ## 10. Work packages
 
-1. **Image:** Debian builder, `ARG` pin, CHANGELOG assertion, archival rewrite, generated SBOM
-   file, `LICENSE.md`; delete `amule.nix`.
+1. **Image:** Debian builder, git source pinned by the two `ARG`s, generated SBOM file,
+   `LICENSE.md`; delete `amule.nix`.
 2. **Checks:** the section 5 table in `validate.yml`; `release.yml` gate and cataloger selection;
    the version-mention gate task; each proven red once, including the 2.2.4 SBOM cycle.
 3. **Bump workflow** and the operator's GitHub App.
@@ -234,4 +240,4 @@ statements, out of this spec's scope but worth a BACKLOG line.
 
 - **arm64**: the prototype ran on amd64 only; WP2's CI matrix is the proof.
 - Real eD2k/Kad traffic: the prototype ran with `--network none`.
-- `ADD --checksum` with an `ARG`, and `sbom-action`'s way to select a cataloger.
+- `sbom-action`'s way to select a cataloger.
