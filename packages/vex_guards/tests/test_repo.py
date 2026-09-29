@@ -20,7 +20,6 @@ def test_display_path_renders_an_out_of_repo_path_verbatim() -> None:
 def test_source_dirs_are_the_shipped_packages_only() -> None:
     names = {p.parent.name for p in repo.source_dirs()}
     assert names == {"crawler", "matching"}
-    assert "vex_guards" not in names
 
 
 def test_vex_files_point_at_security_dir() -> None:

@@ -8,6 +8,7 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "amule-bump",
     "catalog-matching",
     "mulewatch",
     "vex-guards",
@@ -15,6 +16,7 @@ members = [
 
 [manifest.dependency-groups]
 dev = [
+    { name = "amule-bump", editable = "packages/amule_bump" },
     { name = "catalog-matching", editable = "packages/matching" },
     { name = "mulewatch", editable = "packages/crawler" },
     { name = "mypy", specifier = ">=1.10" },
@@ -28,6 +30,10 @@ dev = [
     { name = "vex-guards", editable = "packages/vex_guards" },
     { name = "zensical", specifier = "==0.0.62" },
 ]
+
+[[package]]
+name = "amule-bump"
+source = { editable = "packages/amule_bump" }
 
 [[package]]
 name = "anyio"
