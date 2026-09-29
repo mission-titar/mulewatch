@@ -49,9 +49,10 @@ accumulé, mais vous redémarrez d'un état connu.
   ```bash
   docker compose -f gluetun.compose.yml exec mulewatch s6-svc -r /etc/services.d/amuled
   ```
-- **Version d'aMule.** Elle n'est plus un paramètre de déploiement : aMule **3.1.0** est compilé
-  dans notre propre image depuis un nixpkgs épinglé. Il n'y a plus d'image tierce à vérifier ni à
-  épingler ; la version d'aMule suit celle de l'image mulewatch.
+- **Version d'aMule.** Elle n'est plus un paramètre de déploiement : aMule est compilé sur Debian
+  dans notre propre image, depuis un commit git épinglé dans le `Dockerfile`. Il n'y a plus d'image
+  tierce à vérifier ni à épingler ; la version d'aMule suit celle de l'image mulewatch. Pour savoir
+  laquelle tourne : `docker compose exec mulewatch amuled --version`.
 
 ### s6 a redémarré un processus et le conteneur est resté debout
 
@@ -182,7 +183,7 @@ accumulé, mais vous redémarrez d'un état connu.
   2.  L'écriture se fait en tant qu'utilisateur `amule` du conteneur, pour que les fichiers WAL
       créés par SQLite restent la propriété de `PUID:PGID`.
   3.  Une fois le crawler relancé, le cycle suivant remet le fichier en file depuis la décision du
-      catalogue — à condition qu'il corresponde toujours à une cible qui n'est pas `complete`.
+      catalogue, à condition qu'il corresponde toujours à une cible qui n'est pas `complete`.
 - **Si rien du tout ne se télécharge**, vérifiez le plancher disque avant de soupçonner le TTL. Une
   ligne de journal `candidate hash=... -> skip_disk_cap (skipped/deferred)` signifie que l'espace
   libre, moins ce qu'amuled doit encore récupérer, passerait sous `download.min_free_bytes`. Un
