@@ -35,7 +35,7 @@ The crawler is Clean/Hexagonal: `domain/` pure, `application/` async use-cases, 
 | Observability | c: `domain/observability/`, `adapters/observability/` | events → policy → dispatcher; Prometheus + apprise |
 | Port-sync (High-ID) | c: `application/` | gluetun port → PATCH /preferences → restart amuled |
 | Standalone catalog tools | c: `merge/`, `compact/` | `python -m mulewatch.{merge,compact}` — N→1 fusion / daily rollup |
-| Packaging | `deploy/base.compose.yml` + `deploy/compose.yml` (direct) + `deploy/gluetun.compose.yml` (VPN) + `tests/smoke/compose.yaml`, `packages/crawler/Dockerfile` | one image, one `mulewatch` service (crawler + amuled under s6, amuled starting amuleapi), no compose profile; smoke stack; container hardening. aMule is built on Debian from the git commit pinned by `ARG AMULE_VERSION` + `ARG AMULE_COMMIT` (bumped weekly by `.github/workflows/amule-bump.yml`); never write its version anywhere else (`amule-version-check`) |
+| Packaging | `deploy/base.compose.yml` + `deploy/compose.yml` (direct) + `deploy/gluetun.compose.yml` (VPN) + `tests/smoke/compose.yaml`, `packages/crawler/Dockerfile` | one image, one `mulewatch` service (crawler + amuled under s6, amuled starting amuleapi), no compose profile; smoke stack; container hardening. aMule is built on Debian from the git commit pinned by `ARG AMULE_VERSION` + `ARG AMULE_COMMIT` (bumped weekly by `.github/workflows/amule-bump.yml`); never write its version anywhere else |
 | Supply-chain artefacts | `security/` + `.github/workflows/grype-scan.yml` + `release.yml` (`publish-manifest`) | keyless cosign signature + 3 signed attestations (CycloneDX/Syft-JSON SBOM, OpenVEX) on the image's multi-arch index; daily Grype scan → Code scanning. See `SECURITY.md`. |
 
 ## Design invariants (do not violate)
@@ -59,7 +59,7 @@ uv run poe check     # THE FULL GATE (lint-all + test) — the pre-push hook and
 uv run poe fix       # auto-fix everything mechanical: ruff --fix + ruff format + sqlfluff fix
 ```
 
-Gate sub-tasks, runnable in isolation: `lint` · `format-check` · `type-check` · `sql-lint` · `template-check` · `amule-version-check` (grouped as **`lint-all`**), and **`test`** (runs each package's suite in its own process, so per-package coverage stays isolated). Fixers: `lint-fix` · `format-fix` · `sql-fix` (grouped as **`fix`**).
+Gate sub-tasks, runnable in isolation: `lint` · `format-check` · `type-check` · `sql-lint` · `template-check` (grouped as **`lint-all`**), and **`test`** (runs each package's suite in its own process, so per-package coverage stays isolated). Fixers: `lint-fix` · `format-fix` · `sql-fix` (grouped as **`fix`**).
 
 **Before hand-fixing lint / formatting / SQL, run `uv run poe fix`** — don't spend turns rewriting by hand what a fixer applies mechanically; review its diff instead.
 

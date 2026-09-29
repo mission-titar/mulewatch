@@ -12,9 +12,7 @@ ARG AMULE_VERSION=<le tag amont, tel quel>
 ARG AMULE_COMMIT=<le commit sur lequel pointe ce tag>
 ```
 
-Le reste du dépôt nomme cette épingle au lieu d'écrire un numéro : la tâche `amule-version-check`
-de `uv run poe check` échoue si une version d'aMule réapparaît hors du `Dockerfile` et
-d'`agents/`.
+Le reste du dépôt nomme cette épingle au lieu d'écrire un numéro.
 
 ## La PR automatique
 
