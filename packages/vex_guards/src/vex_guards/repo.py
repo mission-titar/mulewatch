@@ -20,8 +20,12 @@ def display_path(path: Path) -> str:
         return str(path)
 
 
+_TOOLING_PACKAGES = {"vex_guards", "amule_bump"}
+
+
 def source_dirs() -> list[Path]:
-    return sorted(d for d in (_ROOT / "packages").glob("*/src") if d.parent.name != "vex_guards")
+    packages = (_ROOT / "packages").glob("*/src")
+    return sorted(d for d in packages if d.parent.name not in _TOOLING_PACKAGES)
 
 
 def vex_files() -> dict[str, Path]:
