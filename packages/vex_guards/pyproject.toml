@@ -2,7 +2,7 @@
 name = "vex-guards"
 dynamic = ["version"]
 requires-python = ">=3.13"
-dependencies = ["packaging>=24"]
+dependencies = ["packaging>=26.3"]
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
