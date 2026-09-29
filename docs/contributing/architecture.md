@@ -22,7 +22,7 @@ personne.**
 
 ## 2. Vue d'ensemble des sous-systèmes
 
-Un **workspace uv** de trois paquets, plus des dépendances externes.
+Un **workspace uv** de quatre paquets, plus des dépendances externes.
 
 **Contexte : le nœud et le monde extérieur.** Depuis le 2026-09-16, un nœud est **un seul
 conteneur** : le crawler, `amuled` et `amuleapi` sont trois processus d'une même image. **s6**
@@ -99,9 +99,10 @@ flowchart RL
 | `mulewatch` | `mulewatch` | **Crawler** : pilote `amuled` par amuleapi, fait tourner les boucles de recherche et de téléchargement, la persistance, l'observabilité. Contient le sous-paquet webui in-process `mulewatch.webui` (visualiseur de catalogue en lecture seule). |
 | `catalog_matching` | `catalog-matching` | **Moteur de matching** (bibliothèque partagée) : politique déclarative fichier vers épisode. Importé par le crawler et par la webui. |
 | `vex_guards` | `vex-guards` | **Outillage dev/CI** : garde honnêtes nos affirmations OpenVEX. Jamais livré dans une image de prod. |
+| `amule_bump` | `amule-bump` | **Outillage CI** : monte l'épingle d'aMule et rédige la PR ([Mettre à jour aMule](amule-bump.md)). Jamais livré dans une image de prod. |
 
 **Frontières strictes** (invariants) : `catalog_matching` est pur et n'importe jamais `mulewatch` ;
-`vex_guards` n'est jamais importé par du code livré.
+`vex_guards` et `amule_bump` ne sont jamais importés par du code livré.
 
 ## 3. Deux modes d'exécution, une seule topologie
 
@@ -429,8 +430,8 @@ démon sont
   désanonymisation.
 - **Le crawler PROD ne lit jamais les octets et ne touche jamais au répertoire de sortie** ; la
   complétion est un signal positif.
-- **Frontières de paquets** : `catalog_matching` n'importe jamais `mulewatch` ; `vex_guards` n'est
-  jamais importé par du code livré.
+- **Frontières de paquets** : `catalog_matching` n'importe jamais `mulewatch` ; `vex_guards` et
+  `amule_bump` ne sont jamais importés par du code livré.
 - **Deux modes d'exécution** pilotés par la config (téléchargement / catalogue seul), une seule
   topologie compose.
 - **Politique de matching 100 % en YAML** ; le moteur reste fixe et minimal.

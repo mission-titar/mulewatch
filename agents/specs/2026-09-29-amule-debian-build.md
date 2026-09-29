@@ -169,16 +169,22 @@ cases) and the `GIT` binary; the implementation redoes them against the real Doc
 Weekly schedule plus `workflow_dispatch`. Dependabot cannot follow a GitHub release of an
 arbitrary repo; Renovate could, but a second dependency bot for one package is not worth it.
 
+Steps 1 to 4 are `python -m amule_bump`, a stdlib-only dev/CI workspace package
+(`packages/amule_bump/`, wired like `vex_guards`, never in the image); it touches no git.
+
 1. Read `AMULE_VERSION` from the Dockerfile; ask `repos/amule-org/amule/releases/latest` (stable
-   releases only). Same version: stop.
-2. Resolve the tag to its **peeled** commit (`git ls-remote … refs/tags/X^{}`, falling back to
-   `refs/tags/X` for a lightweight tag).
-3. Rewrite the two `ARG`s on branch `chore/amule-X.Y.Z`. A branch or PR already open for that
-   version: stop (idempotent).
-4. Open the PR (its CI then builds exactly that commit) with a body carrying: the upstream
-   changelog section, the diff between the two tags of `cmake/options.cmake` (new or changed build
-   switches) and of `docs/api/REFERENCE.md` (the amuleapi contract), and the manual checklist
-   below.
+   releases only). Same version or older: stop.
+2. Resolve the tag to its **peeled** commit through the API (`git/ref/tags/X`, following
+   `git/tags/<sha>` while the object is an annotated tag).
+3. Rewrite the two `ARG`s in place.
+4. Write the PR body: the upstream changelog section, the diff between the two tags of
+   `cmake/options.cmake` (new or changed build switches) and of `docs/api/REFERENCE.md` (the
+   amuleapi contract), and the manual checklist below. The version and the body path go to
+   `$GITHUB_OUTPUT`.
+5. `peter-evans/create-pull-request` (pinned by SHA, App token, `sign-commits`) commits the
+   Dockerfile on `chore/amule-X.Y.Z` and opens the PR; its CI then builds exactly that commit.
+   Idempotent: an existing branch is only force-pushed when it differs, an open PR is updated.
+   A PR closed unmerged does not block a new one, so the bump comes back each week.
 
 **Token.** A PR opened with `GITHUB_TOKEN` does not trigger workflows, so its required
 `validate / gate` would never run. The workflow uses a **GitHub App** installation token
