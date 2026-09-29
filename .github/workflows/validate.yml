@@ -89,11 +89,58 @@ jobs:
           cache-scope: crawler-${{ matrix.arch }}
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
+      - name: Read the aMule version pin
+        id: amule
+        run: |
+          version=$(sed -n 's/^ARG AMULE_VERSION=//p' packages/crawler/Dockerfile)
+          if [ -z "$version" ]; then
+            echo "::error::no ARG AMULE_VERSION=<version> line in packages/crawler/Dockerfile"
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+      # A builder without git, or a checkout without the tag, still builds but says "GIT".
+      - name: Check that the aMule binaries report the pinned version (${{ matrix.arch }})
+        env:
+          AMULE_VERSION: ${{ steps.amule.outputs.value }}
+          LOCAL_IMAGE: ${{ env.IMAGE }}:ci-${{ github.sha }}
+        run: |
+          for pair in amuled:aMuleD amuleapi:amuleapi; do
+            binary=${pair%%:*} banner=${pair#*:}
+            # --version exits 255 even on success, so only its output is checked.
+            output=$(docker run --rm --entrypoint "$binary" "$LOCAL_IMAGE" --version 2>&1 || true)
+            reported=$(printf '%s\n' "$output" | sed -nE "s/^$banner (\S+) compiled.*/\1/p")
+            if [ "$reported" != "$AMULE_VERSION" ]; then
+              echo "::error::$binary reports '$reported', the pin is '$AMULE_VERSION': $output"
+              exit 1
+            fi
+            echo "$binary: $reported"
+          done
+      # The same action, Syft and cataloger selection as release.yml, so a PR proves what a
+      # release will attest. The sbom-cataloger is not an image cataloger: off unless selected.
+      - name: Generate the SBOM of the local image (${{ matrix.arch }})
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        env:
+          SYFT_SELECT_CATALOGERS: +sbom-cataloger
+        with:
+          image: docker:${{ env.IMAGE }}:ci-${{ github.sha }}
+          format: syft-json
+          output-file: /tmp/sbom.syft.json
+          upload-artifact: "false"
+          upload-release-assets: "false"
+      - name: Check that aMule is in the SBOM at the pinned version (${{ matrix.arch }})
+        env:
+          AMULE_VERSION: ${{ steps.amule.outputs.value }}
+        run: |
+          if ! grep -qF "\"pkg:generic/amule@${AMULE_VERSION}\"" /tmp/sbom.syft.json; then
+            echo "::error::no pkg:generic/amule@${AMULE_VERSION} in the SBOM: the declaration"
+            echo "::error::file is missing or stale, or the sbom-cataloger was not selected."
+            exit 1
+          fi
       - name: Compose smoke stack integration (${{ matrix.arch }})
         run: ( cd packages/crawler && uv run pytest -m compose_integration --no-cov -q )
         env:
           IMAGE_TAG: ci-${{ github.sha }}
-      # amuleapi ships with aMule 3.1.0, so the daemon these three suites drive is now the image
+      # amuleapi ships with aMule, so the daemon these three suites drive is now the image
       # this job just built rather than a third-party one. Same configs as the smoke stack: the
       # crawler service needs them to stay up, and `finish` stops the container if it does not.
       - name: Start a throwaway daemon (${{ matrix.arch }})
