@@ -27,34 +27,10 @@ RUN cmake -S /src/amule -B /build -DCMAKE_BUILD_TYPE=Release \
     && cmake --build /build -j"$(nproc)" \
     && DESTDIR=/out cmake --install /build --strip
 
-# aMule has no package metadata for Syft to find, so it is declared, from the same ARG as the
-# source. Boost is header-only here: its version is the one of the headers compiled in.
-RUN python3 - <<'PY'
-import json, os, re
-
-def component(kind, name, version, license_id):
-    purl = f"pkg:generic/{name}@{version}"
-    return {
-        "type": kind,
-        "bom-ref": purl,
-        "name": name,
-        "version": version,
-        "purl": purl,
-        "cpe": f"cpe:2.3:a:{name}:{name}:{version}:*:*:*:*:*:*:*",
-        "licenses": [{"license": {"id": license_id}}],
-    }
-
-header = open("/usr/include/boost/version.hpp").read()
-boost = int(re.search(r"#define BOOST_VERSION (\d+)", header)[1])
-components = [
-    component("application", "amule", os.environ["AMULE_VERSION"], "GPL-2.0-or-later"),
-    component("library", "boost", f"{boost // 100000}.{boost // 100 % 1000}.{boost % 100}",
-              "BSL-1.0"),
-]
-bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1, "components": components}
-with open("/out/usr/local/share/amule/amule.cdx.json", "w") as f:
-    json.dump(bom, f, indent=2)
-PY
+# aMule has no package metadata for Syft to find: declare it, from the same ARG as the source.
+COPY packages/crawler/docker/amule.cdx.json /tmp/amule.cdx.json
+RUN sed "s/@AMULE_VERSION@/${AMULE_VERSION}/g" /tmp/amule.cdx.json \
+      > /out/usr/local/share/amule/amule.cdx.json
 
 # Keep the stage: Dependabot only reads FROM lines, so inlining it as a COPY --from=<image>
 # would freeze this digest with no update path.
