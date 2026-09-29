@@ -1,0 +1,35 @@
+name: aMule bump
+
+on:
+  schedule:
+    # Every Monday at 07:00 UTC
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          persist-credentials: false
+
+      # A PR opened with GITHUB_TOKEN triggers no workflow, so its required gate would never run.
+      - name: Create a GitHub App installation token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.AMULE_BUMP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AMULE_BUMP_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Open the bump PR if upstream released a new aMule
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: scripts/amule-bump.sh
