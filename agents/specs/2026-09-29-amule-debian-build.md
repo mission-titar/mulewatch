@@ -121,9 +121,10 @@ has no package metadata: it is declared.
 - The Dockerfile **generates** `/usr/local/share/amule/amule.cdx.json` (CycloneDX 1.6) from
   `AMULE_VERSION`, so the declaration cannot drift from the pin: one component, `type:
   application`, `name: amule`, `purl: pkg:generic/amule@X`, `cpe:
-  cpe:2.3:a:amule:amule:X:*:*:*:*:*:*:*`, licence `GPL-2.0-or-later`. Boost (headers compiled in),
-  picojson and libutp (vendored, `docs/THIRDPARTY.md`) are declared too, with the versions the
-  build used: they are in the binaries, and nix never showed them either.
+  cpe:2.3:a:amule:amule:X:*:*:*:*:*:*:*`, licence `GPL-2.0-or-later`. Boost is declared too: its
+  headers are compiled in, and the build reads their version from `boost/version.hpp`. Vendored
+  picojson is not: its version exists only as prose in `docs/THIRDPARTY.md`. libutp is not compiled
+  at all (`ENABLE_UTP` is off).
 - Syft reads it only with **`--select-catalogers "+sbom-cataloger"`**: that cataloger is tagged
   `package, sbom`, not `image`, so it is off by default. Its globs include `**/*.cdx.*`.
 - The CPE is what Grype matches on. Verified: `+sbom-cataloger` makes aMule appear (`amule 3.1.0
