@@ -7,13 +7,17 @@ INCOMING_DIR = "/downloads/incoming"
 TEMP_DIR = "/downloads/temp"
 
 
+class _CaseSensitiveParser(configparser.RawConfigParser):
+    # aMule keys are case-sensitive (ECPassword, not ecpassword); the default lowercases them.
+    def optionxform(self, optionstr: str) -> str:
+        return optionstr
+
+
 def reconcile_conf(existing: str | None, ec_digest: str) -> str:
     """Return `existing` (None when absent) with our keys reconciled, every other key kept."""
     # RawConfigParser: no %-interpolation, so a password or a path containing % survives.
-    # optionxform=str: aMule keys are case-sensitive (ECPassword, not ecpassword).
     # strict=False: a hand-edited file with a duplicate key must not abort the boot.
-    parser = configparser.RawConfigParser(strict=False)
-    parser.optionxform = str  # type: ignore[assignment,method-assign]
+    parser = _CaseSensitiveParser(strict=False)
     if existing is None:
         # An absent key takes aMule's declared default: only the wrong ones go in (ECPort is fine).
         parser["eMule"] = {"IncomingDir": INCOMING_DIR, "TempDir": TEMP_DIR}
