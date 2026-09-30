@@ -5,7 +5,12 @@ from typing import assert_never
 
 from packaging.version import Version
 
-from vex_guards.descriptors import ImageGuard, PackageAbsent, PackageMinVersion
+from vex_guards.descriptors import (
+    DeclaredMinVersion,
+    ImageGuard,
+    PackageAbsent,
+    PackageMinVersion,
+)
 from vex_guards.violations import Violation
 
 
@@ -18,14 +23,33 @@ class DebPackage:
 def load_dpkg_packages(path: Path) -> list[DebPackage]:
     """The dpkg packages of a Syft JSON SBOM, in document order.
 
-    Syft types those "deb". The rest (aMule, declared by hand; our Python wheels) does
-    not come from dpkg, so a dpkg guard has nothing to say about it.
+    Syft types those "deb". aMule (declared by hand, see ``load_declared_components``)
+    and our Python wheels do not come from dpkg, so a dpkg guard ignores them.
     """
     doc = json.loads(path.read_text())
     return [
         DebPackage(name=a["name"], version=a["version"])
         for a in doc["artifacts"]
         if a["type"] == "deb"
+    ]
+
+
+@dataclass(frozen=True)
+class DeclaredComponent:
+    name: str
+    version: str
+
+
+def load_declared_components(path: Path) -> list[DeclaredComponent]:
+    """The components declared by hand (aMule) of a Syft JSON SBOM, in document order.
+
+    They are the artifacts with a ``pkg:generic/`` purl, kept apart from dpkg names.
+    """
+    doc = json.loads(path.read_text())
+    return [
+        DeclaredComponent(name=a["name"], version=a["version"])
+        for a in doc["artifacts"]
+        if a.get("purl", "").startswith("pkg:generic/")
     ]
 
 
@@ -43,7 +67,9 @@ def _upstream(version: str) -> str:
 
 
 def evaluate_image_guards(
-    guards: dict[str, ImageGuard], packages: list[DebPackage]
+    guards: dict[str, ImageGuard],
+    packages: list[DebPackage],
+    declared: list[DeclaredComponent],
 ) -> list[Violation]:
     by_name: dict[str, list[DebPackage]] = {}
     for pkg in packages:
@@ -63,6 +89,16 @@ def evaluate_image_guards(
                             Violation(
                                 cve,
                                 f"{package} {pkg.version} is below {minimum}",
+                                "security",
+                            )
+                        )
+            case DeclaredMinVersion(package, minimum):
+                for component in (c for c in declared if c.name == package):
+                    if Version(component.version) < Version(minimum):
+                        violations.append(
+                            Violation(
+                                cve,
+                                f"declared {package} {component.version} is below {minimum}",
                                 "security",
                             )
                         )

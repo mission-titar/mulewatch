@@ -3,7 +3,8 @@
 A guard is a small frozen dataclass that names one falsifiable premise behind a
 VEX ``not_affected`` claim (e.g. "``tarfile`` is never imported"). Guards split
 into two families: ``source`` guards assert something about our own code path,
-``image`` guards assert something about the packages present in the image.
+``image`` guards assert something about the packages present in the image (dpkg
+packages, or components declared by hand like aMule).
 """
 
 from dataclasses import dataclass
@@ -31,8 +32,14 @@ class PackageMinVersion:
     minimum: str
 
 
+@dataclass(frozen=True)
+class DeclaredMinVersion:
+    package: str
+    minimum: str
+
+
 SourceGuard = ModuleNotImported | SubprocessDenies
-ImageGuard = PackageAbsent | PackageMinVersion
+ImageGuard = PackageAbsent | PackageMinVersion | DeclaredMinVersion
 Guard = SourceGuard | ImageGuard
 
 Family = Literal["source", "image"]
@@ -47,7 +54,7 @@ def family(guard: Guard) -> Family:
     match guard:
         case ModuleNotImported() | SubprocessDenies():
             return "source"
-        case PackageAbsent() | PackageMinVersion():
+        case PackageAbsent() | PackageMinVersion() | DeclaredMinVersion():
             return "image"
         case _:  # pragma: no cover
             assert_never(guard)
