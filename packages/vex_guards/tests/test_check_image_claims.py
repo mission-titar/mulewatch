@@ -4,7 +4,7 @@ from typing import cast
 
 import pytest
 
-from vex_guards import check_image_claims
+from vex_guards import check_image_claims, registry
 from vex_guards.descriptors import (
     DeclaredMinVersion,
     Guard,
@@ -14,10 +14,9 @@ from vex_guards.descriptors import (
 )
 from vex_guards.repo import repo_root
 
-# The single shipped image carries only source-family claims, so the real registry has no
-# image guard left to exercise this gate. Tests inject their own, keyed on CVEs the real
-# crawler VEX does claim: the document stays a genuine fixture (and lives under the repo,
-# taking the in-repo repo.display_path branch) while the guards stay under test control.
+# Tests inject their own guards, keyed on CVEs the real crawler VEX does claim: the document
+# stays a genuine fixture (and lives under the repo, taking the in-repo repo.display_path
+# branch) while the guards stay under test control.
 _CRAWLER_VEX = repo_root() / "security" / "crawler.vex.openvex.json"
 _CRAWLER_VEX_RELPATH = "security/crawler.vex.openvex.json"
 
@@ -112,6 +111,32 @@ def test_fail_mode_flags_a_declared_component_below_its_minimum(
 
     assert rc == 1
     assert "::error::CVE-2006-2691: declared amule 2.1.1 is below 2.1.2" in capsys.readouterr().out
+
+
+def test_the_real_amule_claims_fail_on_an_amule_older_than_the_fix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(check_image_claims, "GUARDS", registry.GUARDS)
+    sbom = _write_sbom(
+        tmp_path,
+        [
+            {
+                "type": "UnknownPackage",
+                "name": "amule",
+                "version": "2.1.1",
+                "purl": "pkg:generic/amule@2.1.1",
+            }
+        ],
+    )
+
+    rc = check_image_claims.main(["--sbom", str(sbom), "--vex", str(_CRAWLER_VEX)])
+
+    assert rc == 1
+    out = capsys.readouterr().out
+    assert "::error::CVE-2006-2691: declared amule 2.1.1 is below 2.1.2" in out
+    assert "::error::CVE-2006-2692: declared amule 2.1.1 is below 2.1.2" in out
 
 
 def test_fail_mode_returns_zero_on_a_clean_sbom(
