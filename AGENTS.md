@@ -35,6 +35,7 @@ The crawler is Clean/Hexagonal: `domain/` pure, `application/` async use-cases, 
 | Observability | c: `domain/observability/`, `adapters/observability/` | events → policy → dispatcher; Prometheus + apprise |
 | Port-sync (High-ID) | c: `application/` | gluetun port → PATCH /preferences → restart amuled |
 | Standalone catalog tools | c: `merge/`, `compact/` | `python -m mulewatch.{merge,compact}` — N→1 fusion / daily rollup |
+| Container boot | c: `amule_config/` | `python -m mulewatch.amule_config`, run once as root by the entrypoint before s6: `amule` user, mount point ownership, amule.conf reconciled, amuleapi admin pass. Never imported by the crawler |
 | Packaging | `deploy/base.compose.yml` + `deploy/compose.yml` (direct) + `deploy/gluetun.compose.yml` (VPN) + `tests/smoke/compose.yaml`, `packages/crawler/Dockerfile` | one image, one `mulewatch` service (crawler + amuled under s6, amuled starting amuleapi), no compose profile; smoke stack; container hardening. aMule is built on Debian from the git commit pinned by `ARG AMULE_VERSION` + `ARG AMULE_COMMIT` (bumped weekly by `.github/workflows/amule-bump.yml`); never write its version anywhere else |
 | Supply-chain artefacts | `security/` + `.github/workflows/grype-scan.yml` + `release.yml` (`publish-manifest`) | keyless cosign signature + 3 signed attestations (CycloneDX/Syft-JSON SBOM, OpenVEX) on the image's multi-arch index; daily Grype scan → Code scanning. See `SECURITY.md`. |
 
