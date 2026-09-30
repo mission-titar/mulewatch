@@ -134,9 +134,9 @@ is signed or attested:
   guard family. It keeps the VEX and the guard registry in bijection.
 - **`check_image_claims`** (daily Grype scan as SARIF, release hard-fail): fails if the built
   image's SBOM contradicts an image-scoped claim, for example a dpkg package that should be
-  absent is present, or is below the minimum version a claim relies on. The image's current
-  claims are all source-family, so this check has nothing to assert today; it stays wired so the
-  first image-family claim is gated from the moment it is added.
+  absent is present, or a dpkg package or hand-declared component is below the minimum version
+  a claim relies on. The aMule claims rest on the version declared in the SBOM
+  (`pkg:generic/amule`).
 - **`check_stale_claims`** (daily Grype scan as SARIF, non-blocking): flags VEX entries Grype no
   longer reports for the image, so obsolete suppressions get pruned. Staleness never blocks a
   release: a suppressed CVE that Grype stops reporting has been fixed upstream, which does not
