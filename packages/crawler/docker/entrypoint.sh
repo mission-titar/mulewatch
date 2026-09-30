@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
 
-/usr/local/bin/amule-config.py
+python -m mulewatch.amule_config
 
 exec s6-svscan /etc/services.d
