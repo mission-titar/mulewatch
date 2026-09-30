@@ -23,7 +23,7 @@ l'onglet **Actions**), en deux étapes.
 
 1. lit `AMULE_VERSION` et demande à GitHub la dernière release stable d'`amule-org/amule` ; même
    version, ou plus ancienne : il s'arrête ;
-2. résout le tag en son commit **pelé** (le commit, pas l'objet tag annoté) ;
+2. trouve le commit sur lequel pointe le tag de cette release ;
 3. réécrit les deux `ARG` du Dockerfile ;
 4. écrit la description de la PR : l'extrait du changelog amont, le diff entre les deux tags de
    `cmake/options.cmake` (les options de build) et de `docs/api/REFERENCE.md` (le contrat
@@ -72,7 +72,8 @@ d'installation d'une **App GitHub**, limité à ce dépôt et de courte durée.
 
 ## La liste de vérifications
 
-La PR la porte, en anglais, à cocher avant de fusionner (source : `packages/amule_bump/src/amule_bump/body.py`) :
+La PR la porte, en anglais, à cocher avant de fusionner (source :
+`packages/amule_bump/src/amule_bump/body.py`) :
 
 - [ ] Read the changelog: anything that changes the daemon's defaults or the network behaviour?
 - [ ] `options.cmake` diff: a new switch to set explicitly in the Dockerfile's CMake options?
@@ -86,31 +87,28 @@ qu'au prochain tag.
 
 ## Monter à la main
 
-Pour une autre version que la dernière release (ou sans l'App), sur une branche :
+Sans l'App, ou pour une autre version que la dernière release, travaillez sur une branche.
 
-1. Trouvez le commit pelé du tag voulu :
-
-    ```bash
-    git ls-remote https://github.com/amule-org/amule.git 'refs/tags/<version>^{}'
-    ```
-
-    Sans ligne en retour, le tag est léger : prenez alors celle de `refs/tags/<version>`.
-
-2. Réécrivez les deux `ARG` : `AMULE_VERSION` est le **nom exact du tag**, `AMULE_COMMIT` le commit
-   obtenu. Ne prenez pas l'objet tag annoté que renvoie `refs/tags/<version>` sans `^{}` : le
-   checksum ne correspondrait jamais.
-3. Ouvrez la PR et déroulez la liste ci-dessus.
-
-Pour la dernière release, le module fait les deux premières étapes. Cette commande affiche les deux
-lignes réécrites et la description de PR sans rien écrire ; sans `--dry-run`, elle réécrit le
-Dockerfile en place et écrit la description dans un fichier temporaire :
+**Vers la dernière release**, le module réécrit lui-même les deux `ARG` du Dockerfile :
 
 ```bash
-GH_TOKEN="$(gh auth token)" uv run python -m amule_bump --dry-run
+uv run python -m amule_bump
 ```
 
-`GH_TOKEN` est facultatif : sans lui, l'API GitHub limite à 60 requêtes par heure.
-`--dockerfile <chemin>` fait travailler le module sur une copie du Dockerfile.
+Ajoutez `--dry-run` pour seulement afficher les deux lignes et la description de PR qu'il
+produirait. Avec `GH_TOKEN="$(gh auth token)"` devant, les appels à l'API GitHub sont
+authentifiés ; sans, ils sont limités à 60 par heure.
 
-Une erreur se voit au build : un commit qui n'est pas celui du tag fait échouer l'`ADD
---checksum`, et une version montée sans son commit aussi, puisque le tag pointe alors ailleurs.
+**Vers une autre version**, écrivez les deux `ARG` vous-même :
+
+- `AMULE_VERSION` : le nom du tag amont, tel quel (par exemple `3.1.0`) ;
+- `AMULE_COMMIT` : le commit sur lequel pointe ce tag, que donne cette commande :
+
+    ```bash
+    gh api repos/amule-org/amule/commits/<version> --jq .sha
+    ```
+
+Ouvrez ensuite la PR et cochez la liste ci-dessus.
+
+Une erreur ne passe pas inaperçue : si les deux `ARG` ne correspondent pas, le build échoue sur
+l'`ADD --checksum` du Dockerfile, que la version ou le commit soit faux.
