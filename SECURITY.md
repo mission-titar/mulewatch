@@ -106,7 +106,8 @@ vexctl add \
 Verify the suppression applies before opening the PR, using a **Syft-JSON** SBOM:
 
 ```sh
-syft <image> -o syft-json=/tmp/sbom.syft.json
+# sbom-cataloger reads the hand-declared aMule; without it, aMule is absent from the SBOM.
+SYFT_SELECT_CATALOGERS=+sbom-cataloger syft <image> -o syft-json=/tmp/sbom.syft.json
 grype sbom:/tmp/sbom.syft.json --vex security/crawler.vex.openvex.json --show-suppressed | grep <CVE>
 ```
 
