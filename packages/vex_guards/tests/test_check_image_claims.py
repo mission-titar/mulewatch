@@ -5,7 +5,13 @@ from typing import cast
 import pytest
 
 from vex_guards import check_image_claims
-from vex_guards.descriptors import Guard, ModuleNotImported, PackageAbsent, PackageMinVersion
+from vex_guards.descriptors import (
+    DeclaredMinVersion,
+    Guard,
+    ModuleNotImported,
+    PackageAbsent,
+    PackageMinVersion,
+)
 from vex_guards.repo import repo_root
 
 # The single shipped image carries only source-family claims, so the real registry has no
@@ -24,6 +30,7 @@ _GUARDS: dict[str, Guard] = {
     _CLAIMED_IMAGE_CVE: PackageAbsent("nghttp2"),
     _CLAIMED_SOURCE_CVE: ModuleNotImported("tarfile"),
     "CVE-UNCLAIMED": PackageMinVersion("curl", "99.0"),
+    "CVE-2006-2691": DeclaredMinVersion("amule", "2.1.2"),
 }
 
 
@@ -82,6 +89,29 @@ def test_fail_mode_flags_a_present_package_and_prints_the_cve(
     assert f"::error::{_CLAIMED_IMAGE_CVE}" in out
     # The in-repo relative repo.display_path branch: the location renders repo-relative.
     assert f"({_CRAWLER_VEX_RELPATH})" in out
+
+
+def test_fail_mode_flags_a_declared_component_below_its_minimum(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    vex = _write_vex(tmp_path, "CVE-2006-2691", "vulnerable_code_not_present")
+    sbom = _write_sbom(
+        tmp_path,
+        [
+            {
+                "type": "UnknownPackage",
+                "name": "amule",
+                "version": "2.1.1",
+                "purl": "pkg:generic/amule@2.1.1",
+            }
+        ],
+    )
+
+    rc = check_image_claims.main(["--sbom", str(sbom), "--vex", str(vex)])
+
+    assert rc == 1
+    assert "::error::CVE-2006-2691: declared amule 2.1.1 is below 2.1.2" in capsys.readouterr().out
 
 
 def test_fail_mode_returns_zero_on_a_clean_sbom(

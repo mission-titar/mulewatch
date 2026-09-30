@@ -1,11 +1,12 @@
 """CLI gate: assert every image-family VEX claim holds against a built image's SBOM.
 
 Each image guard asserts a fact about the packages shipped in the image (a
-package is absent, or meets a minimum version). Given a Syft SBOM and the VEX
-document authored for that image, this checks the image-family claims only:
-source-family claims are scoped out. In ``fail`` mode a breach prints a GitHub
-``::error::`` annotation and exits non-zero; in ``sarif`` mode the same breaches
-are written to ``--output`` as a SARIF report (always exit zero).
+package is absent, or a dpkg or hand-declared one meets a minimum version).
+Given a Syft SBOM and the VEX document authored for that image, this checks the
+image-family claims only: source-family claims are scoped out. In ``fail`` mode a
+breach prints a GitHub ``::error::`` annotation and exits non-zero; in ``sarif``
+mode the same breaches are written to ``--output`` as a SARIF report (always exit
+zero).
 """
 
 import argparse
@@ -18,7 +19,7 @@ from vex_guards import repo
 from vex_guards.descriptors import ImageGuard, is_image_guard
 from vex_guards.registry import GUARDS
 from vex_guards.sarif import build_sarif
-from vex_guards.sbom import evaluate_image_guards, load_dpkg_packages
+from vex_guards.sbom import evaluate_image_guards, load_declared_components, load_dpkg_packages
 from vex_guards.vex_io import load_claims
 
 _RULE_ID = "unsatisfied-image-claim"
@@ -40,9 +41,9 @@ def main(argv: list[str] | None = None) -> int:
     guards: dict[str, ImageGuard] = {
         cve: guard for cve, guard in GUARDS.items() if cve in claims and is_image_guard(guard)
     }
-    packages = load_dpkg_packages(Path(args.sbom))
     vex_relpath = repo.display_path(Path(args.vex))
-    raw = evaluate_image_guards(guards, packages)
+    sbom = Path(args.sbom)
+    raw = evaluate_image_guards(guards, load_dpkg_packages(sbom), load_declared_components(sbom))
     violations = [dataclasses.replace(v, location=vex_relpath) for v in raw]
 
     if args.format == "sarif":

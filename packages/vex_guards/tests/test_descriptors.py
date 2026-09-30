@@ -2,6 +2,7 @@ from typing import get_args
 
 from vex_guards.descriptors import (
     JUSTIFICATION_BY_FAMILY,
+    DeclaredMinVersion,
     Guard,
     ImageGuard,
     ModuleNotImported,
@@ -21,7 +22,11 @@ def test_source_descriptors_report_source_family() -> None:
 
 
 def test_image_descriptors_report_image_family() -> None:
-    for guard in (PackageAbsent("nghttp2"), PackageMinVersion("clamav", "0.99")):
+    for guard in (
+        PackageAbsent("nghttp2"),
+        PackageMinVersion("clamav", "0.99"),
+        DeclaredMinVersion("amule", "2.1.2"),
+    ):
         assert family(guard) == "image"
 
 
