@@ -129,7 +129,7 @@ is signed or attested:
 
 - **`check_source_claims`** (PR job, release hard-fail): fails if our own source starts
   reaching code a `vulnerable_code_not_in_execute_path` claim says we never execute, for
-  example importing `tarfile`, `configparser`, `imaplib`, or `poplib`.
+  example importing `imaplib` or `poplib`.
 - **`check_claim_coverage`** (PR job, release hard-fail): fails if a VEX `not_affected` claim
   has no guard in the registry, a guard has no claim, or a justification does not match its
   guard family. It keeps the VEX and the guard registry in bijection.

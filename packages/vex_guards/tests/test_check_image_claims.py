@@ -21,13 +21,13 @@ _CRAWLER_VEX = repo_root() / "security" / "crawler.vex.openvex.json"
 _CRAWLER_VEX_RELPATH = "security/crawler.vex.openvex.json"
 
 _CLAIMED_IMAGE_CVE = "CVE-2025-15367"
-_CLAIMED_SOURCE_CVE = "CVE-2026-11940"
+_CLAIMED_SOURCE_CVE = "CVE-2025-15366"
 
 # Three guards, one per branch of main's filter: an image guard whose CVE is claimed (kept),
 # a source guard whose CVE is claimed (scoped out), an image guard nothing claims (skipped).
 _GUARDS: dict[str, Guard] = {
     _CLAIMED_IMAGE_CVE: PackageAbsent("nghttp2"),
-    _CLAIMED_SOURCE_CVE: ModuleNotImported("tarfile"),
+    _CLAIMED_SOURCE_CVE: ModuleNotImported("imaplib"),
     "CVE-UNCLAIMED": PackageMinVersion("curl", "99.0"),
     "CVE-2006-2691": DeclaredMinVersion("amule", "2.1.2"),
 }
