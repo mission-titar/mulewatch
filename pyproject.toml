@@ -26,6 +26,8 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+# Specs, plans and handoffs are records: ruff 0.16 would reformat their Python snippets.
+extend-exclude = ["agents/**/*.md"]
 src = [
   "packages/crawler/src",
   "packages/crawler/tests",
