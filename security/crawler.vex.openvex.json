@@ -3,84 +3,8 @@
   "@id": "https://github.com/mission-titar/mulewatch/blob/main/security/crawler.vex.openvex.json",
   "author": "mission-titar",
   "timestamp": "2026-09-30T00:00:00Z",
-  "version": 5,
+  "version": 6,
   "statements": [
-    {
-      "vulnerability": {
-        "name": "CVE-2026-11940"
-      },
-      "timestamp": "2026-07-08T00:00:00Z",
-      "products": [
-        {
-          "@id": "pkg:oci/mulewatch",
-          "subcomponents": [
-            {
-              "@id": "pkg:generic/python"
-            }
-          ]
-        }
-      ],
-      "status": "not_affected",
-      "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "The application never imports tarfile and never extracts archives. No archive module (tarfile, zipfile, gzip, bz2, lzma) is imported anywhere in this image's source, and every file the crawler writes is a SQLite database."
-    },
-    {
-      "vulnerability": {
-        "name": "CVE-2026-11972"
-      },
-      "timestamp": "2026-07-08T00:00:00Z",
-      "products": [
-        {
-          "@id": "pkg:oci/mulewatch",
-          "subcomponents": [
-            {
-              "@id": "pkg:generic/python"
-            }
-          ]
-        }
-      ],
-      "status": "not_affected",
-      "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "The application never imports tarfile and never extracts archives. No archive module (tarfile, zipfile, gzip, bz2, lzma) is imported anywhere in this image's source, and every file the crawler writes is a SQLite database."
-    },
-    {
-      "vulnerability": {
-        "name": "CVE-2026-4360"
-      },
-      "timestamp": "2026-07-08T00:00:00Z",
-      "products": [
-        {
-          "@id": "pkg:oci/mulewatch",
-          "subcomponents": [
-            {
-              "@id": "pkg:generic/python"
-            }
-          ]
-        }
-      ],
-      "status": "not_affected",
-      "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "The application never imports tarfile and never extracts archives. No archive module (tarfile, zipfile, gzip, bz2, lzma) is imported anywhere in this image's source, and every file the crawler writes is a SQLite database."
-    },
-    {
-      "vulnerability": {
-        "name": "CVE-2026-0864"
-      },
-      "timestamp": "2026-07-08T00:00:00Z",
-      "products": [
-        {
-          "@id": "pkg:oci/mulewatch",
-          "subcomponents": [
-            {
-              "@id": "pkg:generic/python"
-            }
-          ]
-        }
-      ],
-      "status": "not_affected",
-      "justification": "vulnerable_code_not_in_execute_path",
-      "impact_statement": "Configuration is operator-owned YAML. configparser is never used, and no config value is written from untrusted input."
-    },
     {
       "vulnerability": {
         "name": "CVE-2025-15366"

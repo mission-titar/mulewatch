@@ -31,7 +31,7 @@ def test_load_claims_keeps_not_affected_only(tmp_path: Path) -> None:
 
 def test_all_claims_reads_the_shipped_vex_documents() -> None:
     claims = all_claims(list(repo.vex_files().values()))
-    assert claims["CVE-2026-11940"] == "vulnerable_code_not_in_execute_path"
+    assert claims["CVE-2025-15366"] == "vulnerable_code_not_in_execute_path"
 
 
 def test_all_claims_merges_and_agrees_on_shared_cves(tmp_path: Path) -> None:

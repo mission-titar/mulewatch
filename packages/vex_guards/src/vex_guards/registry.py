@@ -10,10 +10,6 @@ from vex_guards.descriptors import DeclaredMinVersion, Guard, ModuleNotImported
 GUARDS: dict[str, Guard] = {
     "CVE-2006-2691": DeclaredMinVersion("amule", "2.1.2"),
     "CVE-2006-2692": DeclaredMinVersion("amule", "2.1.2"),
-    "CVE-2026-11940": ModuleNotImported("tarfile"),
-    "CVE-2026-11972": ModuleNotImported("tarfile"),
-    "CVE-2026-4360": ModuleNotImported("tarfile"),
-    "CVE-2026-0864": ModuleNotImported("configparser"),
     "CVE-2025-15366": ModuleNotImported("imaplib"),
     "CVE-2025-15367": ModuleNotImported("poplib"),
 }
