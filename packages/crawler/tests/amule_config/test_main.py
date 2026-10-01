@@ -4,6 +4,7 @@ import grp
 import hashlib
 import os
 import pwd
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -124,6 +125,19 @@ def test_a_missing_variable_aborts_the_boot_naming_it(
     with pytest.raises(SystemExit, match=f"^{name} is required$"):
         entry.main()
     assert boot.calls == []
+
+
+@pytest.mark.parametrize("name", ["PUID", "PGID"])
+@pytest.mark.parametrize("value", ["amule", "-1", "1 000", "1_000", "+1000", "١٠٠٠"])
+def test_a_non_numeric_id_aborts_the_boot_before_any_change(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+    with pytest.raises(SystemExit, match=re.escape(f"{name} must be a numeric id, got {value!r}")):
+        entry.main()
+    assert boot.calls == []
+    assert boot.chowns == []
+    assert not boot.home.exists()
 
 
 def test_an_empty_variable_counts_as_missing(boot: Boot, monkeypatch: pytest.MonkeyPatch) -> None:
