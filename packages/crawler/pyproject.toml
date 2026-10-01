@@ -8,7 +8,7 @@ dependencies = [
     "catalog-matching",
     "pyyaml>=6.0.3",
     "httpx>=0.28",
-    "prometheus-client>=0.21",
+    "prometheus-client>=0.26.0",
     "starlette>=1.3",
     "uvicorn>=0.30",
     "jinja2>=3.1",
