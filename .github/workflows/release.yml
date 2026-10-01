@@ -196,3 +196,27 @@ jobs:
 
       - name: Inspect the published manifest
         run: docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+
+  # The GitHub release page, written from the annotated tag once the image is signed and attested.
+  github-release:
+    needs: publish-manifest
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # checkout fetches the tag as a bare commit ref: its message would read as the commit's.
+      - name: Fetch the annotated tag
+        run: git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+
+      # Not --notes-from-tag: the API's tag message carries the SSH signature block.
+      - name: Create the release from the tag message
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "$(git tag -l "$GITHUB_REF_NAME" --format='%(contents:subject)')" \
+            --notes "$(git tag -l "$GITHUB_REF_NAME" --format='%(contents:body)')"
