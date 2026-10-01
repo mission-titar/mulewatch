@@ -34,6 +34,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # The lock ships in the image, so transitive dependencies are bumped too, not only direct ones.
+    allow:
+      - dependency-type: "all"
+    # Only versions published a week ago: a compromised release is usually caught by then.
+    cooldown:
+      default-days: 7
     groups:
       python:
         patterns:
