@@ -18,7 +18,7 @@ The live state, history, and recommended next step are deliberately **not** in t
 - `docs/install.md`: bring a node up (the two compose stacks, VPN, secrets, first boot, High-ID/Low-ID); `docs/operate.md`: operate & tune one (lifecycle, optional High-ID + its risks, metrics, container hardening, catalog tools, known limits); `docs/troubleshooting.md`: symptom → cause → fix entries (any level).
 - `agents/reference/` — dated empirical findings about amuled. The EC notes there are a historical record since the 2026-09-22 migration to amuleapi; the live API reference is aMule's own `docs/api/REFERENCE.md`, in the source tree the image builds from.
 - `BACKLOG.md` (repo root) — what the project intends to do next, one entry of at most two lines each, linking the spec that holds the detail. **Read it before proposing work**, and write to it only after the operator has agreed. It carries no history: an entry is deleted when it ships or is dropped, never annotated.
-- `git tag`: releases are annotated `vX.Y.Z`, **pushed**, with the milestone name in the tag MESSAGE (`v1.0.1 - performance patch`), not in the tag itself. Pushing the tag is what publishes the versioned image: `release.yml` triggers on `v*`, publishing `X.Y.Z` **and** `latest`. Every push to `main` publishes `main`/`sha-<short>` and nothing else: `latest` means the newest release, never the tip of `main`, so an unreleased build is tested through the `main` tag.
+- `git tag`: releases are annotated `vX.Y.Z`, **pushed**, with the milestone name in the tag MESSAGE (`v1.0.1 - performance patch`), not in the tag itself. Pushing the tag is what publishes the versioned image: `release.yml` triggers on `v*`, publishing `X.Y.Z` **and** `latest`, then the GitHub release (title and notes from the tag message). Every push to `main` publishes `main`/`sha-<short>` and nothing else: `latest` means the newest release, never the tip of `main`, so an unreleased build is tested through the `main` tag.
 
 ### Where the code lives
 
@@ -129,7 +129,7 @@ Once the gate is green and code reviewed:
 
 1. **Write a handoff** in `agents/handoffs/<ISO date> - handoff - <context>.md`: current state, what was just built, learned pitfalls. The handoff is committed before continuing the wrap phase.
 2. **Integrate.** **Push the branch and open a PR** for any change touching code, config, tests, `deploy/`, or CI: `main`'s branch protection requires the `validate / gate` check, but `enforce_admins: false` means a local admin merge silently bypasses CI — don't. Wait for the gate green, then merge (linear history is required → **squash or rebase**, not a merge commit). **Exception — documentation-only** (diff touches only `docs/**` + root `*.md`): a local merge/commit to `main` is fine, no PR needed. "Leave as-is" stays available when the user wants to handle it later.
-3. **Tag** annotated `vX.Y.Z`, first line `vX.Y.Z - <milestone name>`, then what shipped. **Push it** — that is what builds and signs the versioned image.
+3. **Tag** annotated `vX.Y.Z`, first line `vX.Y.Z - <milestone name>`, then what shipped. **Push it** — that is what builds and signs the versioned image, then creates its GitHub release.
 4. **Clean up** branch and/or worktree if applicable.
 
 ## Architecture — the matching engine
