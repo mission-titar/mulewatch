@@ -1,7 +1,9 @@
 """amule_config main: env check, user creation, mount point ownership, amule.conf, admin pass."""
 
+import grp
 import hashlib
 import os
+import pwd
 import stat
 import subprocess
 from pathlib import Path
@@ -32,7 +34,7 @@ class Boot:
         self.incoming = tmp_path / "downloads/incoming"
         self.temp = tmp_path / "downloads/temp"
         self.conf = self.config / "amule.conf"
-        self.getent_returncode = 2
+        self.amule_exists = False
         self.calls: list[Call] = []
         self.chowns: list[tuple[str, int, int]] = []
         for name, value in ENV.items():
@@ -41,32 +43,34 @@ class Boot:
         monkeypatch.setattr(entry, "CONFIG_DIR", str(self.config))
         monkeypatch.setattr(entry, "INCOMING_DIR", str(self.incoming))
         monkeypatch.setattr(entry, "TEMP_DIR", str(self.temp))
+        monkeypatch.setattr(grp, "getgrnam", self._lookup)
+        monkeypatch.setattr(pwd, "getpwnam", self._lookup)
         monkeypatch.setattr(subprocess, "run", self._run)
         monkeypatch.setattr(os, "chown", self._chown)
 
+    def _lookup(self, name: str) -> object:
+        assert name == "amule"
+        if not self.amule_exists:
+            raise KeyError(name)
+        return object()
+
     def _run(self, argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         self.calls.append((argv, kwargs))
-        returncode = self.getent_returncode if argv[0] == "getent" else 0
-        return subprocess.CompletedProcess(argv, returncode)
+        return subprocess.CompletedProcess(argv, 0)
 
     def _chown(self, path: str, uid: int, gid: int) -> None:
         self.chowns.append((path, uid, gid))
 
-    def setpriv(self) -> Call:
-        argv = [
-            "setpriv",
-            "--reuid",
-            "1000",
-            "--regid",
-            "1001",
-            "--init-groups",
-            "env",
-            f"HOME={self.home}",
-            "amuleapi",
-            f"--config-dir={self.config}",
-            "--set-admin-pass=s3cret",
-        ]
-        return argv, {"check": True}
+    def set_admin_pass(self) -> Call:
+        argv = ["amuleapi", f"--config-dir={self.config}", "--set-admin-pass=s3cret"]
+        kwargs = {
+            "user": 1000,
+            "group": 1001,
+            "extra_groups": [],
+            "env": {**os.environ, "HOME": str(self.home)},
+            "check": True,
+        }
+        return argv, kwargs
 
 
 @pytest.fixture
@@ -78,19 +82,17 @@ def test_first_boot_creates_the_user_and_writes_the_minimal_conf(boot: Boot) -> 
     entry.main()
     useradd = ["useradd", "-o", "-u", "1000", "-g", "1001", "-M", "-d", str(boot.home)]
     assert boot.calls == [
-        (["getent", "group", "amule"], {"stdout": subprocess.DEVNULL}),
         (["groupadd", "-o", "-g", "1001", "amule"], {"check": True}),
-        (["getent", "passwd", "amule"], {"stdout": subprocess.DEVNULL}),
         ([*useradd, "-s", "/usr/sbin/nologin", "amule"], {"check": True}),
-        boot.setpriv(),
+        boot.set_admin_pass(),
     ]
     assert boot.conf.read_text() == reconcile_conf(None, DIGEST)
 
 
 def test_existing_user_and_group_are_not_recreated(boot: Boot) -> None:
-    boot.getent_returncode = 0
+    boot.amule_exists = True
     entry.main()
-    assert [argv[0] for argv, _ in boot.calls] == ["getent", "getent", "setpriv"]
+    assert boot.calls == [boot.set_admin_pass()]
 
 
 def test_mount_points_are_created_and_owned_but_not_their_contents(boot: Boot) -> None:

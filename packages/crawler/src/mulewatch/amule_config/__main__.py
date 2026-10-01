@@ -3,10 +3,13 @@
 Exits naming the first missing variable among PUID, PGID, AMULE_EC_PASSWORD, AMULE_API_PASSWORD.
 """
 
+import grp
 import hashlib
 import os
+import pwd
 import subprocess
 import sys
+from collections.abc import Callable
 
 from mulewatch.amule_config.conf import INCOMING_DIR, TEMP_DIR, reconcile_conf
 
@@ -21,8 +24,12 @@ def _required(name: str) -> str:
     return value
 
 
-def _missing(*getent_args: str) -> bool:
-    return subprocess.run(["getent", *getent_args], stdout=subprocess.DEVNULL).returncode != 0
+def _missing(lookup: Callable[[str], object]) -> bool:
+    try:
+        lookup("amule")
+    except KeyError:
+        return True
+    return False
 
 
 def main() -> None:
@@ -33,9 +40,9 @@ def main() -> None:
 
     # -o tolerates a uid/gid a Debian system account already holds: PUID/PGID only have to match
     # the host's ownership of the bind mounts.
-    if _missing("group", "amule"):
+    if _missing(grp.getgrnam):
         subprocess.run(["groupadd", "-o", "-g", pgid, "amule"], check=True)
-    if _missing("passwd", "amule"):
+    if _missing(pwd.getpwnam):
         useradd = ["useradd", "-o", "-u", puid, "-g", pgid, "-M", "-d", HOME_DIR]
         subprocess.run([*useradd, "-s", "/usr/sbin/nologin", "amule"], check=True)
 
@@ -62,19 +69,12 @@ def main() -> None:
     # A non-loopback BindAddress needs an admin password or amuleapi refuses to start. Run as
     # amule so amuleapi-passwords (0600) lands with the ownership amuled's amuleapi expects.
     subprocess.run(
-        [
-            "setpriv",
-            "--reuid",
-            puid,
-            "--regid",
-            pgid,
-            "--init-groups",
-            "env",
-            f"HOME={HOME_DIR}",
-            "amuleapi",
-            f"--config-dir={CONFIG_DIR}",
-            f"--set-admin-pass={api_password}",
-        ],
+        ["amuleapi", f"--config-dir={CONFIG_DIR}", f"--set-admin-pass={api_password}"],
+        user=int(puid),
+        group=int(pgid),
+        # Empty, not omitted: an omitted list keeps root's supplementary groups, group 0 included.
+        extra_groups=[],
+        env={**os.environ, "HOME": HOME_DIR},
         check=True,
     )
 
