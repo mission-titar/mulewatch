@@ -16,7 +16,11 @@ imported it (the claim was pruned as stale in #82).
 ## What was built
 
 - `amule_config/conf.py`: pure `reconcile_conf(existing, ec_digest)`; `__main__.py`: the I/O
-  (env, users, non-recursive chown, 0600 write, `setpriv ... amuleapi --set-admin-pass`).
+  (env, users, non-recursive chown, 0600 write, `amuleapi --set-admin-pass`).
+- Review changes: `grp`/`pwd` replace `getent`; `subprocess.run(user=, group=, extra_groups=[])`
+  replaces `setpriv --init-groups`. The empty list is what matters: an omitted one keeps root's
+  supplementary groups. A parent-side `seteuid` was rejected: the child keeps real uid 0 (it can
+  `setuid(0)` back), root's groups, and runs with `AT_SECURE=1`.
 - 20 pytest cases replace every check of the old bash test, plus the `main()` paths.
 - Behaviour unchanged. Verified by a real boot of the image: digest written, `[AmuleApi]`
   reconciled, operator key kept on a second boot, amuled/amuleapi/crawler up, missing variable
