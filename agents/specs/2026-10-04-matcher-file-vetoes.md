@@ -4,7 +4,7 @@
 - Status: APPROVED (2026-10-05)
 - Scope: make the matcher judge a file on ALL its names for what it is NOT; kill the false
   targets observed on the real catalog; move the fan-out rule names out of the engine; fix the
-  ignored `status: found` of `targets.yml`
+  open `status` field of `targets.yml`
 - Related: `packages/matching/src/catalog_matching/{config,validation,interpolation,resolver,engine}.py`,
   `deploy/matcher.yml`, `deploy/targets.yml`, `packages/crawler/src/mulewatch/domain/download/policy.py`,
   `packages/crawler/src/mulewatch/application/run_download_cycle.py`, the webui file detail
@@ -40,9 +40,8 @@ mono-segment in `targets.yml`, and Teletoon aired it in two parts. Same for 071B
 "title_confirmed", "title_review"}` and `_EPISODE_LEVEL = {"numero_nu_confirmed", "numero_nu"}`.
 Renaming a rule in `matcher.yml` silently breaks the fan-out, and nothing in the YAML says so.
 
-**`status: found` is ignored.** `targets.yml` marks recovered segments `status: found`, the
-download policy tests `"complete"`, and `parse_targets` accepts any string. Found targets are
-downloaded: `local.db` holds 001A, 001B and 002A.
+**`status` is an open string.** `parse_targets` accepts any value, so a typo in `targets.yml`
+goes unnoticed. (Found targets being downloaded is intended, see §4.)
 
 **Duplicated regex text.** The month/date guard is copied verbatim between `segment_id_loose` and
 `episode_number`; the new episode-marker list (§3) would be a second copy.
@@ -169,11 +168,10 @@ rules:
 
 - `catalog_matching` owns the closed set: `TARGET_STATUSES = frozenset({"lost", "found"})`,
   default `lost`. `parse_targets` rejects any other value (`ConfigError`).
-- `decide_download` skips on `"found"` (the `SKIP_COMPLETE` verdict keeps its name);
-  `_target_status`'s fallback for a vanished target returns `"found"`. The constant is imported,
-  not retyped.
-- Not retroactive: what amuled already holds stays. Decisions are still recorded for found
-  targets: the catalog's subject is the file.
+- Found targets keep being downloaded (operator decision 2026-10-05, confirming the 2026-07-01
+  spec Batch C: a second copy of a recovered episode has archival value). The policy's
+  `"complete"` is the sentinel `_target_status` returns for a target that vanished from
+  `targets.yml`, not a status: it stays as is.
 
 ## 5. Proof
 
