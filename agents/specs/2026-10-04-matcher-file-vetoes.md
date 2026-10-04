@@ -1,7 +1,7 @@
 # File-level vetoes, regex fragments and rule scope in the matcher
 
 - Date: 2026-10-04
-- Status: DRAFT (awaiting operator review)
+- Status: APPROVED (2026-10-05)
 - Scope: make the matcher judge a file on ALL its names for what it is NOT; kill the false
   targets observed on the real catalog; move the fan-out rule names out of the engine; fix the
   ignored `status: found` of `targets.yml`
