@@ -685,3 +685,51 @@ def test_coverage_override_forward_reference_in_composite_validates() -> None:
         }
     )
     assert "combo" in config.tokens
+
+
+# --- fragments: raw regex text substituted into regex tokens at parse time ---
+
+
+def test_fragment_is_expanded_into_regex_tokens_at_parse_time() -> None:
+    config = parse_matcher_config(
+        {
+            "fragments": {"marker": "(?:n°|#)\\s*"},
+            "tokens": {"explicit": {"regex": "{marker}\\d|\\b{marker}x{2,3}"}},
+        }
+    )
+    assert config.tokens["explicit"] == RegexDef(pattern="(?:n°|#)\\s*\\d|\\b(?:n°|#)\\s*x{2,3}")
+
+
+def test_fragment_keeps_its_target_placeholders_for_per_target_interpolation() -> None:
+    config = parse_matcher_config(
+        {"fragments": {"own": "0*{absolute_number}"}, "tokens": {"id": {"regex": "n°{own}"}}}
+    )
+    assert config.tokens["id"] == RegexDef(pattern="n°0*{absolute_number}")
+
+
+@pytest.mark.parametrize(
+    "name", ["season", "seasonal_number", "absolute_number", "segment", "title"]
+)
+def test_fragment_named_like_a_target_placeholder_is_rejected(name: str) -> None:
+    with pytest.raises(ConfigError, match=f"fragment {name!r} collides with a target placeholder"):
+        parse_matcher_config({"fragments": {name: "x"}})
+
+
+def test_fragment_referencing_another_fragment_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="fragment 'outer' references fragment 'inner'"):
+        parse_matcher_config(
+            {
+                "fragments": {"outer": "a{inner}", "inner": "b"},
+                "tokens": {"t": {"regex": "{outer}"}},
+            }
+        )
+
+
+def test_placeholder_that_is_neither_fragment_nor_target_field_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="token 't': invalid interpolation"):
+        parse_matcher_config({"fragments": {"known": "x"}, "tokens": {"t": {"regex": "{unknown}"}}})
+
+
+def test_fragments_section_must_be_a_mapping() -> None:
+    with pytest.raises(ConfigError, match="'fragments' section"):
+        parse_matcher_config({"fragments": ["x"]})
