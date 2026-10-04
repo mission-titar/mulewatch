@@ -6,8 +6,9 @@
 
 # Raw regex text, substituted as {name} into regex tokens at load time.
 fragments:
-  # A number written as an episode number: N°62, #062, ep 62, épisode 62, titar 062, keroro 62.
-  episode_marker: "(?:\\bn[°o]|#|\\bep(?:isode)?\\.?|\\btitar|\\bkeroro)\\s*-?\\s*"
+  # What announces an episode number: N°62, #062, ep 62, épisode 62. Not "titar"/"keroro":
+  # "Titar 2008" or "keroro 1080p" would veto a real VF file for every target.
+  episode_marker: "(?:\\bn[°o]|#|\\bep(?:isode)?\\.?)\\s*-?\\s*"
   # Not a date: no month name and no d/m numeric form right after the number.
   not_a_date: "(?!\\s*(?:janv?(?:ier)?|fevr?(?:ier)?|mars|avr(?:il)?|mai|juin|juil(?:let)?|aout|sep(?:t(?:embre)?)?|oct(?:obre)?|nov(?:embre)?|dec(?:embre)?)\\b)(?!\\s*[/.\\-]\\s*\\d)"
 
@@ -19,8 +20,9 @@ tokens:
   # halfwidth katakana into fullwidth ones.
   foreign_lang:  { regex: "\\b(ITA|KOR|Korean|Italiano|Coreano|VOSTFR|VOSTA|Subs?FR|Espa[nñ]ol|English\\s?Dub|ENG|Japan|JAP|Gunsou?|GB18030|GB2312|GBK|GB|HKG)\\b|dino-riders|guerriero|risveglio|sarxento|sargento|benjo|fatacolorata|catala|signor|josconcillo|sgt\\.?\\s*frog|\\((?:ita|j|jp|k|kr|ks)\\)|BIG5|R3_DVDRIP|XeTe|estrenen|CartoonAnimeITA|¡|tropa|sergeant|espana|[\\u1100-\\u11ff\\u3040-\\u30ff\\u3400-\\u9fff]" }
   not_episode:   { regex: "movie|opening|ending|g[eé]n[eé]rique|\\bsample\\b|preview|trailer|bande.?annonce|\\bcomic\\b|\\bdoujin(?:shi)?\\b|同人誌|onlyfans" }
-  # The name carries an explicit episode number, whichever (NxNN is a resolution or a season).
-  explicit_id:   { regex: "{episode_marker}\\d+(?!\\d)(?!\\s*x\\s*\\d)|\\bs\\d{1,2}\\s*e\\d" }
+  # The name carries an explicit episode number, whichever: 1 to 3 digits (#2008 is not one),
+  # not NxNN (a resolution or a season).
+  explicit_id:   { regex: "{episode_marker}\\d{1,3}(?!\\d)(?!\\s*x\\s*\\d)|\\bs\\d{1,2}\\s*e\\d" }
   # That number is the target's.
   own_id:        { regex: "{episode_marker}0*{absolute_number}(?!\\d)|\\bs0*{season}\\s*e0*{seasonal_number}(?!\\d)" }
   # An explicit episode number that is not the target's.
