@@ -1,11 +1,10 @@
-from catalog_matching.models import FOUND, LOST
 from mulewatch.domain.download.policy import DownloadVerdict, download_policy
 
 
 def _verdict(
     *,
     tier: str = "download",
-    target_status: str = LOST,
+    target_status: str = "lost",
     already_downloaded: bool = False,
     free_bytes: int = 10_000,
     outstanding_bytes: int = 0,
@@ -44,12 +43,13 @@ def test_non_download_tier_is_a_conservative_guard() -> None:
     assert _verdict(tier="notify") is DownloadVerdict.SKIP_COMPLETE
 
 
-def test_found_target_skips() -> None:
-    assert _verdict(target_status=FOUND) is DownloadVerdict.SKIP_COMPLETE
+def test_complete_target_skips() -> None:
+    assert _verdict(target_status="complete") is DownloadVerdict.SKIP_COMPLETE
 
 
-def test_lost_target_downloads() -> None:
-    assert _verdict(target_status=LOST) is DownloadVerdict.DOWNLOAD
+def test_partial_and_poor_targets_still_download() -> None:
+    assert _verdict(target_status="partial") is DownloadVerdict.DOWNLOAD
+    assert _verdict(target_status="poor") is DownloadVerdict.DOWNLOAD
 
 
 def test_already_downloaded_is_deduped() -> None:
@@ -100,6 +100,24 @@ def test_outstanding_bytes_count_against_the_floor() -> None:
     )
 
 
-def test_found_takes_precedence_over_dedup() -> None:
-    # found target: we skip for SKIP_COMPLETE even if already downloaded (status wins the order).
-    assert _verdict(target_status=FOUND, already_downloaded=True) is DownloadVerdict.SKIP_COMPLETE
+def test_complete_takes_precedence_over_dedup() -> None:
+    # complete target: we skip for COMPLETE even if already downloaded (status wins the order).
+    assert (
+        _verdict(target_status="complete", already_downloaded=True) is DownloadVerdict.SKIP_COMPLETE
+    )
+
+
+def test_found_target_still_downloads_a_new_file() -> None:
+    # Product invariant (spec search-simplification, Batch C): an already-"found" episode is
+    # re-downloaded when a NEW file matches it (intended archival redundancy).
+    # Only target_status == "complete" skips; "found" never does in PROD.
+    verdict = download_policy(
+        tier="download",
+        target_status="found",
+        already_downloaded=False,
+        free_bytes=100_000_000_000,
+        outstanding_bytes=0,
+        file_size=100_000_000,
+        min_free_bytes=10_737_418_240,
+    )
+    assert verdict is DownloadVerdict.DOWNLOAD
