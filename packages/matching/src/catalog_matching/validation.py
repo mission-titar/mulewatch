@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from catalog_matching.config import (
+    SCOPES,
     TIERS,
     AllDef,
     AnyDef,
@@ -192,12 +193,17 @@ def _parse_rule(raw: Any) -> Rule:
     tier = mapping.get("tier")
     if tier not in TIERS:
         raise ConfigError(f"unknown tier for rule {name!r}: {tier!r} (expected {sorted(TIERS)})")
+    if "scope" not in mapping:
+        raise ConfigError(f"rule {name!r} without 'scope' (expected one of {sorted(SCOPES)})")
+    scope = mapping["scope"]
+    if scope not in SCOPES:
+        raise ConfigError(f"unknown scope for rule {name!r}: {scope!r} (expected {sorted(SCOPES)})")
     present = [key for key in _CONDITION_KEYS if key in mapping]
     if not present:
         raise ConfigError(f"rule {name!r} without a condition (all/any/not)")
     if len(present) != 1:
         raise ConfigError(f"rule {name!r}: exactly one condition expected, got {present!r}")
-    return Rule(name=name, tier=str(tier), condition=_parse_condition(mapping))
+    return Rule(name=name, tier=str(tier), scope=str(scope), condition=_parse_condition(mapping))
 
 
 def parse_matcher_config(raw: dict[str, Any]) -> MatcherConfig:

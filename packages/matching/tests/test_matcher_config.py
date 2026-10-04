@@ -3,6 +3,7 @@ import dataclasses
 import pytest
 
 from catalog_matching.config import (
+    SCOPES,
     AllDef,
     AnyDef,
     AttrBetweenDef,
@@ -56,17 +57,30 @@ def test_token_ref_overrides_default_to_none() -> None:
     assert TokenRef(name="title_hit", min=0.4).min == 0.4
 
 
-def test_rule_holds_name_tier_condition() -> None:
-    rule = Rule(name="keroro_large", tier="catalog", condition=AnyDef(operands=("keroro_titar",)))
+def test_rule_holds_name_tier_scope_condition() -> None:
+    rule = Rule(
+        name="keroro_large",
+        tier="catalog",
+        scope="unattributed",
+        condition=AnyDef(operands=("keroro_titar",)),
+    )
     assert rule.name == "keroro_large"
     assert rule.tier == "catalog"
+    assert rule.scope == "unattributed"
     assert isinstance(rule.condition, AnyDef)
 
 
 def test_matcher_config_holds_tokens_and_rules() -> None:
     config = MatcherConfig(
         tokens={"keroro": KeywordDef(phrase="keroro")},
-        rules=(Rule(name="r", tier="catalog", condition=AnyDef(operands=("keroro",))),),
+        rules=(
+            Rule(
+                name="r",
+                tier="catalog",
+                scope="unattributed",
+                condition=AnyDef(operands=("keroro",)),
+            ),
+        ),
     )
     assert config.tokens["keroro"] == KeywordDef(phrase="keroro")
     assert len(config.rules) == 1
@@ -81,3 +95,7 @@ def test_matcher_config_is_frozen() -> None:
     config = MatcherConfig()
     with pytest.raises(dataclasses.FrozenInstanceError):
         config.rules = ()  # type: ignore[misc]
+
+
+def test_scopes_is_the_closed_segment_episode_unattributed_set() -> None:
+    assert frozenset({"segment", "episode", "unattributed"}) == SCOPES

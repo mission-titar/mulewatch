@@ -74,6 +74,7 @@ def test_parse_rule_with_inline_token_ref_and_condition() -> None:
                 {
                     "name": "numero_titre",
                     "tier": "notify",
+                    "scope": "unattributed",
                     "all": ["seg", {"token": "title_hit", "min": 0.5}],
                 }
             ],
@@ -89,7 +90,14 @@ def test_parse_rule_with_nested_inline_condition() -> None:
     config = parse_matcher_config(
         {
             "tokens": {"keroro": {"keyword": "keroro"}, "titar": {"keyword": "titar"}},
-            "rules": [{"name": "r", "tier": "catalog", "not": {"any": ["keroro", "titar"]}}],
+            "rules": [
+                {
+                    "name": "r",
+                    "tier": "catalog",
+                    "scope": "unattributed",
+                    "not": {"any": ["keroro", "titar"]},
+                }
+            ],
         }
     )
     assert config.rules[0].condition == NotDef(operand=AnyDef(operands=("keroro", "titar")))
@@ -100,7 +108,40 @@ def test_unknown_tier_raises_and_names_it() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "bogus", "any": ["keroro"]}],
+                "rules": [
+                    {"name": "r", "tier": "bogus", "scope": "unattributed", "any": ["keroro"]}
+                ],
+            }
+        )
+
+
+def test_parse_rule_reads_its_scope() -> None:
+    config = parse_matcher_config(
+        {
+            "tokens": {"keroro": {"keyword": "keroro"}},
+            "rules": [{"name": "r", "tier": "notify", "scope": "episode", "any": ["keroro"]}],
+        }
+    )
+    assert config.rules[0].scope == "episode"
+
+
+def test_rule_without_scope_raises_and_names_the_rule() -> None:
+    # A matcher.yml from before scopes must fail at boot, not silently lose its fan-out.
+    with pytest.raises(ConfigError, match="rule 'numero_nu' without 'scope'"):
+        parse_matcher_config(
+            {
+                "tokens": {"keroro": {"keyword": "keroro"}},
+                "rules": [{"name": "numero_nu", "tier": "notify", "any": ["keroro"]}],
+            }
+        )
+
+
+def test_unknown_scope_raises_and_names_it() -> None:
+    with pytest.raises(ConfigError, match="unknown scope for rule 'r': 'target'"):
+        parse_matcher_config(
+            {
+                "tokens": {"keroro": {"keyword": "keroro"}},
+                "rules": [{"name": "r", "tier": "notify", "scope": "target", "any": ["keroro"]}],
             }
         )
 
@@ -125,7 +166,14 @@ def test_override_on_non_coverage_token_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"kw": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "catalog", "all": [{"token": "kw", "min": 0.5}]}],
+                "rules": [
+                    {
+                        "name": "r",
+                        "tier": "catalog",
+                        "scope": "unattributed",
+                        "all": [{"token": "kw", "min": 0.5}],
+                    }
+                ],
             }
         )
 
@@ -135,7 +183,7 @@ def test_rule_without_condition_key_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "catalog"}],
+                "rules": [{"name": "r", "tier": "catalog", "scope": "unattributed"}],
             }
         )
 
@@ -145,7 +193,15 @@ def test_rule_with_two_condition_keys_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "catalog", "all": ["keroro"], "any": ["keroro"]}],
+                "rules": [
+                    {
+                        "name": "r",
+                        "tier": "catalog",
+                        "scope": "unattributed",
+                        "all": ["keroro"],
+                        "any": ["keroro"],
+                    }
+                ],
             }
         )
 
@@ -155,13 +211,17 @@ def test_rule_with_empty_all_is_rejected() -> None:
     # would unconditionally match EVERY file (here in tier=download → auto-download).
     # EBNF §8.3 requires >=1 operand; fail-fast must reject it at load time.
     with pytest.raises(ConfigError, match="at least one operand"):
-        parse_matcher_config({"rules": [{"name": "pwn", "tier": "download", "all": []}]})
+        parse_matcher_config(
+            {"rules": [{"name": "pwn", "tier": "download", "scope": "unattributed", "all": []}]}
+        )
 
 
 def test_rule_with_empty_any_is_rejected() -> None:
     # Same fail-fast gap for 'any: []' (EBNF §8.3: >=1 operand), degenerate config.
     with pytest.raises(ConfigError, match="at least one operand"):
-        parse_matcher_config({"rules": [{"name": "pwn", "tier": "download", "any": []}]})
+        parse_matcher_config(
+            {"rules": [{"name": "pwn", "tier": "download", "scope": "unattributed", "any": []}]}
+        )
 
 
 def test_coverage_min_out_of_unit_range_is_rejected() -> None:
@@ -186,7 +246,14 @@ def test_coverage_override_min_out_of_unit_range_is_rejected() -> None:
         parse_matcher_config(
             {
                 "tokens": {"cov": {"coverage": "title", "min": 0.5}},
-                "rules": [{"name": "r", "tier": "catalog", "all": [{"token": "cov", "min": 5.0}]}],
+                "rules": [
+                    {
+                        "name": "r",
+                        "tier": "catalog",
+                        "scope": "unattributed",
+                        "all": [{"token": "cov", "min": 5.0}],
+                    }
+                ],
             }
         )
 
@@ -206,7 +273,9 @@ def test_token_ref_missing_name_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "catalog", "all": [{"min": 0.5}]}],
+                "rules": [
+                    {"name": "r", "tier": "catalog", "scope": "unattributed", "all": [{"min": 0.5}]}
+                ],
             }
         )
 
@@ -216,7 +285,7 @@ def test_operand_wrong_type_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "catalog", "all": [123]}],
+                "rules": [{"name": "r", "tier": "catalog", "scope": "unattributed", "all": [123]}],
             }
         )
 
@@ -424,7 +493,9 @@ def test_all_body_non_list_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "catalog", "all": "keroro"}],
+                "rules": [
+                    {"name": "r", "tier": "catalog", "scope": "unattributed", "all": "keroro"}
+                ],
             }
         )
 
@@ -441,7 +512,7 @@ def test_rule_without_name_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"tier": "catalog", "any": ["keroro"]}],
+                "rules": [{"tier": "catalog", "scope": "unattributed", "any": ["keroro"]}],
             }
         )
 
@@ -457,7 +528,14 @@ def test_token_ref_with_coverage_token_no_override_ok() -> None:
     config = parse_matcher_config(
         {
             "tokens": {"title_hit": {"coverage": "title", "min": 0.6}},
-            "rules": [{"name": "r", "tier": "catalog", "all": [{"token": "title_hit"}]}],
+            "rules": [
+                {
+                    "name": "r",
+                    "tier": "catalog",
+                    "scope": "unattributed",
+                    "all": [{"token": "title_hit"}],
+                }
+            ],
         }
     )
     assert config.rules[0].name == "r"
@@ -481,7 +559,14 @@ def test_unknown_token_in_rule_raises() -> None:
         parse_matcher_config(
             {
                 "tokens": {"keroro": {"keyword": "keroro"}},
-                "rules": [{"name": "r", "tier": "catalog", "all": ["keroro", "ghost"]}],
+                "rules": [
+                    {
+                        "name": "r",
+                        "tier": "catalog",
+                        "scope": "unattributed",
+                        "all": ["keroro", "ghost"],
+                    }
+                ],
             }
         )
 
@@ -507,7 +592,7 @@ def test_acyclic_composite_graph_validates() -> None:
                 "kt": {"any": ["keroro", "titar"]},
                 "deep": {"all": ["kt", "keroro"]},
             },
-            "rules": [{"name": "r", "tier": "catalog", "any": ["deep"]}],
+            "rules": [{"name": "r", "tier": "catalog", "scope": "unattributed", "any": ["deep"]}],
         }
     )
     assert "deep" in config.tokens
