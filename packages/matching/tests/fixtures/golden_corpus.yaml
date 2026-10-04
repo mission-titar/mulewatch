@@ -412,20 +412,21 @@ cases:
       - "Dino_Riders_10_Titar_Pierde_Los_EstribosDvdripCast_EuskZeratulTusdivx.avi"
     discarded: true
 
-  # Marker forms: the explicit number is the target's own, so episode 62 is not vetoed.
-  - id: marker_titar_62_keeps_62
+  # The series name is not an episode marker: "titar 62" is a bare number, vetoes nothing and
+  # still matches through numero_nu. "#062" is explicit and is the target's own number.
+  - id: series_name_titar_62_is_a_bare_number
     filename: "keroro mission titar 62.avi"
     decisions:
       - { target_id: 062A, tier: notify, rule_name: numero_nu }
       - { target_id: 062B, tier: notify, rule_name: numero_nu }
 
-  - id: marker_titar_062_keeps_62
+  - id: series_name_titar_062_is_a_bare_number
     filename: "keroro mission titar 062.avi"
     decisions:
       - { target_id: 062A, tier: notify, rule_name: numero_nu }
       - { target_id: 062B, tier: notify, rule_name: numero_nu }
 
-  - id: marker_titar_hash_062_keeps_62
+  - id: marker_hash_062_keeps_62
     filename: "keroro mission titar #062.avi"
     decisions:
       - { target_id: 062A, tier: notify, rule_name: numero_nu }
