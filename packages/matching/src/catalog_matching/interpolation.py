@@ -6,7 +6,11 @@ from catalog_matching.models import TargetSegment
 
 # Detects ONLY identifier placeholders ``{name}``; a regex quantifier like
 # ``{2,4}`` or ``{3}`` is not an identifier and is left untouched.
-_PLACEHOLDER = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+PLACEHOLDER = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+# Placeholders filled per target by ``interpolate``; fragments may not shadow them.
+TARGET_PLACEHOLDERS: frozenset[str] = frozenset(
+    {"season", "seasonal_number", "absolute_number", "segment", "title"}
+)
 
 
 class InterpolationError(Exception):
@@ -35,4 +39,4 @@ def interpolate(pattern: str, target: TargetSegment) -> str:
             return str(re.escape(target.title))
         raise InterpolationError(f"unknown placeholder: {{{name}}}")
 
-    return _PLACEHOLDER.sub(replace, pattern)
+    return PLACEHOLDER.sub(replace, pattern)
