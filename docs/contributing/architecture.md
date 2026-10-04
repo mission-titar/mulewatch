@@ -276,16 +276,27 @@ flowchart LR
   segment, couverture du titre) face aux *marqueurs de source* (agnostiques : `teletoon`, `idf1`,
   `vf`). Un marqueur seul n'identifie aucun épisode, donc il ne fait que **rehausser** une
   identification faible (`notify -> download`), il n'en porte jamais une à lui seul.
-- **Gardes universelles** : `is_keroro` (franchise **et** pas étranger) préfixe chaque règle ;
-  `is_episode` (= `is_keroro` **et** pas un clip) préfixe chaque règle *actionnable*. L'anti-match
-  `foreign_lang` vit **à l'intérieur** d'`is_keroro`, donc un fichier étranger est **écarté**, pas
-  catalogué.
+- **Vetos : ce que le fichier n'est pas.** La section `vetoes:` liste des tokens jugés sur **tous**
+  les noms connus d'un fichier : un seul nom qui déclenche un veto exclut la cible pour tout le
+  fichier, à tous les tiers. `foreign_lang` (version étrangère, écritures chinoise, japonaise ou
+  coréenne) et `not_episode` (film, générique, extrait) excluent toutes les cibles ; `other_episode`
+  (un numéro d'épisode explicite, comme `N°065A`, `#065`, `titar 65` ou `S02E14`, qui n'est pas celui
+  de la cible) n'exclut que les autres épisodes. Les règles restent positives : elles disent ce que
+  le fichier **est**.
+- **Fragments** : `fragments:` nomme des morceaux de regex bruts (le repère d'un numéro d'épisode,
+  la garde contre les dates), substitués en `{nom}` dans les tokens `regex` au chargement. Un fragment
+  ne peut ni porter le nom d'un champ de cible (`absolute_number`, `title`…) ni en citer un autre.
+- **Portée des règles** : chaque règle déclare un `scope` obligatoire. `segment` désigne un segment
+  (un titre, un numéro lettré), `episode` désigne l'épisode entier (un numéro nu, donc chacun de ses
+  segments), `unattributed` ne désigne rien. Un `matcher.yml` sans `scope` est refusé au démarrage.
 - **Séparation des formats en trois** : la vidéo obtient les tiers actionnables ; une archive obtient
   `notify` (pour revue) ; tout le reste (mp3, pdf et compagnie) n'obtient que le tier catalogue
   permissif (l'invariant « cataloguer chaque métadonnée »).
-- **Décision déterministe** : parmi toutes les règles qui matchent (toutes cibles confondues), prendre
-  le **tier le plus haut** (`download > notify > catalog`), départagé par l'index de règle puis le
-  `target_id`. L'explication est *retournée* (pour la webui), jamais loggée.
+- **Décision déterministe** : par cible, la meilleure règle sur tous les noms (le **tier le plus
+  haut**, `download > notify > catalog`, puis l'index de règle). Les règles `segment` et `episode`
+  donnent une décision par segment désigné ; sans elles, une seule décision `unattributed` (même
+  ordre, puis le plus petit `target_id`). L'explication est *retournée* (pour la webui), jamais
+  loggée.
 
 ## 7. Du téléchargement à la complétion
 
