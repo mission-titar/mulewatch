@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 LOST = "lost"
 FOUND = "found"
-# Closed set of target statuses: a found target is never downloaded again.
+# Closed set of target statuses (a found target is still downloaded: archival redundancy).
 TARGET_STATUSES: frozenset[str] = frozenset({LOST, FOUND})
 
 
