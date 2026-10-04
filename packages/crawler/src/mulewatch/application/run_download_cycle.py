@@ -26,7 +26,7 @@ from typing import Protocol
 
 from catalog_matching.ed2k_link import build_ed2k_link
 from catalog_matching.engine import DownloadCandidate
-from catalog_matching.models import TargetSegment
+from catalog_matching.models import FOUND, TargetSegment
 from mulewatch.application.edge_state import EdgeState
 from mulewatch.domain.download.policy import DownloadVerdict, download_policy
 from mulewatch.domain.download.states import DownloadState
@@ -128,12 +128,12 @@ class DownloadLoopDeps(DownloadDeps):
 
 
 def _target_status(targets: Sequence[TargetSegment], target_id: str) -> str:
-    """Target status (lookup ``target_id → status``); ``complete`` by default if the target
+    """Target status (lookup ``target_id → status``); ``found`` by default if the target
     has vanished from the config (conservative: do not download for an unknown target)."""
     for target in targets:
         if target.target_id == target_id:
             return target.status
-    return "complete"
+    return FOUND
 
 
 async def _monitor(
