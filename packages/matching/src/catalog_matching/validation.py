@@ -242,7 +242,11 @@ def parse_matcher_config(raw: dict[str, Any]) -> MatcherConfig:
     if not isinstance(rules_raw, list):
         raise ConfigError(f"'rules' section: list expected, got {type(rules_raw).__name__}")
     rules = tuple(_parse_rule(rule_raw) for rule_raw in rules_raw)
-    config = MatcherConfig(tokens=tokens, rules=rules)
+    vetoes_raw = raw.get("vetoes", [])
+    if not isinstance(vetoes_raw, list):
+        raise ConfigError(f"'vetoes' section: list expected, got {type(vetoes_raw).__name__}")
+    vetoes = tuple(str(name) for name in vetoes_raw)
+    config = MatcherConfig(tokens=tokens, rules=rules, vetoes=vetoes)
     validate_config(config)
     return config
 
@@ -346,6 +350,17 @@ def _check_references_exist(config: MatcherConfig) -> None:
                 )
 
 
+def _check_vetoes(config: MatcherConfig) -> None:
+    """Every veto names a known token, at most once."""
+    seen: set[str] = set()
+    for name in config.vetoes:
+        if name not in config.tokens:
+            raise UnknownTokenError(f"veto references an unknown token: {name!r}")
+        if name in seen:
+            raise ConfigError(f"duplicate veto: {name!r}")
+        seen.add(name)
+
+
 def _check_acyclic(config: MatcherConfig, max_depth: int) -> None:
     """Detects a cycle in the token->token graph and NAMES it (cf. spec §8.4).
 
@@ -419,6 +434,7 @@ def validate_config(config: MatcherConfig, *, max_depth: int = _DEFAULT_MAX_DEPT
     or :class:`ConfigError` (regex/interpolation). To be called after schema parsing.
     """
     _check_references_exist(config)
+    _check_vetoes(config)
     _check_overrides_target_coverage(config)
     _check_acyclic(config, max_depth)
     depth = _max_resolution_depth(config)

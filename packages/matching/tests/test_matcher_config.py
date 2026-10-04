@@ -99,3 +99,7 @@ def test_matcher_config_is_frozen() -> None:
 
 def test_scopes_is_the_closed_segment_episode_unattributed_set() -> None:
     assert frozenset({"segment", "episode", "unattributed"}) == SCOPES
+
+
+def test_matcher_config_has_no_vetoes_by_default() -> None:
+    assert MatcherConfig().vetoes == ()

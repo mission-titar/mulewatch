@@ -733,3 +733,32 @@ def test_placeholder_that_is_neither_fragment_nor_target_field_is_rejected() -> 
 def test_fragments_section_must_be_a_mapping() -> None:
     with pytest.raises(ConfigError, match="'fragments' section"):
         parse_matcher_config({"fragments": ["x"]})
+
+
+# --- vetoes: token names judged on every name of the file ---
+
+
+def test_parse_vetoes_keeps_their_order() -> None:
+    config = parse_matcher_config(
+        {"tokens": {"a": {"keyword": "a"}, "b": {"keyword": "b"}}, "vetoes": ["b", "a"]}
+    )
+    assert config.vetoes == ("b", "a")
+
+
+def test_vetoes_are_optional() -> None:
+    assert parse_matcher_config({"tokens": {"a": {"keyword": "a"}}}).vetoes == ()
+
+
+def test_veto_naming_an_unknown_token_is_rejected() -> None:
+    with pytest.raises(UnknownTokenError, match="veto references an unknown token: 'ghost'"):
+        parse_matcher_config({"tokens": {"a": {"keyword": "a"}}, "vetoes": ["ghost"]})
+
+
+def test_duplicate_veto_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="duplicate veto: 'a'"):
+        parse_matcher_config({"tokens": {"a": {"keyword": "a"}}, "vetoes": ["a", "a"]})
+
+
+def test_vetoes_section_must_be_a_list() -> None:
+    with pytest.raises(ConfigError, match="'vetoes' section: list expected"):
+        parse_matcher_config({"tokens": {"a": {"keyword": "a"}}, "vetoes": "a"})
