@@ -506,3 +506,50 @@ def test_segment_scope_emits_every_pinned_segment() -> None:
 
 def test_unattributed_scope_yields_a_single_winner() -> None:
     assert _scope_triples("keroro.avi") == [("062A", "catalog", "fallback")]
+
+
+# --- Vetoes: one name is enough to exclude a target for the whole file ---
+_VETO_RAW: dict[str, object] = {
+    "tokens": {
+        "keroro": {"keyword": "keroro"},
+        "foreign": {"regex": r"\bITA\b"},
+        "marked": {"regex": r"n°\d"},
+        "mine": {"regex": r"n°0*{absolute_number}(?!\d)"},
+        "other": {"all": ["marked", {"not": "mine"}]},
+    },
+    "vetoes": ["foreign", "other"],
+    # Episode scope fans out to every surviving target, which makes the vetoes visible.
+    "rules": [{"name": "any", "tier": "catalog", "scope": "episode", "any": ["keroro"]}],
+}
+
+
+def _veto_targets(*names: str, max_filename_length: int = 4096) -> list[str]:
+    engine = MatchingEngine(
+        parse_matcher_config(_VETO_RAW),
+        (_TARGET_62A, _TARGET_62B, _TARGET_94A),
+        max_filename_length=max_filename_length,
+    )
+    decisions = engine.evaluate_all([FileCandidate(filename=name) for name in names])
+    return [d.target_id for d in decisions]
+
+
+def test_no_veto_keeps_every_target() -> None:
+    assert _veto_targets("keroro.avi") == ["062A", "062B", "094A"]
+
+
+def test_a_veto_on_one_name_is_not_defeated_by_a_clean_alias() -> None:
+    assert _veto_targets("keroro ITA.avi", "keroro.avi") == []
+    assert _veto_targets("keroro.avi", "keroro ITA.avi") == []
+
+
+def test_a_per_target_veto_excludes_only_the_other_targets() -> None:
+    assert _veto_targets("keroro n°094.avi") == ["094A"]
+    assert _veto_targets("keroro.avi", "keroro n°062.avi") == ["062A", "062B"]
+
+
+def test_an_over_long_name_cannot_veto() -> None:
+    assert _veto_targets("keroro.avi", "keroro ITA" + "x" * 30, max_filename_length=20) == [
+        "062A",
+        "062B",
+        "094A",
+    ]

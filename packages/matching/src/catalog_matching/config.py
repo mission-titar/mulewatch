@@ -126,7 +126,8 @@ class Rule:
 
 @dataclass(frozen=True)
 class MatcherConfig:
-    """Validated matcher config: table of named tokens + ordered rules."""
+    """Validated matcher config: named tokens, file-level vetoes (token names), ordered rules."""
 
     tokens: Mapping[str, TokenDef] = field(default_factory=dict)
     rules: tuple[Rule, ...] = ()
+    vetoes: tuple[str, ...] = ()

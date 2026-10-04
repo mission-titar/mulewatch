@@ -194,17 +194,19 @@ class MatchingEngine:
     def evaluate_all(self, candidates: Iterable[FileCandidate]) -> list[MatchDecision]:
         """All decisions for ONE file known under every name in ``candidates``; ``[]`` = discard.
 
-        Per target, the best rule over all names (min-key below, over-long names skipped).
+        A target is skipped when any veto matches any name (over-long names skipped). Per
+        surviving target, the best rule over all names (min-key below).
         Matches of a ``segment`` or ``episode`` scoped rule fan out per episode: a
         segment-scoped match on any segment of an episode emits only those segments,
         otherwise the episode-scoped matches emit every segment (spec §3). With none, the
         single-winner min-key over ALL matches yields one ``unattributed`` decision, or ``[]``.
         """
+        names = [c for c in candidates if len(c.filename) <= self._max_filename_length]
         best: dict[str, _Match] = {}
-        for candidate in candidates:
-            if len(candidate.filename) > self._max_filename_length:
+        for resolved in self._resolved:
+            if self._vetoed(resolved, names):
                 continue
-            for resolved in self._resolved:
+            for candidate in names:
                 outcome = _first_matching_rule(self._config, resolved, candidate)
                 if outcome is None:
                     continue
@@ -221,6 +223,12 @@ class MatchingEngine:
         if attributable:
             return attributable
         return self._single_winner(matches)
+
+    def _vetoed(self, resolved: ResolvedTarget, names: Sequence[FileCandidate]) -> bool:
+        """True when any veto matches any name: the target is out for the whole file."""
+        return any(
+            resolved.tokens[veto].matches(name) for veto in self._config.vetoes for name in names
+        )
 
     def _fan_out(self, matches: list[_Match]) -> list[MatchDecision]:
         """Selects the emitted segments from the segment/episode scoped matches (spec §3/§4)."""
