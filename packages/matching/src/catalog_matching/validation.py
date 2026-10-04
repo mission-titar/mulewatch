@@ -26,7 +26,12 @@ from catalog_matching.config import (
     TokenDef,
     TokenRef,
 )
-from catalog_matching.interpolation import InterpolationError, interpolate
+from catalog_matching.interpolation import (
+    PLACEHOLDER,
+    TARGET_PLACEHOLDERS,
+    InterpolationError,
+    interpolate,
+)
 from catalog_matching.matchers import ATTR_NAMES
 from catalog_matching.models import LOST, TARGET_STATUSES, TargetSegment
 
@@ -139,7 +144,26 @@ def _require_float(mapping: dict[str, Any], key: str) -> float | None:
     return None if value is None else float(value)
 
 
-def _parse_token_def(raw: Any) -> TokenDef:
+def _parse_fragments(raw: Any) -> dict[str, str]:
+    """``fragments:`` name -> raw regex text; one level only (no fragment in a fragment)."""
+    fragments = {
+        str(name): str(text) for name, text in _require_mapping(raw, "'fragments' section").items()
+    }
+    for name, text in fragments.items():
+        if name in TARGET_PLACEHOLDERS:
+            raise ConfigError(f"fragment {name!r} collides with a target placeholder")
+        for ref in PLACEHOLDER.findall(text):
+            if ref in fragments:
+                raise ConfigError(f"fragment {name!r} references fragment {ref!r}")
+    return fragments
+
+
+def _expand_fragments(pattern: str, fragments: dict[str, str]) -> str:
+    """Substitutes ``{fragment}``; target placeholders are left for per-target interpolation."""
+    return PLACEHOLDER.sub(lambda m: fragments.get(m.group(1), m.group(0)), pattern)
+
+
+def _parse_token_def(raw: Any, fragments: dict[str, str]) -> TokenDef:
     """Dispatch of a token def: composite (all/any/not) or leaf (4 types).
 
     Reads ALL the def's ancillary keys (``flags`` of regex, ``min``/``fuzz`` of coverage,
@@ -155,7 +179,8 @@ def _parse_token_def(raw: Any) -> TokenDef:
         return KeywordDef(phrase=str(mapping["keyword"]))
     if "regex" in mapping:
         flags = mapping.get("flags", "i")
-        return RegexDef(pattern=str(mapping["regex"]), flags=str(flags))
+        pattern = _expand_fragments(str(mapping["regex"]), fragments)
+        return RegexDef(pattern=pattern, flags=str(flags))
     if "coverage" in mapping:
         min_value = _require_float(mapping, "min")
         if min_value is None:
@@ -208,10 +233,11 @@ def _parse_rule(raw: Any) -> Rule:
 
 def parse_matcher_config(raw: dict[str, Any]) -> MatcherConfig:
     """Builds a validated (schema) :class:`MatcherConfig` from a parsed YAML dict."""
+    fragments = _parse_fragments(raw.get("fragments", {}))
     tokens_raw = _require_mapping(raw.get("tokens", {}), "'tokens' section")
     tokens: dict[str, TokenDef] = {}
     for token_name, token_raw in tokens_raw.items():
-        tokens[str(token_name)] = _parse_token_def(token_raw)
+        tokens[str(token_name)] = _parse_token_def(token_raw, fragments)
     rules_raw = raw.get("rules", [])
     if not isinstance(rules_raw, list):
         raise ConfigError(f"'rules' section: list expected, got {type(rules_raw).__name__}")
