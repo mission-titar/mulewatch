@@ -91,7 +91,7 @@ _TARGET_62A = TargetSegment(
     absolute_number=62,
     segment="a",
     title="Les demoiselles cambrioleuses",
-    status="partial",
+    status="found",
 )
 
 # Minimal config with two rules of distinct index to exercise "1st true" and "loop".

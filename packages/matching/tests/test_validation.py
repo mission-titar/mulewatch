@@ -10,6 +10,7 @@ from catalog_matching.config import (
     RegexDef,
     TokenRef,
 )
+from catalog_matching.models import FOUND, TARGET_STATUSES
 from catalog_matching.validation import (
     ConfigError,
     CycleError,
@@ -290,6 +291,28 @@ def test_parse_targets_default_status_is_lost() -> None:
         }
     )
     assert targets[0].status == "lost"
+
+
+def test_target_statuses_is_the_closed_lost_found_set() -> None:
+    assert frozenset({"lost", "found"}) == TARGET_STATUSES
+    assert FOUND in TARGET_STATUSES
+
+
+@pytest.mark.parametrize("status", ["complete", "partial", ""])
+def test_parse_targets_rejects_a_status_outside_the_closed_set(status: str) -> None:
+    with pytest.raises(ConfigError, match=f"status {status!r}"):
+        parse_targets(
+            {
+                "episodes": [
+                    {
+                        "season": 1,
+                        "seasonal_number": 5,
+                        "absolute_number": 5,
+                        "segments": [{"letter": "a", "title": "x", "status": status}],
+                    }
+                ]
+            }
+        )
 
 
 def test_parse_targets_episode_without_segments() -> None:
