@@ -587,12 +587,14 @@ def build_app(
         explanation_target_id: str | None = None
         explanation_rules_fired: tuple[str, ...] = ()
         explanation_tokens_matched: tuple[str, ...] = ()
+        explanation_vetoes_fired: tuple[str, ...] = ()
         explanation_notes: tuple[str, ...] = ()
 
         first_decision = detail.decisions[0] if detail.decisions else None
         if first_decision is not None and last_obs is not None:
+            # Every distinct name with the latest fields, as the crawler judged the file.
             explanation = explainer.explain(
-                filename=last_obs.filename,
+                filenames=sorted({obs.filename for obs in detail.observations}),
                 size_bytes=last_obs.size_bytes,
                 media_length_sec=last_obs.media_length_sec,
                 bitrate_kbps=last_obs.bitrate_kbps,
@@ -602,6 +604,7 @@ def build_app(
                 explanation_target_id = explanation.target_id
                 explanation_rules_fired = explanation.rules_fired
                 explanation_tokens_matched = explanation.tokens_matched
+                explanation_vetoes_fired = explanation.vetoes_fired
                 explanation_notes = ("Evaluated against the current configuration",)
 
         display = FileDetailDisplay(
@@ -614,6 +617,7 @@ def build_app(
             explanation_target_id=explanation_target_id,
             explanation_rules_fired=explanation_rules_fired,
             explanation_tokens_matched=explanation_tokens_matched,
+            explanation_vetoes_fired=explanation_vetoes_fired,
             explanation_notes=explanation_notes,
         )
 

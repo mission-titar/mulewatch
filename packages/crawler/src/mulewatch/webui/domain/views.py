@@ -356,4 +356,5 @@ class FileDetailDisplay:
     explanation_target_id: str | None
     explanation_rules_fired: tuple[str, ...]
     explanation_tokens_matched: tuple[str, ...]
+    explanation_vetoes_fired: tuple[str, ...]
     explanation_notes: tuple[str, ...]  # 0 or 1 element: the text note itself
