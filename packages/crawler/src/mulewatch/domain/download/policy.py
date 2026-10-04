@@ -8,15 +8,13 @@ domain never imports a port).
 
 Guard order (spec §6): a non-``download`` is a conservative guard (DECISION D5:
 never download — the application should not call the policy outside download, but we do
-not crash); a ``found`` target no longer needs the file; an already-downloaded hash
+not crash); a ``complete`` target no longer needs the file; an already-downloaded hash
 is deduplicated; a candidate that would push the filesystem below its free-space floor is
 DEFERRED (the decision stays in the journal, retried when space frees up, spec §7);
 otherwise we download.
 """
 
 from enum import StrEnum
-
-from catalog_matching.models import FOUND
 
 
 class DownloadVerdict(StrEnum):
@@ -50,7 +48,7 @@ def download_policy(
     """
     if tier != "download":
         return DownloadVerdict.SKIP_COMPLETE  # conservative guard (DECISION D5)
-    if target_status == FOUND:
+    if target_status == "complete":
         return DownloadVerdict.SKIP_COMPLETE
     if already_downloaded:
         return DownloadVerdict.SKIP_DEDUP

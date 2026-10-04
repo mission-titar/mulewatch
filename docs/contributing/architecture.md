@@ -331,10 +331,10 @@ Invariants porteurs (à ne pas violer) :
 - **Rien n'inspecte le fichier.** Il n'y a pas de sniffing de type, pas d'`ffprobe`, pas d'analyse
   antivirus : depuis la réduction de périmètre du 2026-09-13, juger si un téléchargement terminé est
   réellement l'épisode est une étape manuelle effectuée par l'opérateur sur le répertoire de sortie.
-- `download_policy` est conservatrice : on saute si `tier != download`, si la cible est `found`
-  (déjà retrouvée, ou disparue de `targets.yml`), si le hash a déjà été téléchargé (dédup), ou si
-  admettre le fichier casserait le plancher disque. La décision reste enregistrée pour une cible
-  `found` : seul le téléchargement est sauté. `targets.yml` n'accepte que `lost` et `found`.
+- `download_policy` est conservatrice : on saute si `tier != download`, si la cible est `complete`,
+  si le hash a déjà été téléchargé (dédup), ou si admettre le fichier casserait le plancher disque.
+  Un épisode déjà `found` **est retéléchargé** quand un *nouveau* hash lui correspond (redondance
+  d'archivage délibérée).
 - Le plancher disque (`download.min_free_bytes`) est **mesuré, pas comptabilisé** (2026-09-13) : un
   candidat n'est admis que quand `free - outstanding - size >= min_free`, où `free` est un seul appel
   `shutil.disk_usage` sur `download.output_dir` et `outstanding` ce qu'il reste à transférer à la
