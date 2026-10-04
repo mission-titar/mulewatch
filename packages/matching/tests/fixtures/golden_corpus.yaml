@@ -2,6 +2,7 @@
 # EXTENSIBLE PAR LA COMMUNAUTÉ : ajouter un cas = ajouter une entrée ci-dessous.
 # Un cas : { id, filename, tier, target_id, rule_name } ou { id, filename, discarded: true }
 # ou { id, filename, decisions: [{ target_id, tier, rule_name }, ...] } (fan-out multi-cible).
+# `filenames: [...]` replaces `filename` for one file known under several names (same hash).
 cases:
   - id: real_62A_full_release
     filename: "[TV] KERORO MISSION TITAR N°062A « Les demoiselles cambrioleuses » [Dimanche 21 septembre 2008 à 16H50 sur TELETOON].avi"
@@ -44,12 +45,12 @@ cases:
     discarded: true
 
   - id: decoy_italian_keroro
-    # Contient "ITA" -> foreign_lang matche -> french_safe bloque toutes les règles.
+    # Contains "ITA" -> foreign_lang veto -> every target excluded.
     filename: "Keroro Missione Titar 62 ITA.avi"
     discarded: true
 
   - id: decoy_korean_keroro
-    # Contient "KOR" -> foreign_lang matche -> french_safe bloque toutes les règles.
+    # Contains "KOR" -> foreign_lang veto -> every target excluded.
     filename: "Keroro 62 KOR.avi"
     discarded: true
 
@@ -106,14 +107,14 @@ cases:
     rule_name: archive_candidate
 
   - id: not_episode_opening_demotes_title_to_catalog
-    # "opening" now excludes it from is_episode, so keroro_large no longer catalogs it -> discarded.
+    # "opening" -> not_episode veto, so keroro_large no longer catalogs it -> discarded.
     filename: "Keroro Les demoiselles cambrioleuses opening.avi"
     discarded: true
 
   - id: japanese_comic_zip_is_discarded
-    # [comic] + 軍曹 is a manga, not a broadcast episode. The CJK title escapes foreign_lang
+    # [comic] + 軍曹 is a manga, not a broadcast episode. The CJK title used to escape foreign_lang
     # and .zip is a generic archive, so before this change it was catalogued as unidentified.
-    # not_episode(comic) now makes is_episode false -> discarded.
+    # not_episode(comic) and the CJK range of foreign_lang both veto it -> discarded.
     filename: "[comic][ケロロ軍曹][KERORO][吉崎観音].vol.09.zip"
     discarded: true
 
@@ -134,7 +135,7 @@ cases:
 
   - id: onlyfans_marker_is_discarded
     # Operator change 2026-09-11: 'onlyfans' joins not_episode. A paywalled clip is not a
-    # broadcast episode; without the marker this name matched is_keroro and reached the
+    # broadcast episode; without the marker this name passed every veto and reached the
     # catch-all (catalog / unidentified).
     filename: "KERORO MISSION TITAR onlyfans.avi"
     discarded: true
@@ -213,14 +214,14 @@ cases:
 
   # --- Foreign-marker + hash-digit precision hardening (2026-07-04) ---
   - id: foreign_big5_r3_taiwanese_discarded
-    # Taiwanese R3 DVD rip (BIG5): foreign_lang veto -> french_safe false -> discarded.
+    # Taiwanese R3 DVD rip (BIG5): foreign_lang veto -> discarded.
     filename: "[KERORO][R3_DVDRIP][09][640x480.x264.AAC.2AUDIO.BIG5][7C094A47].mkv"
     discarded: true
 
   - id: foreign_gb_popgo_chinese_discarded
     # Real catalogued name. [GB] = GB2312 subtitles (Simplified Chinese); POPGO = a Chinese
     # fansub group. Complement of BIG5 (Traditional, already vetoed): the GB* encoding tags
-    # must veto too -> french_safe false -> discarded (not catalogued as unidentified).
+    # must veto too -> discarded (not catalogued as unidentified).
     filename: "[POPGO][Keroro][GB]05(28D86ED1).avi"
     discarded: true
 
@@ -315,7 +316,7 @@ cases:
 
   - id: catalan_dub_is_discarded
     # Catalan dub (real catalogued name) slipped foreign_lang: the Catalan marker
-    # 'estrenen' now vetoes it (french_safe false) -> discarded, not unidentified.
+    # 'estrenen' now vetoes it (foreign_lang) -> discarded, not unidentified.
     filename: "Srg Keroro s01e29 La Natsumi I La Fuyuki S'estrenen A Escena - En Keroro I Els Paparazzi.avi"
     discarded: true
 
@@ -326,3 +327,106 @@ cases:
     # rule -> discarded. This documents the choice so it is not later "fixed" as a bug.
     filename: "[Keroro].062.zip"
     discarded: true
+
+  # --- 2026-10-04 catalog replay (spec 2026-10-04-matcher-file-vetoes §1) ---
+  # Real VF releases: an explicit N°NNNx vetoes every other episode, so the bare numbers of the
+  # title and the title coverage of another episode no longer add false targets. Episodes 71,
+  # 73, 75 and 76 are mono-segment in targets.yml: their B part still lands on the A target.
+  - id: real_076B_keeps_only_mono_076A
+    # Was also 002A/B ("lune 2", numero_nu_confirmed).
+    filename: "[TV] KERORO MISSION TITAR N°076B « Emmène-moi sur la lune 2 » [Dimanche 05 octobre 2008 à 11H10 sur TELETOON].avi"
+    decisions:
+      - { target_id: 076A, tier: download, rule_name: title_confirmed }
+
+  - id: real_076B_with_its_mojibake_twin
+    # Forged twin (UTF-8 read as cp1252): "NÂ°076B" matches no episode marker, so alone it
+    # would add 002A/B; the clean name of the same file vetoes them.
+    filenames:
+      - "[TV] KERORO MISSION TITAR N°076B « Emmène-moi sur la lune 2 » [Dimanche 05 octobre 2008 à 11H10 sur TELETOON].avi"
+      - "[TV] KERORO MISSION TITAR NÂ°076B Â« EmmÃ¨ne-moi sur la lune 2 Â» [Dimanche 05 octobre 2008 Ã  11H10 sur TELETOON].avi"
+    decisions:
+      - { target_id: 076A, tier: download, rule_name: title_confirmed }
+
+  - id: real_075B_keeps_only_mono_075A
+    filename: "[TV] KERORO MISSION TITAR N°075B « L'éveil de la troisième Garance 2 » [Dimanche 05 octobre 2008 à 10H50 sur TELETOON].avi"
+    decisions:
+      - { target_id: 075A, tier: download, rule_name: title_confirmed }
+
+  - id: real_073A_keeps_only_073A
+    # Was also 020A/B and 001A/B ("il y a 20 ans 1", numero_nu_confirmed).
+    filename: "[TV] KERORO MISSION TITAR N°073A « Nos vacances d'été d'il y a 20 ans 1 » [Samedi 04 octobre 2008 à 10H50 sur TELETOON].avi"
+    decisions:
+      - { target_id: 073A, tier: download, rule_name: id_segment_exact }
+
+  - id: real_073B_keeps_only_mono_073A
+    filename: "[TV] KERORO MISSION TITAR N°073B « Nos vacances d'été d'il y a 20 ans 2 » [Samedi 04 octobre 2008 à 11H00 sur TELETOON].avi"
+    decisions:
+      - { target_id: 073A, tier: download, rule_name: title_confirmed }
+
+  - id: real_071B_keeps_only_mono_071A
+    filename: "[TV] KERORO MISSION TITAR N°071B « Le fainéant des devoirs de vacances 2 » [Dimanche 28 septembre 2008 à 11H10 sur TELETOON].avi"
+    decisions:
+      - { target_id: 071A, tier: download, rule_name: title_confirmed }
+
+  - id: real_065A_keeps_only_065A
+    # Was also 001B and 052A (title_confirmed on another episode's title).
+    filename: "[TV] KERORO MISSION TITAR N°065A « Notre but - la Terre ! » [Dimanche 21 septembre 2008 à 10H40 sur TELETOON].avi"
+    decisions:
+      - { target_id: 065A, tier: download, rule_name: id_segment_exact }
+
+  - id: real_066A_keeps_only_066A
+    # Was also 005B, 045A, 048B and 049B (title_confirmed on another episode's title).
+    filename: "[TV] KERORO MISSION TITAR N°066A « L'opération de sauvetage pour l'amour » [Dimanche 21 septembre 2008 à 11H00 sur TELETOON].avi"
+    decisions:
+      - { target_id: 066A, tier: download, rule_name: id_segment_exact }
+
+  - id: real_077B_keeps_only_077B
+    # Was also 052B (title_confirmed on another episode's title).
+    filename: "[TV] KERORO MISSION TITAR N°077B « Le Tamama Impact bloqué » [Samedi 11 octobre 2008 à 10H40 sur TELETOON].avi"
+    decisions:
+      - { target_id: 077B, tier: download, rule_name: id_segment_exact }
+
+  # Alias pairs (two names of one hash): one name carries a foreign marker, the other does not.
+  # The veto on one name excludes the whole file; it used to notify through the clean alias.
+  - id: alias_cjk_and_its_mojibake_is_discarded
+    filenames:
+      - "[異域字幕組][4月新番][keroro][21][繁體].mp4"
+      - "[ç°åå­å¹çµ][4ææ°çª][keroro][21][ç¹é«].mp4"
+    discarded: true
+
+  - id: alias_sgt_frog_and_bare_065_is_discarded
+    filenames:
+      - "Sgt. Frog - 065 [Keroro] (640x480 DVD XviD) [D6A10367].avi"
+      - "[Keroro].065.[Xvid.Mp3].[D6A10367].avi"
+    discarded: true
+
+  - id: alias_spanish_xete_and_clean_025_is_discarded
+    filenames:
+      - "Keroro 025 - La gran evasion de Momoka [DVD+TV dual by XeTe].avi"
+      - "Keroro 025 - La Gran Evasion De Momoka.avi"
+    discarded: true
+
+  - id: alias_dino_riders_and_underscored_twin_is_discarded
+    filenames:
+      - "Dino-Riders - 10 - Titar pierde los estribos(DVDRip)(Cast-Eusk)(ZeRaTuL)(TusDivx).avi"
+      - "Dino_Riders_10_Titar_Pierde_Los_EstribosDvdripCast_EuskZeratulTusdivx.avi"
+    discarded: true
+
+  # Marker forms: the explicit number is the target's own, so episode 62 is not vetoed.
+  - id: marker_titar_62_keeps_62
+    filename: "keroro mission titar 62.avi"
+    decisions:
+      - { target_id: 062A, tier: notify, rule_name: numero_nu }
+      - { target_id: 062B, tier: notify, rule_name: numero_nu }
+
+  - id: marker_titar_062_keeps_62
+    filename: "keroro mission titar 062.avi"
+    decisions:
+      - { target_id: 062A, tier: notify, rule_name: numero_nu }
+      - { target_id: 062B, tier: notify, rule_name: numero_nu }
+
+  - id: marker_titar_hash_062_keeps_62
+    filename: "keroro mission titar #062.avi"
+    decisions:
+      - { target_id: 062A, tier: notify, rule_name: numero_nu }
+      - { target_id: 062B, tier: notify, rule_name: numero_nu }
