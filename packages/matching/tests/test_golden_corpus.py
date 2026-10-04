@@ -191,7 +191,6 @@ def test_foreign_lang_catches_east_asian_scripts_after_fold(filename: str) -> No
 @pytest.mark.parametrize(
     "filename",
     [
-        "keroro mission titar 62.avi",
         "Keroro N°062A.avi",
         "Keroro #062.avi",
         "Keroro ep 5.avi",
@@ -208,8 +207,11 @@ def test_explicit_id_reads_a_marked_episode_number(filename: str) -> None:
     [
         "Keroro 1920x1080 BDRip.mkv",  # resolution
         "Keroro Mission Titar 2x11B.avi",  # season x episode
+        "Keroro ep 2x11B.avi",  # season x episode, even after a marker
         "[TV] Keroro « Emmène-moi sur la lune 2 ».avi",  # bare number of a title
         "[Keroro].065.[Xvid].avi",  # bare number, no marker
+        "keroro mission titar 62.avi",  # titar and keroro are not episode markers
+        "Keroro #2008.avi",  # more than 3 digits
     ],
 )
 def test_explicit_id_ignores_unmarked_numbers_and_nxnn(filename: str) -> None:
@@ -230,3 +232,23 @@ def test_other_episode_vetoes_only_another_explicit_number(
     explanation = _engine().explain([FileCandidate(filename=filename)], "062A")
     assert explanation is not None
     assert explanation.vetoes_fired == vetoes
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "Keroro Mission Titar 2008 - La Grenouille Cosmique.avi",
+        "keroro 1080p rediffusion.avi",
+        "keroro mission titar #2008.avi",
+        "keroro ep 1080.avi",
+        "keroro mission titar 62.avi",
+        "keroro mission titar 062.avi",
+    ],
+)
+def test_unmarked_or_long_numbers_veto_no_target(filename: str) -> None:
+    # A false other_episode would drop a real VF file for every target.
+    engine = _engine()
+    for target_id in engine._resolved_by_target:
+        explanation = engine.explain([FileCandidate(filename=filename)], target_id)
+        assert explanation is not None
+        assert "other_episode" not in explanation.vetoes_fired, target_id

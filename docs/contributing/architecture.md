@@ -280,9 +280,10 @@ flowchart LR
   les noms connus d'un fichier : un seul nom qui déclenche un veto exclut la cible pour tout le
   fichier, à tous les tiers. `foreign_lang` (version étrangère, écritures chinoise, japonaise ou
   coréenne) et `not_episode` (film, générique, extrait) excluent toutes les cibles ; `other_episode`
-  (un numéro d'épisode explicite, comme `N°065A`, `#065`, `titar 65` ou `S02E14`, qui n'est pas celui
-  de la cible) n'exclut que les autres épisodes. Les règles restent positives : elles disent ce que
-  le fichier **est**.
+  (un numéro d'épisode explicite de 1 à 3 chiffres, comme `N°065A`, `#065`, `ep 65` ou `S02E14`, qui
+  n'est pas celui de la cible) n'exclut que les autres épisodes. Le nom de la série n'annonce pas de
+  numéro : `Titar 2008` ou `keroro 1080p` n'excluent rien. Les règles restent positives : elles
+  disent ce que le fichier **est**.
 - **Fragments** : `fragments:` nomme des morceaux de regex bruts (le repère d'un numéro d'épisode,
   la garde contre les dates), substitués en `{nom}` dans les tokens `regex` au chargement. Un fragment
   ne peut ni porter le nom d'un champ de cible (`absolute_number`, `title`…) ni en citer un autre.
