@@ -43,6 +43,7 @@ def test_explanation_is_frozen_and_holds_fields() -> None:
     assert explanation.rules_fired == ("id_segment_exact", "keroro_large")
     assert explanation.tokens_matched == ("is_video", "keroro", "segment_id")
     assert explanation.coverage_values == (("title_hit", 1.0),)
+    assert explanation.vetoes_fired == ()
     with pytest.raises(dataclasses.FrozenInstanceError):
         explanation.target_id = "062B"  # type: ignore[misc]
 
@@ -457,7 +458,7 @@ def test_evaluate_all_explains_with_the_winning_name() -> None:
     decisions = _fanout_engine().evaluate_all(
         [FileCandidate(filename="Keroro rediffusion.mkv"), winner]
     )
-    assert decisions[0].explanation == _fanout_engine().explain(winner, "062A")
+    assert decisions[0].explanation == _fanout_engine().explain([winner], "062A")
 
 
 def test_evaluate_all_of_no_name_is_a_discard() -> None:
