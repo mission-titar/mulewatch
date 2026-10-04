@@ -1,5 +1,5 @@
 # Cibles du golden corpus (sous-ensemble §7 ; PAS le catalogue prod complet, cf. deploy/…/targets.yml).
-# target_id : 062A / 062B / 094A.
+# target_id: 062A / 062B / 094A / 021A-B / 072A-B, plus the real targets of the replay cases.
 episodes:
   - season: 2
     seasonal_number: 11
@@ -28,3 +28,101 @@ episodes:
     segments:
       - { letter: A, title: "Le défi des chefs cuisiniers" }
       - { letter: B, title: "Duel contre le plus puissant des combattants" }
+  # Real targets copied from deploy/targets.yml (status dropped) for the 2026-10-04 catalog
+  # replay cases: the N°NNNx releases, their false targets, and the alias pairs.
+  - season: 1
+    seasonal_number: 1
+    absolute_number: 1
+    segments:
+      - { letter: A, title: "Je suis le sergent Keroro" }
+      - { letter: B, title: "Le sergent Keroro arrive sur Terre" }
+  - season: 1
+    seasonal_number: 2
+    absolute_number: 2
+    segments:
+      - { letter: A, title: "Garance et Tamama" }
+      - { letter: B, title: "Garance est amoureuse" }
+  - season: 1
+    seasonal_number: 5
+    absolute_number: 5
+    segments:
+      - { letter: A, title: "Le magasin de jouets" }
+      - { letter: B, title: "Une maquette pour Keroro" }
+  - season: 1
+    seasonal_number: 10
+    absolute_number: 10
+    segments:
+      - { letter: A, title: "L'arrivée de l'envahisseur extraterrestre microscopique super Dary" }
+  - season: 1
+    seasonal_number: 20
+    absolute_number: 20
+    segments:
+      - { letter: A, title: "Artus et la petite sirène" }
+      - { letter: B, title: "Artus contre tout l'océan" }
+  - season: 1
+    seasonal_number: 25
+    absolute_number: 25
+    segments:
+      - { letter: A, title: "Garance en danger" }
+  - season: 1
+    seasonal_number: 45
+    absolute_number: 45
+    segments:
+      - { letter: A, title: "Keroro et le gâteau de l'amour" }
+      - { letter: B, title: "Une saint-Valentin réussie" }
+  - season: 1
+    seasonal_number: 48
+    absolute_number: 48
+    segments:
+      - { letter: A, title: "Invasion par la paresse" }
+      - { letter: B, title: "Opération sauvetage soporifique" }
+  - season: 1
+    seasonal_number: 49
+    absolute_number: 49
+    segments:
+      - { letter: A, title: "Keroro la débrouille" }
+      - { letter: B, title: "Opération déclaration d'amour" }
+  - season: 2
+    seasonal_number: 1
+    absolute_number: 52
+    segments:
+      - { letter: A, title: "De retour sur Terre" }
+      - { letter: B, title: "Tamama et Tamama sombre" }
+  - season: 2
+    seasonal_number: 14
+    absolute_number: 65
+    segments:
+      - { letter: A, title: "Notre but : la Terre !" }
+      - { letter: B, title: "Le visiteur de Titar" }
+  - season: 2
+    seasonal_number: 15
+    absolute_number: 66
+    segments:
+      - { letter: A, title: "Opération sauvetage de l'amour" }
+      - { letter: B, title: "April et Enéa, une journée entre filles" }
+  - season: 2
+    seasonal_number: 20
+    absolute_number: 71
+    segments:
+      - { letter: A, title: "Le fainéant des devoirs de vacances" }
+  - season: 2
+    seasonal_number: 22
+    absolute_number: 73
+    segments:
+      - { letter: A, title: "Nos vacances d'été d'il y a 20 ans" }
+  - season: 2
+    seasonal_number: 24
+    absolute_number: 75
+    segments:
+      - { letter: A, title: "L'éveil de la 3e Garance" }
+  - season: 2
+    seasonal_number: 25
+    absolute_number: 76
+    segments:
+      - { letter: A, title: "Emmène-moi sur la lune" }
+  - season: 2
+    seasonal_number: 26
+    absolute_number: 77
+    segments:
+      - { letter: A, title: "Je vais vraiment me marier alors ?" }
+      - { letter: B, title: "Le Tamama impact bloqué" }
