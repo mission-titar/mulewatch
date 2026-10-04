@@ -339,7 +339,7 @@ cases:
       - { target_id: 076A, tier: download, rule_name: title_confirmed }
 
   - id: real_076B_with_its_mojibake_twin
-    # Forged twin (UTF-8 read as cp1252): "NÂ°076B" matches no episode marker, so alone it
+    # Real twin seen on the node (UTF-8 read as cp1252): "NÂ°076B" matches no episode marker, so alone it
     # would add 002A/B; the clean name of the same file vetoes them.
     filenames:
       - "[TV] KERORO MISSION TITAR N°076B « Emmène-moi sur la lune 2 » [Dimanche 05 octobre 2008 à 11H10 sur TELETOON].avi"
