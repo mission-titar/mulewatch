@@ -6,7 +6,14 @@ from catalog_matching.validation import parse_matcher_config, parse_targets
 
 _MATCHER = {
     "tokens": {"keroro": {"keyword": "keroro"}, "titar": {"keyword": "titar"}},
-    "rules": [{"name": "keroro_large", "tier": "catalog", "any": ["keroro", "titar"]}],
+    "rules": [
+        {
+            "name": "keroro_large",
+            "tier": "catalog",
+            "scope": "unattributed",
+            "any": ["keroro", "titar"],
+        }
+    ],
 }
 _TARGETS = {
     "episodes": [
