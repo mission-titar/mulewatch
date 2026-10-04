@@ -101,8 +101,8 @@ for a guard that belongs to one rule (`keroro_large`'s `{ not: episode_number }`
 
 ```yaml
 fragments:
-  # A number written as an episode number: N°62, #062, ep 62, épisode 62, titar 062, keroro 62.
-  episode_marker: "(?:\\bn[°o]|#|\\bep(?:isode)?\\.?|\\btitar|\\bkeroro)\\s*-?\\s*"
+  # A number written as an episode number: N°62, #062, ep 62, épisode 62.
+  episode_marker: "(?:\\bn[°o]|#|\\bep(?:isode)?\\.?)\\s*-?\\s*"
   # Not a date: no month name and no d/m numeric form right after the number.
   not_a_date: "(?!\\s*(?:janv?(?:ier)?|fevr?(?:ier)?|mars|avr(?:il)?|mai|juin|juil(?:let)?|aout|sep(?:t(?:embre)?)?|oct(?:obre)?|nov(?:embre)?|dec(?:embre)?)\\b)(?!\\s*[/.\\-]\\s*\\d)"
 
@@ -114,7 +114,7 @@ tokens:
   foreign_lang: { regex: "\\b(ITA|KOR|...)\\b|dino-riders|...|espana|[\\u1100-\\u11ff\\u3040-\\u30ff\\u3400-\\u9fff]" }
   not_episode: { regex: "movie|opening|...|onlyfans" }
   # The name carries an explicit episode number, whichever.
-  explicit_id: { regex: "{episode_marker}\\d|\\bs\\d{1,2}\\s*e\\d" }
+  explicit_id: { regex: "{episode_marker}\\d{1,3}(?!\\d)|\\bs\\d{1,2}\\s*e\\d" }
   # That number is the target's.
   own_id: { regex: "{episode_marker}0*{absolute_number}(?!\\d)|\\bs0*{season}\\s*e0*{seasonal_number}(?!\\d)" }
   # An explicit episode number that is not the target's.
@@ -147,8 +147,13 @@ rules:
   `(?!62…)` lets the regex backtrack `0*` to empty and veto target 62 on its own `n°062`. In
   `own_id`, `0*{absolute_number}` is a positive match (the `segment_id` idiom) and the
   negation is the `not:` combinator, out of the regex backtracker's reach.
+- The series name is not a marker (operator decision 2026-10-05): `Keroro Mission Titar 2008 -
+  La Grenouille Cosmique.avi` or `keroro 1080p` would read as an episode number, and a veto false
+  positive deletes a real VF file for every target. `titar 62` is therefore not explicit (it
+  vetoes nothing, it still matches through `numero_nu`). The marked number is bounded to 1 to 3
+  digits not followed by a digit, so `#2008` and `ep 1080` are not episode numbers either.
 - Episode level only, never segment: `N°075B` must keep 075A (§1).
-- Known limit, accepted: `62 - keroro.avi` (number before the name, no marker) is not explicit.
+- Known limit, accepted: an unmarked number (`titar 62`, `62 - keroro.avi`) is not explicit.
   It vetoes nothing; it still matches positively through `numero_nu`. Absence of a veto never
   removes a match. `NxNN` is left out of `explicit_id` (`1280x720`).
 
@@ -178,7 +183,8 @@ rules:
   required, closed, and driving the fan-out; `parse_targets` rejecting `status: complete`.
 - **Golden corpus** gains the real cases of §1: the four alias pairs, `N°065A`, `N°066A`,
   `N°071B`, `N°073A`, `N°073B`, `N°075B`, `N°076B`, `N°077B` with their expected target sets,
-  and the three marker forms `titar 62`, `titar 062`, `titar #062`.
+  the marker forms `titar 62`, `titar 062` (not explicit, kept) and `titar #062` (explicit), and
+  the non-episode numbers `titar 2008`, `keroro 1080p`, `titar #2008`, `ep 1080` (never a veto).
 - `test_engine_properties.py` rewrites its inline policy to the vetoes model.
 - **Replay on a copy of the node catalog** (acceptance, throwaway script in the scratchpad, not
   committed): for every hash, the latest persisted decisions versus the new engine over all known
