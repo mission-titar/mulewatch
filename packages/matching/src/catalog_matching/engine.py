@@ -99,15 +99,6 @@ class DownloadCandidate:
 _TIER_RANK = TIER_RANK
 
 
-# Rule-name sets driving the multi-target fan-out (spec §4). A rule is ATTRIBUTABLE when its
-# win pins the file to a concrete target via a number/title video signal. SEGMENT_LEVEL rules
-# pin one specific segment (a title, or a lettered number); EPISODE_LEVEL rules designate the
-# whole episode (a bare number) and thus every one of its segments. ATTRIBUTABLE is exactly
-# their union.
-_SEGMENT_LEVEL: frozenset[str] = frozenset({"id_segment_exact", "title_confirmed", "title_review"})
-_EPISODE_LEVEL: frozenset[str] = frozenset({"numero_nu_confirmed", "numero_nu"})
-_ATTRIBUTABLE: frozenset[str] = _SEGMENT_LEVEL | _EPISODE_LEVEL
-
 # (resolved target, rule index, rule name, tier, the name that fired it)
 _Match = tuple[ResolvedTarget, int, str, str, FileCandidate]
 
@@ -204,11 +195,10 @@ class MatchingEngine:
         """All decisions for ONE file known under every name in ``candidates``; ``[]`` = discard.
 
         Per target, the best rule over all names (min-key below, over-long names skipped).
-        The attributable matches (number/title video rules) fan out per episode: a
-        segment-level signal on any segment of an episode emits only those segments,
-        otherwise the episode-level signal emits every segment (spec §3). With no
-        attributable match, the single-winner min-key over ALL matches yields one catch-all
-        decision (the ``keroro_large`` catalog row or an ``archive_candidate`` row), or ``[]``.
+        Matches of a ``segment`` or ``episode`` scoped rule fan out per episode: a
+        segment-scoped match on any segment of an episode emits only those segments,
+        otherwise the episode-scoped matches emit every segment (spec §3). With none, the
+        single-winner min-key over ALL matches yields one ``unattributed`` decision, or ``[]``.
         """
         best: dict[str, _Match] = {}
         for candidate in candidates:
@@ -233,15 +223,16 @@ class MatchingEngine:
         return self._single_winner(matches)
 
     def _fan_out(self, matches: list[_Match]) -> list[MatchDecision]:
-        """Selects the emitted segments from the attributable matches (spec §3/§4)."""
+        """Selects the emitted segments from the segment/episode scoped matches (spec §3/§4)."""
+        rules = self._config.rules
         by_episode: dict[int, list[_Match]] = {}
         for entry in matches:
-            if entry[2] not in _ATTRIBUTABLE:
+            if rules[entry[1]].scope == "unattributed":
                 continue
             by_episode.setdefault(entry[0].target.absolute_number, []).append(entry)
         emitted: list[_Match] = []
         for group in by_episode.values():
-            segment_level = [entry for entry in group if entry[2] in _SEGMENT_LEVEL]
+            segment_level = [entry for entry in group if rules[entry[1]].scope == "segment"]
             emitted.extend(segment_level or group)
         emitted.sort(key=lambda entry: entry[0].target.target_id)
         return [self._decision(entry) for entry in emitted]

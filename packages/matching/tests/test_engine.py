@@ -6,9 +6,6 @@ import yaml
 
 from catalog_matching.config import TIERS, MatcherConfig
 from catalog_matching.engine import (
-    _ATTRIBUTABLE,
-    _EPISODE_LEVEL,
-    _SEGMENT_LEVEL,
     _TIER_RANK,
     Explanation,
     MatchDecision,
@@ -33,19 +30,6 @@ def test_tier_rank_catalog_is_lowest() -> None:
 def test_tier_rank_covers_exactly_the_valid_tiers() -> None:
     # Consistency: every licit tier (TIERS) has a rank, and no orphan rank.
     assert set(_TIER_RANK) == TIERS
-
-
-def test_attributable_is_the_union_of_segment_and_episode_level() -> None:
-    assert _ATTRIBUTABLE == _SEGMENT_LEVEL | _EPISODE_LEVEL
-
-
-def test_segment_and_episode_level_sets_are_disjoint() -> None:
-    assert _SEGMENT_LEVEL.isdisjoint(_EPISODE_LEVEL)
-
-
-def test_attributable_names_match_the_spec() -> None:
-    assert frozenset({"id_segment_exact", "title_confirmed", "title_review"}) == _SEGMENT_LEVEL
-    assert frozenset({"numero_nu_confirmed", "numero_nu"}) == _EPISODE_LEVEL
 
 
 def test_explanation_is_frozen_and_holds_fields() -> None:
@@ -102,8 +86,8 @@ _TWO_RULE_RAW: dict[str, object] = {
         "keroro": {"keyword": "keroro"},
     },
     "rules": [
-        {"name": "exact", "tier": "download", "all": ["is_video", "seg"]},
-        {"name": "large", "tier": "catalog", "any": ["keroro"]},
+        {"name": "exact", "tier": "download", "scope": "unattributed", "all": ["is_video", "seg"]},
+        {"name": "large", "tier": "catalog", "scope": "unattributed", "any": ["keroro"]},
     ],
 }
 
@@ -219,10 +203,16 @@ _INDEX_TIEBREAK_RAW: dict[str, object] = {
         "title_hit": {"coverage": "title", "min": 0.6},
     },
     "rules": [
-        {"name": "by_segment", "tier": "download", "all": ["is_video", "seg"]},
+        {
+            "name": "by_segment",
+            "tier": "download",
+            "scope": "unattributed",
+            "all": ["is_video", "seg"],
+        },
         {
             "name": "by_title",
             "tier": "download",
+            "scope": "unattributed",
             "all": ["is_video", {"token": "title_hit", "min": 0.6}],
         },
     ],
@@ -311,7 +301,14 @@ def test_explanation_single_rule_fired_and_no_coverage_token() -> None:
             "is_video": {"regex": r"\.(avi|mkv)$"},
             "seg": {"regex": r"n[°o]?\s*0*{absolute_number}\s*{segment}"},
         },
-        "rules": [{"name": "only", "tier": "download", "all": ["is_video", "seg"]}],
+        "rules": [
+            {
+                "name": "only",
+                "tier": "download",
+                "scope": "unattributed",
+                "all": ["is_video", "seg"],
+            }
+        ],
     }
     engine = MatchingEngine(parse_matcher_config(raw), (_TARGET_62A,))
     decisions = engine.evaluate(FileCandidate(filename="N°062A.avi"))
@@ -465,3 +462,47 @@ def test_evaluate_all_explains_with_the_winning_name() -> None:
 
 def test_evaluate_all_of_no_name_is_a_discard() -> None:
     assert _fanout_engine().evaluate_all([]) == []
+
+
+# --- The rule's scope drives the fan-out, whatever the rule is called ---
+_SCOPE_RAW: dict[str, object] = {
+    "tokens": {
+        "is_video": {"regex": r"\.(avi|mkv)$"},
+        "lettered": {"regex": r"n°0*{absolute_number}{segment}"},
+        "bare": {"regex": r"\b0*{absolute_number}\b"},
+        "keroro": {"keyword": "keroro"},
+    },
+    "rules": [
+        {"name": "pin", "tier": "notify", "scope": "segment", "all": ["is_video", "lettered"]},
+        {"name": "whole", "tier": "download", "scope": "episode", "all": ["is_video", "bare"]},
+        {"name": "fallback", "tier": "catalog", "scope": "unattributed", "any": ["keroro"]},
+    ],
+}
+
+
+def _scope_triples(filename: str) -> list[tuple[str, str, str]]:
+    engine = MatchingEngine(parse_matcher_config(_SCOPE_RAW), (_TARGET_62A, _TARGET_62B))
+    return _triples(engine.evaluate(FileCandidate(filename=filename)))
+
+
+def test_episode_scope_fans_out_to_every_segment() -> None:
+    assert _scope_triples("keroro 62.avi") == [
+        ("062A", "download", "whole"),
+        ("062B", "download", "whole"),
+    ]
+
+
+def test_segment_scope_pins_one_segment_and_cuts_the_episode_fan_out() -> None:
+    # The weaker segment-scoped rule wins over the episode one: a single winner would not.
+    assert _scope_triples("keroro 62 n°062b.avi") == [("062B", "notify", "pin")]
+
+
+def test_segment_scope_emits_every_pinned_segment() -> None:
+    assert _scope_triples("keroro n°062a n°062b.avi") == [
+        ("062A", "notify", "pin"),
+        ("062B", "notify", "pin"),
+    ]
+
+
+def test_unattributed_scope_yields_a_single_winner() -> None:
+    assert _scope_triples("keroro.avi") == [("062A", "catalog", "fallback")]
