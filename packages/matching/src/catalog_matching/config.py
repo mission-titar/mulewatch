@@ -110,12 +110,17 @@ TIERS: frozenset[str] = frozenset({"catalog", "notify", "download"})
 TIER_RANK: dict[str, int] = {"catalog": 0, "notify": 1, "download": 2}
 
 
+# Closed set of rule scopes: what a rule's win pins (one segment, the whole episode, nothing).
+SCOPES: frozenset[str] = frozenset({"segment", "episode", "unattributed"})
+
+
 @dataclass(frozen=True)
 class Rule:
-    """Ordered rule: ``{ name, tier, <condition> }`` (cf. spec §8.3)."""
+    """Ordered rule: ``{ name, tier, scope, <condition> }`` (cf. spec §8.3)."""
 
     name: str
     tier: str
+    scope: str
     condition: Condition
 
 

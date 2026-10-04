@@ -28,19 +28,27 @@ _CANONICAL_RAW: dict[str, object] = {
         {
             "name": "id_segment_exact",
             "tier": "download",
+            "scope": "unattributed",
             "all": ["french_safe", "is_video", "segment_id", "keroro"],
         },
         {
             "name": "teletoon_titre",
             "tier": "download",
+            "scope": "unattributed",
             "all": ["french_safe", "teletoon", {"token": "title_hit", "min": 0.6}],
         },
         {
             "name": "numero_titre",
             "tier": "notify",
+            "scope": "unattributed",
             "all": ["french_safe", "segment_id", {"token": "title_hit", "min": 0.5}],
         },
-        {"name": "keroro_large", "tier": "catalog", "all": ["french_safe", "keroro_titar"]},
+        {
+            "name": "keroro_large",
+            "tier": "catalog",
+            "scope": "unattributed",
+            "all": ["french_safe", "keroro_titar"],
+        },
     ],
 }
 
@@ -110,7 +118,12 @@ def test_property_higher_priority_rule_never_lowers_tier() -> None:
     raw_boosted = {
         "tokens": dict(_CANONICAL_RAW["tokens"]),  # type: ignore[call-overload]
         "rules": [
-            {"name": "boost_keroro_download", "tier": "download", "any": ["keroro_titar"]},
+            {
+                "name": "boost_keroro_download",
+                "tier": "download",
+                "scope": "unattributed",
+                "any": ["keroro_titar"],
+            },
             *_CANONICAL_RAW["rules"],  # type: ignore[misc]
         ],
     }
