@@ -53,7 +53,7 @@ def _targets() -> list[TargetSegment]:
             absolute_number=62,
             segment="a",
             title="Les demoiselles cambrioleuses",
-            status="partial",
+            status="found",
         ),
         TargetSegment(
             season=2,

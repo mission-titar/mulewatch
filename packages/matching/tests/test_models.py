@@ -42,7 +42,7 @@ def test_target_segment_full_fields() -> None:
         absolute_number=5,
         segment="b",
         title="Le grand combat",
-        status="partial",
+        status="found",
     )
     assert target.target_id == "005B"
-    assert target.status == "partial"
+    assert target.status == "found"

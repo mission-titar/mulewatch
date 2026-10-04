@@ -27,7 +27,7 @@ from catalog_matching.config import (
 )
 from catalog_matching.interpolation import InterpolationError, interpolate
 from catalog_matching.matchers import ATTR_NAMES
-from catalog_matching.models import TargetSegment
+from catalog_matching.models import LOST, TARGET_STATUSES, TargetSegment
 
 _CONDITION_KEYS = ("all", "any", "not")
 
@@ -411,6 +411,11 @@ def parse_targets(raw: dict[str, Any]) -> tuple[TargetSegment, ...]:
         seg_list = ep.get("segments", [])
         for seg in seg_list:
             seg_map = _require_mapping(seg, "segment")
+            status = str(seg_map.get("status", LOST))
+            if status not in TARGET_STATUSES:
+                raise ConfigError(
+                    f"segment status {status!r} unknown (expected one of {sorted(TARGET_STATUSES)})"
+                )
             segments.append(
                 TargetSegment(
                     season=season,
@@ -418,7 +423,7 @@ def parse_targets(raw: dict[str, Any]) -> tuple[TargetSegment, ...]:
                     absolute_number=absolute_number,
                     segment=str(_require_key(seg_map, "letter", "segment")),
                     title=str(_require_key(seg_map, "title", "segment")),
-                    status=str(seg_map.get("status", "lost")),
+                    status=status,
                 )
             )
     result = tuple(segments)
