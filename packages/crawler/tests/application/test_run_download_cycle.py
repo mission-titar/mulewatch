@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from catalog_matching.engine import DownloadCandidate
-from catalog_matching.models import TargetSegment
+from catalog_matching.models import FOUND, TargetSegment
 from mulewatch.application.run_download_cycle import DownloadDeps, run_download_cycle
 from mulewatch.domain.download.states import DownloadState
 from mulewatch.domain.observability.events import (
@@ -38,7 +38,7 @@ _TARGETS = (
         absolute_number=63,
         segment="A",
         title="t2",
-        status="complete",
+        status=FOUND,
     ),
 )
 
@@ -290,9 +290,9 @@ async def test_two_segment_candidates_same_hash_dedup_to_one_download() -> None:
     # spec §8: a whole-episode file yields BOTH (hash,062A) and (hash,062B) in
     # download_decisions; is_downloaded(hash) dedups them to ONE physical download.
     #
-    # Both targets are DOWNLOAD-eligible ("lost", not "complete") so the ONLY thing that
+    # Both targets are DOWNLOAD-eligible ("lost", not "found") so the ONLY thing that
     # can collapse the two candidates is the `is_downloaded(hash)` guard in
-    # _queue_new_candidates — never `_target_status` falling back to its "complete"
+    # _queue_new_candidates, never `_target_status` falling back to its "found"
     # default for an absent target (that would be an unrelated skip path, spec §6).
     targets = (
         TargetSegment(
@@ -331,11 +331,11 @@ async def test_two_segment_candidates_same_hash_dedup_to_one_download() -> None:
 
 
 @pytest.mark.asyncio
-async def test_complete_target_candidate_is_skipped() -> None:
+async def test_found_target_candidate_is_skipped() -> None:
     client = FakeDownloadClient()
     downloads = FakeDownloadRepo()
     catalog = FakeCatalogReads(
-        candidates=(_candidate(_B, "063A"),),  # 063A status=complete
+        candidates=(_candidate(_B, "063A"),),  # 063A status=found
         observations={_B: ObservedFile(filename="x", size_bytes=1)},
     )
     deps = _deps(
@@ -704,8 +704,8 @@ async def test_intra_cycle_floor_accounts_for_links_added_this_cycle() -> None:
 
 
 @pytest.mark.asyncio
-async def test_candidate_for_unknown_target_is_treated_as_complete() -> None:
-    # _target_status: a candidate whose target_id is ABSENT from _TARGETS → "complete"
+async def test_candidate_for_unknown_target_is_treated_as_found() -> None:
+    # _target_status: a candidate whose target_id is ABSENT from _TARGETS → "found"
     # (conservative) → SKIP_COMPLETE policy → no link, hash not enqueued.
     client = FakeDownloadClient()
     downloads = FakeDownloadRepo()
