@@ -260,7 +260,7 @@ def test_coverage_override_min_out_of_unit_range_is_rejected() -> None:
 
 def test_attr_between_min_greater_than_max_is_rejected() -> None:
     # config-validation#1: {attr_between: size_mb, min: 600, max: 30} = EMPTY range → the rule is
-    # mute forever (input error). OPEN bounds (min only / max only) stay valid — it is
+    # mute forever (input error). OPEN bounds (min only / max only) stay valid: it is
     # deliberate and tested; only min > max is rejected.
     with pytest.raises(ConfigError, match="min.*>.*max"):
         parse_matcher_config(
