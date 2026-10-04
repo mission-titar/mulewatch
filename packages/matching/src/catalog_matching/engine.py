@@ -11,6 +11,7 @@ later plan.
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from catalog_matching.combinators import Matcher
 from catalog_matching.config import TIER_RANK, MatcherConfig
 from catalog_matching.matchers import CoverageMatcher
 from catalog_matching.models import FileCandidate, TargetSegment
@@ -19,20 +20,18 @@ from catalog_matching.resolver import MatcherResolver, ResolvedTarget
 
 @dataclass(frozen=True)
 class Explanation:
-    """Why this decision (cf. spec §8.5: fired tokens/rules + coverage value).
+    """Why this decision (cf. spec §8.5): fired rules, tokens and vetoes, coverage values.
 
-    Concerns the SINGLE winning target. ``rules_fired``: names of the rules true for this
-    target, in config order (the 1st is the winner). ``tokens_matched``: names of the
-    config's named tokens that match (sorted). ``coverage_values``: for EACH coverage token
-    of the config (whether it matched or not), ``(name, value(candidate))`` sorted — the
-    score helps debug a threshold even below the bar. Tuples (not dicts) to stay
-    FROZEN/hashable and deterministic.
+    Concerns ONE target, over the names given: a rule, token or veto is listed when true on
+    at least one name. ``rules_fired`` in config order; ``tokens_matched`` and ``vetoes_fired``
+    sorted; ``coverage_values`` holds EVERY coverage token with its best value, sorted by name.
     """
 
     target_id: str
     rules_fired: tuple[str, ...]
     tokens_matched: tuple[str, ...]
     coverage_values: tuple[tuple[str, float], ...]
+    vetoes_fired: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -123,30 +122,23 @@ def _first_matching_rule(
 def _explain(
     config: MatcherConfig,
     resolved: ResolvedTarget,
-    candidate: FileCandidate,
+    names: Sequence[FileCandidate],
 ) -> Explanation:
-    """Builds the explanation of the resolved target ``resolved`` (cf. spec §8.5).
+    """Builds the explanation of ``resolved`` over ``names`` (cf. :class:`Explanation`)."""
 
-    ``rules_fired``: rules true in config order. ``tokens_matched``: named tokens that match
-    (sorted). ``coverage_values``: ``(name, value)`` of the coverage tokens (sorted). Reads
-    ``CoverageMatcher.value()`` (outside the Protocol) via ``isinstance``.
-    """
-    rules_fired = tuple(
-        rule.name for rule in config.rules if resolved.rules[rule.name].matches(candidate)
-    )
-    tokens_matched = tuple(
-        sorted(name for name, matcher in resolved.tokens.items() if matcher.matches(candidate))
-    )
-    coverage_values = tuple(
-        (name, matcher.value(candidate))
-        for name, matcher in sorted(resolved.tokens.items())
-        if isinstance(matcher, CoverageMatcher)
-    )
+    def fired(matcher: Matcher) -> bool:
+        return any(matcher.matches(name) for name in names)
+
     return Explanation(
         target_id=resolved.target.target_id,
-        rules_fired=rules_fired,
-        tokens_matched=tokens_matched,
-        coverage_values=coverage_values,
+        rules_fired=tuple(rule.name for rule in config.rules if fired(resolved.rules[rule.name])),
+        tokens_matched=tuple(sorted(n for n, m in resolved.tokens.items() if fired(m))),
+        coverage_values=tuple(
+            (name, max((matcher.value(c) for c in names), default=0.0))
+            for name, matcher in sorted(resolved.tokens.items())
+            if isinstance(matcher, CoverageMatcher)
+        ),
+        vetoes_fired=tuple(sorted(v for v in config.vetoes if fired(resolved.tokens[v]))),
     )
 
 
@@ -176,16 +168,15 @@ class MatchingEngine:
             r.target.target_id: r for r in self._resolved
         }
 
-    def explain(self, candidate: FileCandidate, target_id: str) -> Explanation | None:
-        """Explains the match of ``candidate`` against target ``target_id`` (current config).
+    def explain(self, candidates: Iterable[FileCandidate], target_id: str) -> Explanation | None:
+        """Explains target ``target_id`` over every name of one file; ``None`` if unknown.
 
-        ``None`` if ``target_id`` is unknown to the config. Otherwise an ``Explanation``
-        (empty if no rule fires). Reuses the per-target resolved matcher tree.
+        Over-long names are skipped, as in :meth:`evaluate_all`.
         """
         resolved = self._resolved_by_target.get(target_id)
         if resolved is None:
             return None
-        return _explain(self._config, resolved, candidate)
+        return _explain(self._config, resolved, self._names(candidates))
 
     def evaluate(self, candidate: FileCandidate) -> list[MatchDecision]:
         """All decisions for ``candidate`` (spec §4); ``[]`` = file discarded."""
@@ -201,7 +192,7 @@ class MatchingEngine:
         otherwise the episode-scoped matches emit every segment (spec §3). With none, the
         single-winner min-key over ALL matches yields one ``unattributed`` decision, or ``[]``.
         """
-        names = [c for c in candidates if len(c.filename) <= self._max_filename_length]
+        names = self._names(candidates)
         best: dict[str, _Match] = {}
         for resolved in self._resolved:
             if self._vetoed(resolved, names):
@@ -223,6 +214,9 @@ class MatchingEngine:
         if attributable:
             return attributable
         return self._single_winner(matches)
+
+    def _names(self, candidates: Iterable[FileCandidate]) -> list[FileCandidate]:
+        return [c for c in candidates if len(c.filename) <= self._max_filename_length]
 
     def _vetoed(self, resolved: ResolvedTarget, names: Sequence[FileCandidate]) -> bool:
         """True when any veto matches any name: the target is out for the whole file."""
@@ -269,5 +263,5 @@ class MatchingEngine:
             target_id=resolved.target.target_id,
             rule_name=rule_name,
             tier=tier,
-            explanation=_explain(self._config, resolved, candidate),
+            explanation=_explain(self._config, resolved, (candidate,)),
         )
