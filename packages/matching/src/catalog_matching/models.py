@@ -2,6 +2,11 @@
 
 from dataclasses import dataclass
 
+LOST = "lost"
+FOUND = "found"
+# Closed set of target statuses: a found target is never downloaded again.
+TARGET_STATUSES: frozenset[str] = frozenset({LOST, FOUND})
+
 
 @dataclass(frozen=True)
 class FileCandidate:
@@ -31,7 +36,7 @@ class TargetSegment:
     absolute_number: int
     segment: str
     title: str
-    status: str = "lost"
+    status: str = LOST
 
     @property
     def target_id(self) -> str:

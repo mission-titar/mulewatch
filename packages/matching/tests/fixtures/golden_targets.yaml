@@ -5,8 +5,8 @@ episodes:
     seasonal_number: 11
     absolute_number: 62
     segments:
-      - { letter: A, title: "Les demoiselles cambrioleuses", status: partial }
-      - { letter: B, title: "Le grand combat sous-marin", status: partial }
+      - { letter: A, title: "Les demoiselles cambrioleuses" }
+      - { letter: B, title: "Le grand combat sous-marin" }
   # Mono-segment target (single letter A, no sibling B): exercises the fan-out over an episode
   # that has exactly one segment (spec §11 "mono episode" row).
   - season: 2
