@@ -250,6 +250,7 @@ tokens:
 rules:
   - name: catalog
     tier: catalog
+    scope: unattributed
     any:
       - keroro
 """

@@ -3,9 +3,9 @@
 Since P4a ``MatchingExplainer`` takes the crawler's ALREADY-PARSED ``MatcherConfig`` +
 ``targets`` tuple at construction time (the YAML → config parsing moved UP into the caller —
 ``__main__`` for the standalone entrypoint, ``CrawlerApp`` in-process later). It builds the
-:class:`MatchingEngine` ONCE and exposes ``explain()`` to recompute a file's explanation
-against that config. Sharing the crawler's own parsed matcher is what kills the matcher-drift
-bug structurally (spec §8).
+:class:`MatchingEngine` ONCE and exposes ``explain()`` to recompute a file's explanation over
+all its names against that config. Sharing the crawler's own parsed matcher is what kills the
+matcher-drift bug structurally (spec §8).
 
 ``size_bytes → size_mb`` (and the trivial ``int → float`` casts) reuse the crawler's ONE
 canonical converter, ``mulewatch.domain.observation.candidate_from_fields`` (which encodes
@@ -15,6 +15,9 @@ converter is ``size_bytes is None``: the converter requires an ``int`` (a persis
 observation always has a size), while ``explain()``'s contract still permits ``None``, so that
 path builds the ``FileCandidate`` directly.
 """
+
+from collections.abc import Iterable
+from dataclasses import replace
 
 from catalog_matching.config import MatcherConfig
 from catalog_matching.engine import Explanation, MatchingEngine
@@ -36,28 +39,25 @@ class MatchingExplainer:
 
     def explain(
         self,
-        filename: str,
+        filenames: Iterable[str],
         size_bytes: int | None,
         media_length_sec: int | None,
         bitrate_kbps: int | None,
         target_id: str,
     ) -> Explanation | None:
-        """Recompute the explanation of ``filename`` against target ``target_id``.
+        """Recompute the explanation of target ``target_id`` over every name of one file.
 
-        Delegates the unit conversion to the crawler's canonical ``candidate_from_fields``
-        (binary-Mio ``size_bytes → size_mb`` + the ``int → float`` casts). Only the
-        ``size_bytes is None`` case is built directly, since the canonical converter requires
-        an ``int``.
-
+        Each name carries the same fields, as ``record_decision_if_changed`` judges a file.
         Return ``None`` if ``target_id`` is unknown to the current config.
         """
         if size_bytes is None:
-            candidate = FileCandidate(
-                filename=filename,
+            fields = FileCandidate(
+                filename="",
                 size_mb=None,
                 duration_sec=float(media_length_sec) if media_length_sec is not None else None,
                 bitrate_kbps=float(bitrate_kbps) if bitrate_kbps is not None else None,
             )
         else:
-            candidate = candidate_from_fields(filename, size_bytes, media_length_sec, bitrate_kbps)
-        return self._engine.explain(candidate, target_id)
+            fields = candidate_from_fields("", size_bytes, media_length_sec, bitrate_kbps)
+        names = [replace(fields, filename=name) for name in filenames]
+        return self._engine.explain(names, target_id)
