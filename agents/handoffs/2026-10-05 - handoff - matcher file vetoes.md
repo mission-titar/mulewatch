@@ -57,7 +57,6 @@ retractions for the vetoed pairs; notifications only go to `syslog://`, so nothi
 
 ## Leads, not done
 
-- `N°074B « La couronne du paranormal »` (a real Teletoon file) has no target: `targets.yml` lists
-  episode 74 as mono-segment `Keroro special`. Either Teletoon split it like 75/76, or a segment is
-  missing from the Wikipedia-derived list. Worth a look by the operator.
+- `N°074B « La couronne du paranormal »`: resolved by the `id_episode_explicit` rule (episode 74
+  is a special Teletoon split in two parts with unrelated titles).
 - Next: the notifications spec (`BACKLOG.md`, findings in the spec's §7).
