@@ -84,11 +84,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         output, dest_is_source = _resolve_destination(args)
         _LOGGER.info("merge → %s (%d source(s))", output, len(args.sources))
-        merge_catalogs(output, args.sources, dest_is_source=dest_is_source)
+        covered = merge_catalogs(output, args.sources, dest_is_source=dest_is_source)
     except MergeError as error:
         print(f"Merge failed: {error}", file=sys.stderr, flush=True)
         return 2
-    _LOGGER.info("merge done: %s", output)
+    _LOGGER.info(
+        "merge done: %s (%d raw observation(s) already counted by a compacted day, not copied)",
+        output,
+        covered,
+    )
     return 0
 
 

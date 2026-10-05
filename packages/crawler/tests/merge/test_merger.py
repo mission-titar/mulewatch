@@ -5,11 +5,13 @@ and assert content + cardinality + reassigned ``id`` + idempotence.
 """
 
 import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.compact.compactor import compact_catalog
 from mulewatch.merge.errors import MergeError, SchemaVersionMismatchError
 from mulewatch.merge.merger import merge_catalogs
 
@@ -456,3 +458,63 @@ def test_merge_unions_observation_ranges_and_is_idempotent(tmp_path: Path) -> No
     assert count(out, "file_observation_ranges") == 2  # union (two distinct node_ids)
     merge_catalogs(out, [src1, src2], dest_is_source=False)  # re-merge → no-op
     assert count(out, "file_observation_ranges") == 2
+
+
+def _raw_catalog(path: Path, *observations: tuple[str, str]) -> Path:
+    """One file seen at each ``(observed_at, node_id)``."""
+    return make_catalog(
+        path,
+        {
+            "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
+            "file_observations": [
+                _file_observation(HASH_A, node_id=node, observed_at=at) for at, node in observations
+            ],
+        },
+    )
+
+
+def _compacted(source: Path, output: Path) -> Path:
+    clock = lambda: datetime(2026, 6, 1, tzinfo=UTC)  # noqa: E731
+    compact_catalog(source, output, keep_recent_days=90, clock=clock)
+    return output
+
+
+_OLD_DAY_TWICE_AND_A_RECENT_DAY = (
+    ("2026-01-10T01:00:00.000000+00:00", "n1"),
+    ("2026-01-10T20:00:00.000000+00:00", "n1"),
+    ("2026-01-11T05:00:00.000000+00:00", "n1"),
+    ("2026-05-31T05:00:00.000000+00:00", "n1"),
+)
+
+
+@pytest.mark.parametrize("compacted_first", [False, True])
+def test_merging_a_catalog_with_its_compacted_copy_counts_each_day_once(
+    tmp_path: Path, compacted_first: bool
+) -> None:
+    raw = _raw_catalog(tmp_path / "x.db", *_OLD_DAY_TWICE_AND_A_RECENT_DAY)
+    compacted = _compacted(raw, tmp_path / "x-compacted.db")
+    sources = [compacted, raw] if compacted_first else [raw, compacted]
+    out = tmp_path / "out.db"
+
+    skipped = merge_catalogs(out, sources)
+
+    for table in ("file_observations", "file_observation_ranges"):
+        assert rows_without_id(out, table) == rows_without_id(compacted, table)
+    recompacted = _compacted(out, tmp_path / "out-compacted.db")
+    assert rows_without_id(recompacted, "file_observation_ranges") == rows_without_id(
+        compacted, "file_observation_ranges"
+    )  # no doubled observation_count, no doubled sums
+    assert skipped == 3  # the three old raw rows a range already counts
+
+
+def test_merge_keeps_the_raw_rows_of_another_node_on_a_compacted_day(tmp_path: Path) -> None:
+    compacted = _compacted(
+        _raw_catalog(tmp_path / "x.db", *_OLD_DAY_TWICE_AND_A_RECENT_DAY), tmp_path / "xc.db"
+    )
+    other = _raw_catalog(tmp_path / "y.db", ("2026-01-10T03:00:00.000000+00:00", "n2"))
+    out = tmp_path / "out.db"
+
+    skipped = merge_catalogs(out, [compacted, other])
+
+    assert count(out, "file_observations") == 2  # x's recent row and y's row on the same day
+    assert skipped == 0

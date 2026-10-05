@@ -139,3 +139,14 @@ def test_t13_missing_source_file_errors_before_output_created(tmp_path: Path) ->
     assert code == 2
     # Fail-fast: the output was NOT created (we fail before opening/creating the output).
     assert not out.exists()
+
+
+def test_cli_reports_the_raw_observations_a_range_already_counts(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    src = _seed(tmp_path / "a.db", "a")
+    caplog.set_level("INFO", logger="mulewatch.merge")
+
+    assert main(["--output", str(tmp_path / "out.db"), str(src)]) == 0
+
+    assert "0 raw observation(s) already counted by a compacted day, not copied" in caplog.text
