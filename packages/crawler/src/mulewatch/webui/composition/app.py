@@ -26,6 +26,7 @@ from catalog_matching.config import MatcherConfig
 from catalog_matching.ed2k_link import build_ed2k_link
 from catalog_matching.models import TargetSegment
 from mulewatch.adapters.persistence_sqlite.reader import ReaderProvider
+from mulewatch.domain.observation import Sighting
 from mulewatch.ports.crawler_control import CrawlerControl
 from mulewatch.webui.adapters.catalog_read import (
     DEFAULT_DIR,
@@ -64,6 +65,7 @@ from mulewatch.webui.domain.views import (
     SortHeaders,
     TargetCoverageRow,
     TierFacet,
+    TimelineRow,
 )
 
 # The top-nav destinations, in render order: (path, label). The single source of truth for what
@@ -162,6 +164,23 @@ def _to_display_rows(
             )
         )
     return rows
+
+
+def _timeline_row(sighting: Sighting) -> TimelineRow:
+    """A sighting as one timeline line; a compacted day says so, with its source range."""
+    low, high = sighting.source_count_min, sighting.source_count_max
+    return TimelineRow(
+        names=sighting.names,
+        size_bytes=sighting.size_bytes,
+        sources=str(low) if low == high else f"{low} to {high}",
+        keyword=sighting.keyword or "",
+        observed_at=(
+            f"{sighting.first_seen[:10]} (compacted day)"
+            if sighting.compacted
+            else sighting.first_seen
+        ),
+        times_seen=str(sighting.observation_count),
+    )
 
 
 def _normalize(raw: str | None) -> str | None:
@@ -576,15 +595,12 @@ def build_app(
         if detail is None:
             return templates.TemplateResponse(request, "404.html", {}, status_code=404)
 
-        # (name, size, media, bitrate) of the latest observation, else of the latest range with the
-        # files size and no media, as the crawler reads them; None when the file has neither.
-        latest: tuple[str, int, int | None, int | None] | None = None
-        if detail.observations:
-            obs = detail.observations[-1]
-            latest = (obs.filename, obs.size_bytes, obs.media_length_sec, obs.bitrate_kbps)
-        elif detail.ranges:
-            latest = (detail.ranges[-1].filenames[0], detail.size_bytes, None, None)
-        link = "" if latest is None else build_ed2k_link(latest[0], latest[1], detail.ed2k_hash)
+        latest = detail.latest
+        link = (
+            ""
+            if latest is None
+            else build_ed2k_link(latest.names[0], latest.size_bytes, detail.ed2k_hash)
+        )
 
         # Explanation from the current config
         explanation_target_id: str | None = None
@@ -598,9 +614,9 @@ def build_app(
             # Every known name (ranges included) with the latest fields, as the crawler judges.
             explanation = explainer.explain(
                 filenames=detail.known_filenames,
-                size_bytes=latest[1],
-                media_length_sec=latest[2],
-                bitrate_kbps=latest[3],
+                size_bytes=latest.size_bytes,
+                media_length_sec=latest.media_length_sec,
+                bitrate_kbps=latest.bitrate_kbps,
                 target_id=first_decision.target_id,
             )
             if explanation is not None:
@@ -614,8 +630,7 @@ def build_app(
             ed2k_hash=detail.ed2k_hash,
             size_bytes=detail.size_bytes,
             aich_hash_display=detail.aich_hash if detail.aich_hash is not None else "·",
-            observations=detail.observations,
-            ranges=detail.ranges,
+            timeline=tuple(_timeline_row(sighting) for sighting in detail.sightings),
             decisions=detail.decisions,
             ed2k_link=link,
             explanation_target_id=explanation_target_id,

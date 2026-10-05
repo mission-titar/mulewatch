@@ -73,49 +73,23 @@
         <th>Sources</th>
         <th>Keyword</th>
         <th>Observed at</th>
+        <th>Times seen</th>
       </tr>
     </thead>
     <tbody>
-      {% for obs in file.observations %}
+      {% for row in file.timeline %}
       <tr>
-        <td>{{ obs.filename }}</td>
-        <td>{{ obs.size_bytes }}</td>
-        <td>{{ obs.source_count }}</td>
-        <td>{{ obs.keyword }}</td>
-        <td>{{ obs.observed_at }}</td>
+        <td>{% for n in row.names %}<div class="cell-line">{{ n }}</div>{% endfor %}</td>
+        <td>{{ row.size_bytes }}</td>
+        <td>{{ row.sources }}</td>
+        <td>{{ row.keyword }}</td>
+        <td>{{ row.observed_at }}</td>
+        <td>{{ row.times_seen }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="5">No observations.</td></tr>
+      <tr><td colspan="6">No observations.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
-
-{% for ranges in (file.ranges,) if ranges %}
-<section>
-  <h2>Compacted days</h2>
-  <table>
-    <thead>
-      <tr>
-        <th>Day</th>
-        <th>Names</th>
-        <th>Observations</th>
-        <th>Sources min</th>
-        <th>Sources max</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in ranges %}
-      <tr>
-        <td>{{ r.bucket }}</td>
-        <td>{% for n in r.filenames %}<div class="cell-line">{{ n }}</div>{% endfor %}</td>
-        <td>{{ r.observation_count }}</td>
-        <td>{{ r.source_count_min }}</td>
-        <td>{{ r.source_count_max }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endfor %}
 {% endblock %}

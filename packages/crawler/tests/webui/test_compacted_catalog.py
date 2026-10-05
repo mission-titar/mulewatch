@@ -142,6 +142,7 @@ def test_webui_reads_see_every_file_and_alias(compacted: Path) -> None:
         detail = reader.file_detail(ed2k_hash)
         assert detail is not None
         assert detail.known_filenames == tuple(sorted(by_day.values()))
+        assert {n for s in detail.sightings for n in s.names} == set(by_day.values())
 
 
 @pytest.mark.asyncio

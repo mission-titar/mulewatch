@@ -8,6 +8,7 @@ import pytest
 from catalog_matching.config import TIER_RANK
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.reader import open_reader
+from mulewatch.domain.observation import Sighting
 from mulewatch.webui.adapters.catalog_read import (
     _SQL_COUNT_FILES_BASE,
     _SQL_CTES,
@@ -19,12 +20,12 @@ from mulewatch.webui.adapters.catalog_read import (
     CatalogReader,
     _tier_rank_case,
 )
-from mulewatch.webui.domain.views import FileRow, RangeRow
+from mulewatch.webui.domain.views import FileRow
 from tests.webui.conftest import seed_range
 
 # Selects the CTE under test on its own: SQLite drops the CTEs a query does not reference, so
-# the resulting plan is exactly how ``latest_obs`` is resolved.
-LATEST_OBS_PROBE = "SELECT ed2k_hash, filename, source_count, observed_at FROM latest_obs"
+# the resulting plan is exactly how ``latest_sighting`` is resolved.
+LATEST_SIGHTING_PROBE = "SELECT ed2k_hash, name, source_count_max, last_seen FROM latest_sighting"
 
 # ---------------------------------------------------------------------------
 # Seed helpers
@@ -287,7 +288,7 @@ def test_file_detail_carries_observations_and_decisions(catalog_db: Path) -> Non
     assert detail.size_bytes == 100
     assert len(detail.decisions) == 1
     assert detail.decisions[0].target_id == "062A"
-    assert len(detail.observations) == 1
+    assert len(detail.sightings) == 1
 
 
 def test_file_detail_unknown_hash_is_none(catalog_db: Path) -> None:
@@ -429,18 +430,18 @@ def test_coverage_tie_break_on_id(catalog_db: Path) -> None:
 
 
 def test_file_detail_observations_include_media_fields_none(catalog_db: Path) -> None:
-    """ObservationRow.media_length_sec and bitrate_kbps are None when absent from the SELECT."""
+    """A sighting's media_length_sec and bitrate_kbps are None when the observation has none."""
     _seed(catalog_db)
     detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
     assert detail is not None
-    assert len(detail.observations) == 1
-    obs = detail.observations[0]
+    assert len(detail.sightings) == 1
+    obs = detail.sightings[0]
     assert obs.media_length_sec is None
     assert obs.bitrate_kbps is None
 
 
 def test_file_detail_observations_include_media_fields_present(catalog_db: Path) -> None:
-    """ObservationRow.media_length_sec and bitrate_kbps are filled when present."""
+    """A sighting's media_length_sec and bitrate_kbps are filled when present."""
     h = "d" * 32
     with sqlite3.connect(catalog_db) as conn:
         conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 150))
@@ -466,8 +467,8 @@ def test_file_detail_observations_include_media_fields_present(catalog_db: Path)
         conn.commit()
     detail = CatalogReader(open_reader(catalog_db)).file_detail(h)
     assert detail is not None
-    assert len(detail.observations) == 1
-    obs = detail.observations[0]
+    assert len(detail.sightings) == 1
+    obs = detail.sightings[0]
     assert obs.media_length_sec == 1320
     assert obs.bitrate_kbps == 192
 
@@ -1036,37 +1037,51 @@ def test_search_matches_a_name_only_kept_in_ranges(catalog_db: Path) -> None:
     assert reader.list_files(target=None, tier=None, query="nowhere", page=1) == []
 
 
-def test_file_detail_carries_ranges_and_every_known_name(catalog_db: Path) -> None:
+def test_file_detail_carries_one_timeline_of_both_forms_and_every_known_name(
+    catalog_db: Path,
+) -> None:
     _seed(catalog_db)
-    seed_range(catalog_db, "a" * 32, "2026-05-02", ["keroro_062.avi", "zz.avi"], sources=4)
+    seed_range(catalog_db, "a" * 32, "2026-07-02", ["keroro_062.avi", "zz.avi"], sources=4)
     seed_range(catalog_db, "a" * 32, "2026-05-01", ["aa.avi"])
     detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
     assert detail is not None
-    assert detail.ranges == (
-        RangeRow(
-            bucket="2026-05-01",
-            filenames=("aa.avi",),
-            observation_count=2,
-            source_count_min=1,
-            source_count_max=3,
-        ),
-        RangeRow(
-            bucket="2026-05-02",
-            filenames=("keroro_062.avi", "zz.avi"),
-            observation_count=2,
-            source_count_min=1,
-            source_count_max=4,
-        ),
+    raw = Sighting(
+        ed2k_hash="a" * 32,
+        names=("keroro_062.avi",),
+        observation_count=1,
+        first_seen="2026-06-22T10:00:00.000000+00:00",
+        last_seen="2026-06-22T10:00:00.000000+00:00",
+        source_count_min=5,
+        source_count_max=5,
+        size_bytes=100,
+        media_length_sec=None,
+        bitrate_kbps=None,
+        keyword="keroro",
+        compacted=False,
     )
+    assert [(s.first_seen[:10], s.names, s.compacted) for s in detail.sightings] == [
+        ("2026-05-01", ("aa.avi",), True),
+        ("2026-06-22", ("keroro_062.avi",), False),
+        ("2026-07-02", ("keroro_062.avi", "zz.avi"), True),
+    ]
+    assert detail.sightings[1] == raw
+    assert detail.latest == raw  # the raw observation wins over a later compacted day
     assert detail.known_filenames == ("aa.avi", "keroro_062.avi", "zz.avi")
 
 
-def test_file_detail_without_ranges_has_none(catalog_db: Path) -> None:
+def test_file_detail_without_ranges_has_no_compacted_sighting(catalog_db: Path) -> None:
     _seed(catalog_db)
     detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
     assert detail is not None
-    assert detail.ranges == ()
+    assert [s.compacted for s in detail.sightings] == [False]
     assert detail.known_filenames == ("keroro_062.avi",)
+
+
+def test_file_detail_of_a_file_never_seen_has_no_sighting(catalog_db: Path) -> None:
+    h = _seed_file_without_observation(catalog_db)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(h)
+    assert detail is not None
+    assert (detail.sightings, detail.latest, detail.known_filenames) == ((), None, ())
 
 
 # ---------------------------------------------------------------------------
@@ -1077,8 +1092,8 @@ def test_file_detail_without_ranges_has_none(catalog_db: Path) -> None:
 @pytest.mark.parametrize(
     ("label", "sql"),
     [
-        ("latest_obs alone", _SQL_CTES + LATEST_OBS_PROBE),
-        ("list_files", _SQL_LIST_FILES_BASE + "ORDER BY obs.observed_at DESC LIMIT 50"),
+        ("latest_sighting alone", _SQL_CTES + LATEST_SIGHTING_PROBE),
+        ("list_files", _SQL_LIST_FILES_BASE + "ORDER BY obs.last_seen DESC LIMIT 50"),
         ("count_files", _SQL_COUNT_FILES_BASE),
         ("tier_counts", _SQL_TIER_COUNTS_BASE + "GROUP BY ld.tier"),
     ],

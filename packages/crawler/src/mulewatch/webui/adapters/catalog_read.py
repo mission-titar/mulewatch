@@ -11,24 +11,27 @@
   latest decision, optional filters + LIMIT/OFFSET).
 - ``count_files()`` — ``(matched, total)`` counts over the same filtered source, for the
   /files summary line.
-- ``file_detail()``: all observations, compacted days, known names + current decisions for a
-  given hash; ``None`` if the hash is unknown.
+- ``file_detail()``: the timeline of sightings, the latest one, known names + current
+  decisions for a given hash; ``None`` if the hash is unknown.
 
 All SQL lives in module constants, parameterized (no value interpolation).
 """
 
-import json
 import sqlite3
 
 from catalog_matching.config import TIER_RANK
-from mulewatch.adapters.persistence_sqlite.sightings import known_names
+from mulewatch.adapters.persistence_sqlite.sightings import (
+    LATEST_SIGHTING_CTE,
+    NAME_MATCH_CLAUSE,
+    known_names,
+    latest_sighting,
+    sightings,
+)
 from mulewatch.webui.domain.views import (
     DecisionView,
     FileDecision,
     FileDetail,
     FileRow,
-    ObservationRow,
-    RangeRow,
 )
 
 # ---------------------------------------------------------------------------
@@ -38,14 +41,17 @@ from mulewatch.webui.domain.views import (
 PAGE_SIZE = 50
 _PAGE_SIZE = PAGE_SIZE  # historical alias (internal) — the public value is used by the handler
 
+# A compacted day keeps min/max/sum, never one latest count: the list shows it as unknown.
+_LATEST_SOURCE_COUNT = "IIF(obs.compacted, NULL, obs.source_count_max)"
+
 # Sort allowlist (webui spec §3.1): a query-param key maps to a FIXED ORDER BY expression; no
 # param value is ever interpolated into SQL. ``tier`` sorts by the file's strongest tier rank
 # (``dec.best_tier_rank``, MAX of the TIER_RANK CASE). Direction maps through a fixed set too.
 SORT_COLUMNS: dict[str, str] = {
-    "name": "obs.filename",
+    "name": "obs.name",
     "size": "f.size_bytes",
-    "sources": "obs.source_count",
-    "last_seen": "obs.observed_at",
+    "sources": _LATEST_SOURCE_COUNT,
+    "last_seen": "obs.last_seen",
     "tier": "dec.best_tier_rank",
 }
 SORT_DIRECTIONS: dict[str, str] = {"asc": "ASC", "desc": "DESC"}
@@ -94,33 +100,15 @@ ORDER BY target_id, ed2k_hash
 # The "latest per group" CTEs shared by the explorer list + counter, each folding an
 # append-only table to its current rows (latest wins, tie-break on id).
 #
-# ``latest_obs`` is driven by ``files`` and seeks each file's newest observation through
-# ``idx_file_observations_hash_observed`` (migration 0004), rather than numbering the table
-# with a ROW_NUMBER() window like the CTEs below. A window must number EVERY row, so it walks
-# all of ``file_observations`` (1.18M rows for 1402 files on the real node) to keep one row per
-# file: 2.8s per query, ~10s per /files render. The seek form needs that index to pay off (it
-# is slower than the window without it), which is why the two must not be split up. The other
-# CTEs keep their window: ``match_decisions`` is small (hundreds of rows), so it is not worth
-# the same treatment until it grows.
-#
-# A file compacted down to ranges falls back to its latest range: first name (the array is
-# sorted) and last_observed_at, but a NULL source_count (a range has no single latest count).
-# COALESCE only runs that lookup when the file has no raw observation.
-#
-# Being files-driven, ``latest_obs`` holds one row per catalogued file, INCLUDING a file with
-# no observation yet (all-NULL columns) where the window form simply had no row. Every consumer
-# below LEFT JOINs it onto ``files``, which absorbs the difference (NULL columns either way);
-# read it on its own, though, and it counts files, not observed files.
+# ``latest_sighting`` (from ``sightings``) seeks each file's newest observation through
+# ``idx_file_observations_hash_observed`` instead of numbering the whole raw table with a window
+# (10.9M rows on the node), and falls back to the latest compacted day. It holds one row per
+# catalogued file, all NULL for a file never seen; every consumer LEFT JOINs it onto ``files``.
 #
 # ``latest_dec`` keeps the latest decision per (hash, target_id), dropping the legacy
 # ``target_id == ''`` sentinel and any target whose latest row is a ``retracted`` marker;
 # ``dec_agg`` folds those to ONE row per hash, target_ids/tiers ``char(31)``-joined and both
 # ordered by target_id so the two lists stay index-aligned (spec §9, rendering A).
-_LATEST_RANGE = """FROM file_observation_ranges AS r
-            WHERE r.ed2k_hash = f.ed2k_hash
-            ORDER BY r.last_observed_at DESC, r.id DESC
-            LIMIT 1"""
-
 _SQL_CTES = f"""\
 WITH latest_dec AS (
     SELECT ed2k_hash, target_id, tier
@@ -148,45 +136,27 @@ dec_agg AS (
     FROM latest_dec AS ld
     GROUP BY ld.ed2k_hash
 ),
-latest_obs AS (
-    SELECT
-        f.ed2k_hash AS ed2k_hash,
-        COALESCE(obs.filename, (
-            SELECT json_extract(r.filenames, '$[0]') {_LATEST_RANGE}
-        )) AS filename,
-        obs.source_count AS source_count,
-        COALESCE(obs.observed_at, (
-            SELECT r.last_observed_at {_LATEST_RANGE}
-        )) AS observed_at
-    FROM files AS f
-    LEFT JOIN file_observations AS obs ON obs.id = (
-        SELECT o.id
-        FROM file_observations AS o
-        WHERE o.ed2k_hash = f.ed2k_hash
-        ORDER BY o.observed_at DESC, o.id DESC
-        LIMIT 1
-    )
-)
+{LATEST_SIGHTING_CTE}
 """
 
 # Shared source: files ⨝ latest observation ⨝ current decisions (aggregated), all pre-folded
 # by the CTEs above, so this is a plain star-join driven by ``files``.
 _SQL_FILES_SOURCE = """\
 FROM files AS f
-LEFT JOIN latest_obs AS obs ON obs.ed2k_hash = f.ed2k_hash
+LEFT JOIN latest_sighting AS obs ON obs.ed2k_hash = f.ed2k_hash
 LEFT JOIN dec_agg AS dec ON dec.ed2k_hash = f.ed2k_hash
 """
 
 # Explorer: files + latest joins, driven by files. Optional filters added in list_files().
 _SQL_LIST_FILES_BASE = (
     _SQL_CTES
-    + """\
+    + f"""\
 SELECT
     f.ed2k_hash,
     f.size_bytes,
-    obs.filename,
-    obs.source_count,
-    obs.observed_at AS last_seen,
+    obs.name AS filename,
+    {_LATEST_SOURCE_COUNT} AS source_count,
+    obs.last_seen AS last_seen,
     dec.target_ids,
     dec.tiers
 """
@@ -218,27 +188,9 @@ _SQL_TIER_COUNTS_BASE = (
 SELECT ld.tier AS tier, COUNT(DISTINCT ld.ed2k_hash) AS n
 FROM latest_dec AS ld
 JOIN files AS f ON f.ed2k_hash = ld.ed2k_hash
-LEFT JOIN latest_obs AS obs ON obs.ed2k_hash = ld.ed2k_hash
+LEFT JOIN latest_sighting AS obs ON obs.ed2k_hash = ld.ed2k_hash
 """
 )
-
-# All observations of a file (timeline), chronological order.
-_SQL_OBSERVATIONS = """\
-SELECT
-    id,
-    filename,
-    size_bytes,
-    source_count,
-    complete_source_count,
-    media_length_sec,
-    bitrate_kbps,
-    keyword,
-    observed_at,
-    node_id
-FROM file_observations
-WHERE ed2k_hash = ?
-ORDER BY observed_at ASC, id ASC
-"""
 
 # All current decisions of a file: latest per (ed2k_hash, target_id), excluding the legacy
 # ``target_id == ''`` sentinel and any target whose latest row is a ``retracted`` marker.
@@ -262,14 +214,6 @@ WHERE rn = 1
 AND target_id != ''
 AND tier != 'retracted'
 ORDER BY target_id
-"""
-
-# Compacted days of a file, oldest first (the last one is its latest range).
-_SQL_RANGES = """\
-SELECT bucket, filenames, observation_count, source_count_min, source_count_max
-FROM file_observation_ranges
-WHERE ed2k_hash = ?
-ORDER BY last_observed_at ASC, id ASC
 """
 
 # Basic lookup on files (for file_detail).
@@ -308,11 +252,7 @@ def _filter_clauses(
         )
         params.append(tier)
     if query is not None:
-        # The latest name, or any name kept in a compacted range.
-        clauses.append(
-            "(obs.filename LIKE ? OR EXISTS (SELECT 1 FROM file_observation_ranges AS qr,"
-            " json_each(qr.filenames) AS qn WHERE qr.ed2k_hash = f.ed2k_hash AND qn.value LIKE ?))"
-        )
+        clauses.append(NAME_MATCH_CLAUSE)
         params.extend([f"%{query}%"] * 2)
     return clauses, params
 
@@ -480,9 +420,7 @@ class CatalogReader:
         if file_row is None:
             return None
 
-        obs_rows = self._conn.execute(_SQL_OBSERVATIONS, (ed2k_hash,)).fetchall()
         dec_rows = self._conn.execute(_SQL_FILE_DECISIONS, (ed2k_hash,)).fetchall()
-        range_rows = self._conn.execute(_SQL_RANGES, (ed2k_hash,)).fetchall()
 
         decisions = tuple(
             DecisionView(
@@ -499,31 +437,8 @@ class CatalogReader:
             ed2k_hash=file_row["ed2k_hash"],
             size_bytes=file_row["size_bytes"],
             aich_hash=file_row["aich_hash"],
-            observations=tuple(
-                ObservationRow(
-                    id=row["id"],
-                    filename=row["filename"],
-                    size_bytes=row["size_bytes"],
-                    source_count=row["source_count"],
-                    complete_source_count=row["complete_source_count"],
-                    media_length_sec=row["media_length_sec"],
-                    bitrate_kbps=row["bitrate_kbps"],
-                    keyword=row["keyword"],
-                    observed_at=row["observed_at"],
-                    node_id=row["node_id"],
-                )
-                for row in obs_rows
-            ),
+            sightings=sightings(self._conn, ed2k_hash),
+            latest=latest_sighting(self._conn, ed2k_hash),
             decisions=decisions,
-            ranges=tuple(
-                RangeRow(
-                    bucket=row["bucket"],
-                    filenames=tuple(json.loads(row["filenames"])),
-                    observation_count=row["observation_count"],
-                    source_count_min=row["source_count_min"],
-                    source_count_max=row["source_count_max"],
-                )
-                for row in range_rows
-            ),
             known_filenames=known_names(self._conn, ed2k_hash),
         )

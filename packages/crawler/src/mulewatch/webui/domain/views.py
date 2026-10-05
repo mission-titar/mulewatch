@@ -4,6 +4,8 @@ these fields. No template-side logic."""
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from mulewatch.domain.observation import Sighting
+
 
 @dataclass(frozen=True)
 class CoverageStatus:
@@ -83,30 +85,15 @@ class FileRow:
 
 
 @dataclass(frozen=True)
-class ObservationRow:
-    """One entry in the observations timeline."""
+class TimelineRow:
+    """One line of a file's timeline, precomputed: a raw observation or a compacted day."""
 
-    id: int
-    filename: str
+    names: tuple[str, ...]
     size_bytes: int
-    source_count: int
-    complete_source_count: int
-    media_length_sec: int | None
-    bitrate_kbps: int | None
-    keyword: str
-    observed_at: str
-    node_id: str
-
-
-@dataclass(frozen=True)
-class RangeRow:
-    """One compacted day of a file (``file_observation_ranges``), for the detail timeline."""
-
-    bucket: str  # UTC day, YYYY-MM-DD
-    filenames: tuple[str, ...]  # distinct, sorted
-    observation_count: int
-    source_count_min: int
-    source_count_max: int
+    sources: str  # the count, or "min to max" over a compacted day
+    keyword: str  # "" on a compacted day
+    observed_at: str  # the timestamp, or "<day> (compacted day)"
+    times_seen: str  # "1", or the compacted day's observation count
 
 
 @dataclass(frozen=True)
@@ -127,9 +114,9 @@ class FileDetail:
     ed2k_hash: str
     size_bytes: int
     aich_hash: str | None
-    observations: tuple[ObservationRow, ...]
+    sightings: tuple[Sighting, ...]  # raw observations and compacted days, oldest first
+    latest: Sighting | None  # the latest raw observation, else the latest compacted day
     decisions: tuple[DecisionView, ...]  # current decisions, latest per target, 0..N
-    ranges: tuple[RangeRow, ...]  # compacted days, oldest first
     known_filenames: tuple[str, ...]  # every distinct name, raw or compacted, sorted
 
 
@@ -362,10 +349,9 @@ class FileDetailDisplay:
     ed2k_hash: str
     size_bytes: int
     aich_hash_display: str  # aich_hash or "·"
-    observations: tuple[ObservationRow, ...]
-    ranges: tuple[RangeRow, ...]  # compacted days; the template shows them only when present
+    timeline: tuple[TimelineRow, ...]  # one row per sighting, oldest first
     decisions: tuple[DecisionView, ...]  # 0..N elements: for template iteration
-    ed2k_link: str  # precomputed from the latest observation, else the latest range
+    ed2k_link: str  # precomputed from the latest sighting
     # Explanation fields (None if no explanation available)
     explanation_target_id: str | None
     explanation_rules_fired: tuple[str, ...]
