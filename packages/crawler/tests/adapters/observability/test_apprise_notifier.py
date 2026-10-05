@@ -21,25 +21,32 @@ class _FakeApprise:
         return True
 
 
-def _notifier(fake: _FakeApprise, node_id: str = "titar-node-1") -> AppriseNotifier:
-    targets = (("discord://x", Audience.COMMUNITY), ("discord://y", Audience.OPERATIONS))
-    return AppriseNotifier(targets, node_id=node_id, apprise_obj=fake)
+def _notifier(prefixed: _FakeApprise, bare: _FakeApprise | None = None) -> AppriseNotifier:
+    targets = (
+        ("discord://x", Audience.COMMUNITY, True),
+        ("discord://y", Audience.OPERATIONS, True),
+        ("discord://z", Audience.COMMUNITY, False),
+    )
+    groups = iter((prefixed, bare or _FakeApprise()))
+    return AppriseNotifier(targets, node_id="titar-node-1", apprise_factory=lambda: next(groups))
 
 
-def test_targets_added_with_tags() -> None:
-    fake = _FakeApprise()
-    _notifier(fake)
-    assert fake.added == [("discord://x", "community"), ("discord://y", "operations")]
+def test_targets_are_added_with_tags_to_the_prefixed_or_the_bare_group() -> None:
+    prefixed, bare = _FakeApprise(), _FakeApprise()
+    _notifier(prefixed, bare)
+    assert prefixed.added == [("discord://x", "community"), ("discord://y", "operations")]
+    assert bare.added == [("discord://z", "community")]
 
 
 @pytest.mark.asyncio
-async def test_notify_prefixes_node_id_and_routes_tag() -> None:
-    fake = _FakeApprise()
-    await _notifier(fake).notify(Audience.COMMUNITY, "episode found", Severity.INFO)
-    call = fake.sent[-1]
-    assert call["tag"] == "community"
-    assert call["body"] == "[titar-node-1] episode found"
-    assert call["notify_type"] == apprise.NotifyType.INFO
+async def test_notify_sends_the_prefixed_body_and_the_bare_one_to_the_tag() -> None:
+    prefixed, bare = _FakeApprise(), _FakeApprise()
+    await _notifier(prefixed, bare).notify(Audience.COMMUNITY, "episode found", Severity.INFO)
+    assert [(c["tag"], c["body"]) for c in prefixed.sent + bare.sent] == [
+        ("community", "[titar-node-1] episode found"),
+        ("community", "episode found"),
+    ]
+    assert prefixed.sent[-1]["notify_type"] == apprise.NotifyType.INFO
 
 
 @pytest.mark.asyncio

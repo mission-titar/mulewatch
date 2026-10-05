@@ -53,10 +53,12 @@ AMULE_INSTANCE_NAME = "amuled"
 
 @dataclass(frozen=True)
 class NotificationTarget:
-    """An apprise target (secret via ``${...}``). ``tag`` = the consuming audience (E-D7)."""
+    """An apprise target (secret via ``${...}``). ``tag`` = the consuming audience (E-D7).
+    ``node_prefix: false`` drops the ``[node-id]`` prefix, for a service with its own identity."""
 
     url: str
     tag: Audience
+    node_prefix: bool = True
 
 
 @dataclass(frozen=True)
@@ -295,7 +297,11 @@ def _parse_observability(raw: dict[str, Any], env: Mapping[str, str]) -> Observa
                 f"{what}.tag: 'community' or 'operations' expected, got {tag_raw!r}"
             ) from error
         notifications.append(
-            NotificationTarget(url=_require_str(mapping, "url", what, env), tag=tag)
+            NotificationTarget(
+                url=_require_str(mapping, "url", what, env),
+                tag=tag,
+                node_prefix=_bool_default(mapping, "node_prefix", True, what),
+            )
         )
     return ObservabilityConfig(
         log_level=log_level,

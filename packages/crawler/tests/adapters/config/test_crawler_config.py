@@ -477,7 +477,7 @@ def test_notifications_parsed() -> None:
         "observability": {
             "log_level": "INFO",
             "notifications": [
-                {"url": "discord://a", "tag": "community"},
+                {"url": "discord://a", "tag": "community", "node_prefix": False},
                 {"url": "discord://b", "tag": "operations"},
             ],
         }
@@ -485,9 +485,20 @@ def test_notifications_parsed() -> None:
     cfg = parse_crawler_config(raw, _env())
     assert cfg.observability is not None
     assert cfg.observability.notifications == (
-        NotificationTarget(url="discord://a", tag=Audience.COMMUNITY),
-        NotificationTarget(url="discord://b", tag=Audience.OPERATIONS),
+        NotificationTarget(url="discord://a", tag=Audience.COMMUNITY, node_prefix=False),
+        NotificationTarget(url="discord://b", tag=Audience.OPERATIONS, node_prefix=True),
     )
+
+
+def test_notification_node_prefix_non_bool_rejected() -> None:
+    raw = _minimal_raw() | {
+        "observability": {
+            "log_level": "INFO",
+            "notifications": [{"url": "x", "tag": "community", "node_prefix": "no"}],
+        }
+    }
+    with pytest.raises(ConfigError, match=r"notifications\[0\]\.node_prefix: boolean expected"):
+        parse_crawler_config(raw, _env())
 
 
 def test_notifications_bad_tag_rejected() -> None:
