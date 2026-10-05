@@ -60,6 +60,4 @@ retractions for the vetoed pairs; notifications only go to `syslog://`, so nothi
 - `N°074B « La couronne du paranormal »` (a real Teletoon file) has no target: `targets.yml` lists
   episode 74 as mono-segment `Keroro special`. Either Teletoon split it like 75/76, or a segment is
   missing from the Wikipedia-derived list. Worth a look by the operator.
-- `Keroro 01 La gran invasion (2006) [...AAC(ES)].mkv` still reaches `notify`: `(es)` is not in
-  `foreign_lang`.
 - Next: the notifications spec (`BACKLOG.md`, findings in the spec's §7).
