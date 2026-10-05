@@ -83,3 +83,12 @@ def bucketize(observations: Sequence[ObservationRow]) -> list[ObservationBucket]
             )
         )
     return buckets
+
+
+def covers(bucket: ObservationBucket, observation: ObservationRow) -> bool:
+    """The range already counts this raw observation: same hash, its UTC day, one of its nodes."""
+    return (
+        bucket.ed2k_hash == observation.ed2k_hash
+        and bucket.bucket == observation.observed_at[:10]
+        and observation.node_id in json.loads(bucket.node_ids)
+    )
