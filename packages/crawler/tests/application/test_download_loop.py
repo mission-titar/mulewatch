@@ -9,7 +9,6 @@ from mulewatch.application.run_download_cycle import (
     DownloadLoopDeps,
     download_loop,
 )
-from mulewatch.ports.catalog_repository import ObservedFile
 
 # Reuse the fakes from test_run_download_cycle (imported explicitly).
 from tests.application.fakes import RecordingTelemetry
@@ -102,21 +101,16 @@ async def test_nudge_wakes_the_loop_before_poll_expires() -> None:
     assert DOWNLOAD_NUDGE_SUBJECT in signal.waited
 
 
-class _ShutdownDuringCycleCatalog:
-    """CatalogReader that sets ``shutdown`` on the 1st ``download_decisions`` (DURING the cycle).
-
-    Structurally satisfies ``CatalogReader`` (download_decisions + last_observation).
-    """
+class _ShutdownDuringCycleCatalog(FakeCatalogReads):
+    """CatalogReader that sets ``shutdown`` on the 1st ``download_decisions`` (DURING the cycle)."""
 
     def __init__(self, shutdown: asyncio.Event) -> None:
+        super().__init__()
         self._shutdown = shutdown
 
     def download_decisions(self) -> tuple[DownloadCandidate, ...]:
         self._shutdown.set()
         return ()
-
-    def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
-        return None
 
 
 @pytest.mark.asyncio

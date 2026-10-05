@@ -10,6 +10,7 @@ adds it at exposition (including it would produce ``…_total_total``). Gauges/h
 as-is.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from enum import Enum, StrEnum, auto
 from typing import Literal, assert_never
@@ -45,6 +46,7 @@ class Severity(Enum):
 
     DEBUG = auto()
     INFO = auto()
+    SUCCESS = auto()
     WARNING = auto()
     ERROR = auto()
 
@@ -102,7 +104,8 @@ class Report:
 
     ``metrics`` is a TUPLE (one event can feed several metrics —
     ``SearchCycleCompleted`` = counter + histogram). Empty ``audiences`` = no notif.
-    ``notification`` is the notified body when it differs from the logged ``message``.
+    ``notification`` is the notified body when it differs from the logged ``message``; ``title``
+    heads it.
     """
 
     severity: Severity
@@ -110,6 +113,7 @@ class Report:
     metrics: tuple[MetricInstruction, ...] = ()
     audiences: frozenset[Audience] = frozenset()
     notification: str = ""
+    title: str = ""
 
 
 # The tiers a rise announces, with the heading of the message.
@@ -123,6 +127,15 @@ def _rank(tier: str | None) -> int:
 
 def _is_rise(change: DecisionChange) -> bool:
     return change.after in _RISE_HEADINGS and _rank(change.after) > _rank(change.before)
+
+
+def _targets_section(targets: Iterable[tuple[str, str]]) -> str:
+    return "**Targets**\n" + "\n".join(f"{target_id} - {title}" for target_id, title in targets)
+
+
+def _code_name(filename: str) -> str:
+    # A backtick would close the span and let the rest of the name read as markup.
+    return "`" + filename.replace("`", "'") + "`"
 
 
 def _describe_decisions(event: DecisionsRecorded) -> Report:
@@ -140,17 +153,15 @@ def _describe_decisions(event: DecisionsRecorded) -> Report:
         return report
     top = max((c.after for c in risen), key=_rank)
     link = build_ed2k_link(event.filename, event.size_bytes, event.ed2k_hash)
-    targets = "\n".join(f"{c.target_id} - {c.title}" for c in risen)
-    # A network name must stay in its code span: Discord pings an @everyone outside one.
-    name = event.filename.replace("`", "'")
     return replace(
         report,
         audiences=frozenset({Audience.COMMUNITY}),
         notification=(
-            f"{_RISE_HEADINGS[top]}\n\n**File**\n"
-            f"{event.size_bytes / 2**20:.1f} MiB - `{name}`\n`{link}`\n\n"
-            f"**Targets**\n{targets}"
+            _targets_section((c.target_id, c.title) for c in risen)
+            + f"\n\n**File**\n{event.size_bytes / 2**20:.1f} MiB - {_code_name(event.filename)}"
+            + f"\n\n**ed2k**\n`{link}`"
         ),
+        title=_RISE_HEADINGS[top],
     )
 
 
@@ -223,10 +234,12 @@ def describe(event: Event) -> Report:
             )
         case DownloadCompleted():
             return Report(
-                Severity.INFO,
-                f"✅ download completed: {event.target_id}",
+                Severity.SUCCESS,
+                f"✅ download completed: {', '.join(t for t, _ in event.targets)}",
                 (MetricInstruction(MetricName.DOWNLOADS_COMPLETED, "inc"),),
                 frozenset({Audience.COMMUNITY}),
+                _targets_section(event.targets) + f"\n\n**File**\n{_code_name(event.filename)}",
+                "✅ Downloaded",
             )
         case ConnectedInstancesSampled():
             return Report(

@@ -1,7 +1,7 @@
 """Observability dispatcher: routes an ``Event`` to log + metrics + notifications (E-D3/E-D13).
 
 ADAPTER layer. Implements ``Telemetry``. ``emit``: ``describe`` (pure) → log at the mapped level +
-``MetricsSink.apply`` for each metric + ``Notifier.notify`` per audience (the report's
+``MetricsSink.apply`` for each metric + ``Notifier.notify`` per audience (the report's title and
 ``notification`` body, else its message), each notification under
 ``asyncio.wait_for(timeout)`` with failure/timeout ABSORBED + logged (a broken channel NEVER
 breaks the crawl, E-D13). No state (the edge-trigger lives in the application — E-D8)."""
@@ -18,6 +18,7 @@ _logger = logging.getLogger("mulewatch.observability")
 _LEVELS: dict[Severity, int] = {
     Severity.DEBUG: logging.DEBUG,
     Severity.INFO: logging.INFO,
+    Severity.SUCCESS: logging.INFO,
     Severity.WARNING: logging.WARNING,
     Severity.ERROR: logging.ERROR,
 }
@@ -42,7 +43,10 @@ class ObservabilityDispatcher:
             try:
                 await asyncio.wait_for(
                     self._notifier.notify(
-                        audience, report.notification or report.message, report.severity
+                        audience,
+                        report.title,
+                        report.notification or report.message,
+                        report.severity,
                     ),
                     timeout=self._timeout,
                 )

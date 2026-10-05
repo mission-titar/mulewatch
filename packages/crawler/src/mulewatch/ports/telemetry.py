@@ -15,7 +15,9 @@ class MetricsSink(Protocol):
 
 @runtime_checkable
 class Notifier(Protocol):
-    async def notify(self, audience: Audience, body: str, severity: Severity) -> None: ...
+    async def notify(
+        self, audience: Audience, title: str, body: str, severity: Severity
+    ) -> None: ...
 
 
 @runtime_checkable
