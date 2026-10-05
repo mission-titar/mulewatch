@@ -52,12 +52,6 @@
     <li>{{ token }}</li>
     {% endfor %}
   </ul>
-  <p>Vetoes fired:</p>
-  <ul>
-    {% for veto in file.explanation_vetoes_fired %}
-    <li>{{ veto }}</li>
-    {% endfor %}
-  </ul>
   {% else %}
   <p>No explanation available.</p>
   {% endfor %}

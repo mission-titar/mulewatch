@@ -9,6 +9,3 @@ dropped, never annotated with what became of it. The history is in git and in
 `agents/handoffs/`.
 
 An agent adds an entry only after the operator has agreed to it.
-
-- **Notifications for researchers**: one message per file with title, clean name and ed2k link,
-  sent on a tier change only. Findings in `agents/specs/2026-10-04-matcher-file-vetoes.md` §7.

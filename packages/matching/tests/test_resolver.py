@@ -105,14 +105,7 @@ def test_resolve_rule_condition() -> None:
     resolver = _resolver_from(
         {
             "tokens": {"keroro": {"keyword": "keroro"}, "titar": {"keyword": "titar"}},
-            "rules": [
-                {
-                    "name": "r",
-                    "tier": "catalog",
-                    "scope": "unattributed",
-                    "all": ["keroro", "titar"],
-                }
-            ],
+            "rules": [{"name": "r", "tier": "catalog", "all": ["keroro", "titar"]}],
         }
     )
     rule = resolver.config.rules[0]
@@ -128,12 +121,7 @@ def test_token_ref_override_applies_min() -> None:
         {
             "tokens": {"title_hit": {"coverage": "title", "min": 0.6}},
             "rules": [
-                {
-                    "name": "low",
-                    "tier": "notify",
-                    "scope": "unattributed",
-                    "all": [{"token": "title_hit", "min": 0.34}],
-                }
+                {"name": "low", "tier": "notify", "all": [{"token": "title_hit", "min": 0.34}]}
             ],
         }
     )
@@ -153,12 +141,7 @@ def test_token_ref_override_applies_fuzz() -> None:
         {
             "tokens": {"title_hit": {"coverage": "title", "min": 0.6}},
             "rules": [
-                {
-                    "name": "f",
-                    "tier": "notify",
-                    "scope": "unattributed",
-                    "all": [{"token": "title_hit", "fuzz": 0.99}],
-                }
+                {"name": "f", "tier": "notify", "all": [{"token": "title_hit", "fuzz": 0.99}]}
             ],
         }
     )
@@ -174,14 +157,7 @@ def test_token_ref_without_override_resolves_token_as_is() -> None:
     resolver = _resolver_from(
         {
             "tokens": {"title_hit": {"coverage": "title", "min": 0.6}},
-            "rules": [
-                {
-                    "name": "plain",
-                    "tier": "notify",
-                    "scope": "unattributed",
-                    "all": [{"token": "title_hit"}],
-                }
-            ],
+            "rules": [{"name": "plain", "tier": "notify", "all": [{"token": "title_hit"}]}],
         }
     )
     matcher = resolver.resolve_rule(resolver.config.rules[0], _TARGET)
@@ -193,7 +169,7 @@ def test_resolve_all_returns_every_token_and_rule_matcher() -> None:
     resolver = _resolver_from(
         {
             "tokens": {"keroro": {"keyword": "keroro"}, "seg": {"regex": "0*{absolute_number}"}},
-            "rules": [{"name": "r", "tier": "catalog", "scope": "unattributed", "any": ["keroro"]}],
+            "rules": [{"name": "r", "tier": "catalog", "any": ["keroro"]}],
         }
     )
     resolved = resolver.resolve_all(_TARGET)

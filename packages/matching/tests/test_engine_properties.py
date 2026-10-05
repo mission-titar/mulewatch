@@ -20,35 +20,27 @@ _CANONICAL_RAW: dict[str, object] = {
                 r"Espa[nñ]ol|English\s?Dub|ENG)\b"
             ),
         },
+        "french_safe": {"not": "foreign_lang"},
         "title_hit": {"coverage": "title", "min": 0.6},
         "is_video": {"regex": r"\.(avi|mkv|mp4|mpg|ogm)$"},
     },
-    "vetoes": ["foreign_lang"],
     "rules": [
         {
             "name": "id_segment_exact",
             "tier": "download",
-            "scope": "segment",
-            "all": ["is_video", "segment_id", "keroro"],
+            "all": ["french_safe", "is_video", "segment_id", "keroro"],
         },
         {
             "name": "teletoon_titre",
             "tier": "download",
-            "scope": "segment",
-            "all": ["teletoon", {"token": "title_hit", "min": 0.6}],
+            "all": ["french_safe", "teletoon", {"token": "title_hit", "min": 0.6}],
         },
         {
             "name": "numero_titre",
             "tier": "notify",
-            "scope": "segment",
-            "all": ["segment_id", {"token": "title_hit", "min": 0.5}],
+            "all": ["french_safe", "segment_id", {"token": "title_hit", "min": 0.5}],
         },
-        {
-            "name": "keroro_large",
-            "tier": "catalog",
-            "scope": "unattributed",
-            "all": ["keroro_titar"],
-        },
+        {"name": "keroro_large", "tier": "catalog", "all": ["french_safe", "keroro_titar"]},
     ],
 }
 
@@ -61,7 +53,7 @@ def _targets() -> list[TargetSegment]:
             absolute_number=62,
             segment="a",
             title="Les demoiselles cambrioleuses",
-            status="found",
+            status="partial",
         ),
         TargetSegment(
             season=2,
@@ -89,7 +81,6 @@ _FILENAMES = [
     "Keroro Gunso opening.mkv",
     "Naruto épisode 062 VF.avi",
     "keroro mission titar 062b grand combat.avi",
-    "Keroro N°062A Les demoiselles cambrioleuses ITA.avi",
 ]
 
 
@@ -118,14 +109,8 @@ def test_property_higher_priority_rule_never_lowers_tier() -> None:
     config_base = parse_matcher_config(_CANONICAL_RAW)
     raw_boosted = {
         "tokens": dict(_CANONICAL_RAW["tokens"]),  # type: ignore[call-overload]
-        "vetoes": _CANONICAL_RAW["vetoes"],
         "rules": [
-            {
-                "name": "boost_keroro_download",
-                "tier": "download",
-                "scope": "unattributed",
-                "any": ["keroro_titar"],
-            },
+            {"name": "boost_keroro_download", "tier": "download", "any": ["keroro_titar"]},
             *_CANONICAL_RAW["rules"],  # type: ignore[misc]
         ],
     }
