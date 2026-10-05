@@ -54,10 +54,11 @@ class CatalogRepository(Protocol):
     ``download_decisions`` (spec download §5) returns the :class:`DownloadCandidate` whose
     LATEST verdict is tier=download (to be replayed by the download loop). ``last_observation``
     returns the most recent :class:`ObservedFile` of a hash (name+size for the ed2k link), or
-    ``None``. ``iter_reevaluation_rows`` streams every hash's latest observation as a
-    :class:`ReevalRow` (spec re-evaluation §6), for the startup backfill to rebuild a
-    candidate per hash; ``count_files`` is its progress total. ``known_filenames`` returns
-    every distinct name a hash was observed under, sorted. These reads are harmless (no write).
+    ``None``. ``iter_reevaluation_rows`` streams every hash's latest observation (or, once
+    compacted, its latest range) as a :class:`ReevalRow` (spec re-evaluation §6), for the
+    startup backfill to rebuild a candidate per hash; ``count_files`` is its progress total.
+    ``known_filenames`` returns every distinct name of a hash, ranges included, sorted.
+    These reads are harmless (no write).
     ``record_retraction`` (spec §7) appends a per-target ``match_decisions`` row
     (``rule_name=""``, ``tier="retracted"``) marking ``target_id`` as no longer matching this
     file — the append-only table has no delete, so exclusion is an appended row.
