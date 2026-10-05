@@ -59,8 +59,8 @@ rises again is news.
 
 ## 4. The message
 
-Built by `describe()` (domain, pure), sent as markdown so Discord renders the code block (it does
-not linkify `ed2k://`). Rendered:
+Built by `describe()` (domain, pure), written in markdown so Discord renders the code block (it
+does not linkify `ed2k://`). Rendered:
 
 ```
 [mulewatch-geoffrey-gluetun-7f3a2c91] 📥 Download
@@ -88,9 +88,11 @@ not linkify `ed2k://`). Rendered:
 - Titles come from a new public `MatchingEngine.target(target_id) -> TargetSegment | None`
   (the engine already indexes targets by id).
 
-The apprise adapter passes `body_format=NotifyFormat.MARKDOWN` to `async_notify`. The other
-messages are plain text and stay readable as markdown. The node check (§8) confirms that Discord
-receives the markdown as is, not converted to text.
+The apprise adapter keeps apprise's passthrough on purpose: it passes no `body_format`, so a
+Discord URL sends the body as plain message content, which Discord renders as markdown itself.
+Declaring `MARKDOWN` (apprise 2.0) makes apprise send an embed instead, and parse every `@word` of
+the body into mentions: `@everyone` in a network-supplied filename would ping the channel. The
+other messages are plain text and stay readable as markdown.
 
 ### The node id prefix, per destination
 
@@ -140,8 +142,9 @@ Audience names stay `community` / `operations`.
 - `describe(DecisionsRecorded)`: the rise table of §3, row by row; one message for a file with
   several risen targets; metrics per change; the exact message of §4; the audience table of §5.
 - `best_name`: raw only, range only, mixed, tie on sources.
-- The apprise adapter sends markdown; a `node_prefix: false` destination gets the bare body, the
-  others the prefixed one; the config parses `node_prefix` (default, `false`, not a boolean).
+- The apprise adapter passes no `body_format` (guards the passthrough of §4); a
+  `node_prefix: false` destination gets the bare body, the others the prefixed one; the config
+  parses `node_prefix` (default, `false`, not a boolean).
 - On the node: after a restart, a test Discord webhook with `node_prefix: false` shows the real
-  rendering (markdown, code block, first line in the push preview) before the community channel
-  is configured.
+  rendering (markdown rendered from plain content, code block, first line in the push preview)
+  before the community channel is configured.
