@@ -78,7 +78,9 @@ does not linkify `ed2k://`). Rendered:
   risen tier (`📥 Download`, `🔎 Notify`), the line Discord shows in push notifications and
   channel previews.
 - **File** first, what was found: the size before the name, so a long name hides nothing (the
-  name in inline code, so Discord does not read its `_` or `*` as markup), then the ed2k link.
+  name in inline code, so Discord does not read its `_` or `*` as markup, nor ping an
+  `@everyone` in it; a backtick in the name becomes `'` so it cannot close the span), then the
+  ed2k link.
 - **Targets** then, why it matters: one line per risen target, `<target_id> - <title>`.
 - The **clean name** is the name seen with the most sources (raw `source_count`, range
   `source_count_max`), latest seen on a tie: the mojibake twin of a release has fewer sources. A

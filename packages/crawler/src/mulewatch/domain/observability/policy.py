@@ -141,12 +141,14 @@ def _describe_decisions(event: DecisionsRecorded) -> Report:
     top = max((c.after for c in risen), key=_rank)
     link = build_ed2k_link(event.filename, event.size_bytes, event.ed2k_hash)
     targets = "\n".join(f"{c.target_id} - {c.title}" for c in risen)
+    # A network name must stay in its code span: Discord pings an @everyone outside one.
+    name = event.filename.replace("`", "'")
     return replace(
         report,
         audiences=frozenset({Audience.COMMUNITY}),
         notification=(
             f"{_RISE_HEADINGS[top]}\n\n**File**\n"
-            f"{event.size_bytes / 2**20:.1f} MiB - `{event.filename}`\n`{link}`\n\n"
+            f"{event.size_bytes / 2**20:.1f} MiB - `{name}`\n`{link}`\n\n"
             f"**Targets**\n{targets}"
         ),
     )
