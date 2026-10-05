@@ -153,7 +153,7 @@ def _to_display_rows(
                 ed2k_hash=row.ed2k_hash,
                 short_hash=short_hash(row.ed2k_hash),
                 filename=row.filename,
-                source_count=row.source_count,
+                sources_display="unknown" if row.source_count is None else str(row.source_count),
                 decisions_display=decisions_display,
                 size_display=human_size(row.size_bytes),
                 last_seen_display=short_timestamp(row.last_seen),
@@ -576,12 +576,15 @@ def build_app(
         if detail is None:
             return templates.TemplateResponse(request, "404.html", {}, status_code=404)
 
-        # Precompute the eD2k link from the latest observation
-        last_obs = detail.observations[-1] if detail.observations else None
-        if last_obs is not None:
-            link = build_ed2k_link(last_obs.filename, last_obs.size_bytes, detail.ed2k_hash)
-        else:
-            link = ""
+        # (name, size, media, bitrate) of the latest observation, else of the latest range with the
+        # files size and no media, as the crawler reads them; None when the file has neither.
+        latest: tuple[str, int, int | None, int | None] | None = None
+        if detail.observations:
+            obs = detail.observations[-1]
+            latest = (obs.filename, obs.size_bytes, obs.media_length_sec, obs.bitrate_kbps)
+        elif detail.ranges:
+            latest = (detail.ranges[-1].filenames[0], detail.size_bytes, None, None)
+        link = "" if latest is None else build_ed2k_link(latest[0], latest[1], detail.ed2k_hash)
 
         # Explanation from the current config
         explanation_target_id: str | None = None
@@ -591,13 +594,13 @@ def build_app(
         explanation_notes: tuple[str, ...] = ()
 
         first_decision = detail.decisions[0] if detail.decisions else None
-        if first_decision is not None and last_obs is not None:
-            # Every distinct name with the latest fields, as the crawler judged the file.
+        if first_decision is not None and latest is not None:
+            # Every known name (ranges included) with the latest fields, as the crawler judges.
             explanation = explainer.explain(
-                filenames=sorted({obs.filename for obs in detail.observations}),
-                size_bytes=last_obs.size_bytes,
-                media_length_sec=last_obs.media_length_sec,
-                bitrate_kbps=last_obs.bitrate_kbps,
+                filenames=detail.known_filenames,
+                size_bytes=latest[1],
+                media_length_sec=latest[2],
+                bitrate_kbps=latest[3],
                 target_id=first_decision.target_id,
             )
             if explanation is not None:
@@ -612,6 +615,7 @@ def build_app(
             size_bytes=detail.size_bytes,
             aich_hash_display=detail.aich_hash if detail.aich_hash is not None else "·",
             observations=detail.observations,
+            ranges=detail.ranges,
             decisions=detail.decisions,
             ed2k_link=link,
             explanation_target_id=explanation_target_id,

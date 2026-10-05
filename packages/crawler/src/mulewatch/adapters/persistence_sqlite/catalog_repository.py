@@ -87,7 +87,7 @@ ORDER BY ed2k_hash, target_id
 
 # Every name a hash was ever observed under, raw or compacted into a range (decisions judge
 # the file on all of them, so a compaction must not drop an alias). UNION dedups and sorts.
-_SELECT_KNOWN_FILENAMES = """
+SELECT_KNOWN_FILENAMES = """
 SELECT filename FROM file_observations WHERE ed2k_hash = :hash
 UNION
 SELECT j.value FROM file_observation_ranges AS r, json_each(r.filenames) AS j
@@ -256,7 +256,7 @@ class SqliteCatalogRepository:
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
         """Every distinct name this hash was observed under, ranges included, sorted (read)."""
         with wrap_sqlite_errors():
-            rows = self._connection.execute(_SELECT_KNOWN_FILENAMES, {"hash": ed2k_hash}).fetchall()
+            rows = self._connection.execute(SELECT_KNOWN_FILENAMES, {"hash": ed2k_hash}).fetchall()
         return tuple(row[0] for row in rows)
 
     def count_files(self) -> int:

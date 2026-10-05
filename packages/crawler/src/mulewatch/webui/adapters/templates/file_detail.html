@@ -90,4 +90,32 @@
     </tbody>
   </table>
 </section>
+
+{% for ranges in (file.ranges,) if ranges %}
+<section>
+  <h2>Compacted days</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Day</th>
+        <th>Names</th>
+        <th>Observations</th>
+        <th>Sources min</th>
+        <th>Sources max</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in ranges %}
+      <tr>
+        <td>{{ r.bucket }}</td>
+        <td>{% for n in r.filenames %}<div class="cell-line">{{ n }}</div>{% endfor %}</td>
+        <td>{{ r.observation_count }}</td>
+        <td>{{ r.source_count_min }}</td>
+        <td>{{ r.source_count_max }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
 {% endblock %}

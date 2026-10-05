@@ -72,7 +72,7 @@ class FileRow:
     ed2k_hash: str
     size_bytes: int
     filename: str  # latest observed name
-    source_count: int  # source count (latest observation)
+    source_count: int | None  # latest observation's count; None when unknown (compacted)
     last_seen: str  # observed_at of the latest observation (ISO-8601 UTC)
     decisions: tuple[FileDecision, ...]  # current decisions, latest per target, 0..N
 
@@ -99,6 +99,17 @@ class ObservationRow:
 
 
 @dataclass(frozen=True)
+class RangeRow:
+    """One compacted day of a file (``file_observation_ranges``), for the detail timeline."""
+
+    bucket: str  # UTC day, YYYY-MM-DD
+    filenames: tuple[str, ...]  # distinct, sorted
+    observation_count: int
+    source_count_min: int
+    source_count_max: int
+
+
+@dataclass(frozen=True)
 class DecisionView:
     """Latest match decision for a file."""
 
@@ -118,6 +129,8 @@ class FileDetail:
     aich_hash: str | None
     observations: tuple[ObservationRow, ...]
     decisions: tuple[DecisionView, ...]  # current decisions, latest per target, 0..N
+    ranges: tuple[RangeRow, ...]  # compacted days, oldest first
+    known_filenames: tuple[str, ...]  # every distinct name, raw or compacted, sorted
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +208,7 @@ class FileRowDisplay:
     ed2k_hash: str
     short_hash: str
     filename: str
-    source_count: int
+    sources_display: str  # the count, or "unknown" when none was read (compacted file)
     decisions_display: tuple[DecisionCell, ...]  # one per current decision, 0..N; () when none
     size_display: str  # human_size(size_bytes)
     last_seen_display: str  # short_timestamp(last_seen)
@@ -350,8 +363,9 @@ class FileDetailDisplay:
     size_bytes: int
     aich_hash_display: str  # aich_hash or "·"
     observations: tuple[ObservationRow, ...]
+    ranges: tuple[RangeRow, ...]  # compacted days; the template shows them only when present
     decisions: tuple[DecisionView, ...]  # 0..N elements: for template iteration
-    ed2k_link: str  # precomputed from the latest observation
+    ed2k_link: str  # precomputed from the latest observation, else the latest range
     # Explanation fields (None if no explanation available)
     explanation_target_id: str | None
     explanation_rules_fired: tuple[str, ...]

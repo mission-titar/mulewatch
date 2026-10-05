@@ -1,6 +1,7 @@
 """Shared pytest fixtures for the webui — DDL schemas without importing mulewatch."""
 
 import contextlib
+import json
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -37,6 +38,23 @@ def _apply_catalog_schema(conn: sqlite3.Connection) -> None:
             keyword TEXT NOT NULL,
             observed_at TEXT NOT NULL,
             node_id TEXT NOT NULL
+        );
+
+        CREATE TABLE file_observation_ranges (
+            id INTEGER PRIMARY KEY,
+            ed2k_hash TEXT NOT NULL,
+            bucket TEXT NOT NULL,
+            filenames TEXT NOT NULL,
+            node_ids TEXT NOT NULL,
+            observation_count INTEGER NOT NULL,
+            first_observed_at TEXT NOT NULL,
+            last_observed_at TEXT NOT NULL,
+            source_count_min INTEGER NOT NULL,
+            source_count_max INTEGER NOT NULL,
+            source_count_sum INTEGER NOT NULL,
+            complete_source_count_min INTEGER NOT NULL,
+            complete_source_count_max INTEGER NOT NULL,
+            complete_source_count_sum INTEGER NOT NULL
         );
 
         CREATE TABLE match_decisions (
@@ -81,6 +99,28 @@ def _apply_local_schema(conn: sqlite3.Connection) -> None:
 # ---------------------------------------------------------------------------
 # Fixtures pytest
 # ---------------------------------------------------------------------------
+
+
+def seed_range(db: Path, ed2k_hash: str, day: str, filenames: list[str], sources: int = 3) -> None:
+    """Insert one compacted day bucket (canonical sorted JSON names), as the compactor does."""
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO file_observation_ranges (ed2k_hash, bucket, filenames, node_ids,"
+            " observation_count, first_observed_at, last_observed_at, source_count_min,"
+            " source_count_max, source_count_sum, complete_source_count_min,"
+            " complete_source_count_max, complete_source_count_sum)"
+            " VALUES (?, ?, ?, '[\"n1\"]', 2, ?, ?, 1, ?, ?, 0, 0, 0)",
+            (
+                ed2k_hash,
+                day,
+                json.dumps(sorted(filenames)),
+                f"{day}T01:00:00.000000+00:00",
+                f"{day}T23:00:00.000000+00:00",
+                sources,
+                sources + 1,
+            ),
+        )
+        conn.commit()
 
 
 @pytest.fixture

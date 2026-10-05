@@ -11,21 +11,24 @@
   latest decision, optional filters + LIMIT/OFFSET).
 - ``count_files()`` — ``(matched, total)`` counts over the same filtered source, for the
   /files summary line.
-- ``file_detail()`` — all observations + current decisions (latest per target) for a
+- ``file_detail()``: all observations, compacted days, known names + current decisions for a
   given hash; ``None`` if the hash is unknown.
 
 All SQL lives in module constants, parameterized (no value interpolation).
 """
 
+import json
 import sqlite3
 
 from catalog_matching.config import TIER_RANK
+from mulewatch.adapters.persistence_sqlite.catalog_repository import SELECT_KNOWN_FILENAMES
 from mulewatch.webui.domain.views import (
     DecisionView,
     FileDecision,
     FileDetail,
     FileRow,
     ObservationRow,
+    RangeRow,
 )
 
 # ---------------------------------------------------------------------------
@@ -100,6 +103,10 @@ ORDER BY target_id, ed2k_hash
 # CTEs keep their window: ``match_decisions`` is small (hundreds of rows), so it is not worth
 # the same treatment until it grows.
 #
+# A file compacted down to ranges falls back to its latest range: first name (the array is
+# sorted) and last_observed_at, but a NULL source_count (a range has no single latest count).
+# COALESCE only runs that lookup when the file has no raw observation.
+#
 # Being files-driven, ``latest_obs`` holds one row per catalogued file, INCLUDING a file with
 # no observation yet (all-NULL columns) where the window form simply had no row. Every consumer
 # below LEFT JOINs it onto ``files``, which absorbs the difference (NULL columns either way);
@@ -109,6 +116,11 @@ ORDER BY target_id, ed2k_hash
 # ``target_id == ''`` sentinel and any target whose latest row is a ``retracted`` marker;
 # ``dec_agg`` folds those to ONE row per hash, target_ids/tiers ``char(31)``-joined and both
 # ordered by target_id so the two lists stay index-aligned (spec §9, rendering A).
+_LATEST_RANGE = """FROM file_observation_ranges AS r
+            WHERE r.ed2k_hash = f.ed2k_hash
+            ORDER BY r.last_observed_at DESC, r.id DESC
+            LIMIT 1"""
+
 _SQL_CTES = f"""\
 WITH latest_dec AS (
     SELECT ed2k_hash, target_id, tier
@@ -139,9 +151,13 @@ dec_agg AS (
 latest_obs AS (
     SELECT
         f.ed2k_hash AS ed2k_hash,
-        obs.filename AS filename,
+        COALESCE(obs.filename, (
+            SELECT json_extract(r.filenames, '$[0]') {_LATEST_RANGE}
+        )) AS filename,
         obs.source_count AS source_count,
-        obs.observed_at AS observed_at
+        COALESCE(obs.observed_at, (
+            SELECT r.last_observed_at {_LATEST_RANGE}
+        )) AS observed_at
     FROM files AS f
     LEFT JOIN file_observations AS obs ON obs.id = (
         SELECT o.id
@@ -248,6 +264,14 @@ AND tier != 'retracted'
 ORDER BY target_id
 """
 
+# Compacted days of a file, oldest first (the last one is its latest range).
+_SQL_RANGES = """\
+SELECT bucket, filenames, observation_count, source_count_min, source_count_max
+FROM file_observation_ranges
+WHERE ed2k_hash = ?
+ORDER BY last_observed_at ASC, id ASC
+"""
+
 # Basic lookup on files (for file_detail).
 _SQL_FILE = """\
 SELECT ed2k_hash, size_bytes, aich_hash
@@ -284,8 +308,12 @@ def _filter_clauses(
         )
         params.append(tier)
     if query is not None:
-        clauses.append("obs.filename LIKE ?")
-        params.append(f"%{query}%")
+        # The latest name, or any name kept in a compacted range.
+        clauses.append(
+            "(obs.filename LIKE ? OR EXISTS (SELECT 1 FROM file_observation_ranges AS qr,"
+            " json_each(qr.filenames) AS qn WHERE qr.ed2k_hash = f.ed2k_hash AND qn.value LIKE ?))"
+        )
+        params.extend([f"%{query}%"] * 2)
     return clauses, params
 
 
@@ -345,7 +373,7 @@ class CatalogReader:
         Filters:
         - ``target`` : keep a file if ANY of its current decisions matches this target_id.
         - ``tier``   : keep a file if ANY of its current decisions has this tier.
-        - ``query``  : substring of ``obs.filename`` (LIKE ``%query%``).
+        - ``query``  : substring (LIKE ``%query%``) of the latest name or of any compacted one.
         - ``matched_only``: when true, keep only files with at least one current decision
           (retractions and the legacy ``target_id == ''`` sentinel never produce one).
           Default false = whole catalogue.
@@ -392,11 +420,9 @@ class CatalogReader:
                 FileRow(
                     ed2k_hash=row["ed2k_hash"],
                     size_bytes=row["size_bytes"],
+                    # A file with no observation LEFT JOINs to NULLs; an unknown count stays None.
                     filename=row["filename"] or "",
-                    # A file with no observation yet LEFT JOINs to NULLs: coalesce all three,
-                    # or the NULL reaches the page as the string "None" (the template renders
-                    # the value straight into a cell) and FileRow's int/str types are a lie.
-                    source_count=row["source_count"] or 0,
+                    source_count=row["source_count"],
                     last_seen=row["last_seen"] or "",
                     decisions=decisions,
                 )
@@ -456,6 +482,8 @@ class CatalogReader:
 
         obs_rows = self._conn.execute(_SQL_OBSERVATIONS, (ed2k_hash,)).fetchall()
         dec_rows = self._conn.execute(_SQL_FILE_DECISIONS, (ed2k_hash,)).fetchall()
+        range_rows = self._conn.execute(_SQL_RANGES, (ed2k_hash,)).fetchall()
+        name_rows = self._conn.execute(SELECT_KNOWN_FILENAMES, {"hash": ed2k_hash}).fetchall()
 
         decisions = tuple(
             DecisionView(
@@ -488,4 +516,15 @@ class CatalogReader:
                 for row in obs_rows
             ),
             decisions=decisions,
+            ranges=tuple(
+                RangeRow(
+                    bucket=row["bucket"],
+                    filenames=tuple(json.loads(row["filenames"])),
+                    observation_count=row["observation_count"],
+                    source_count_min=row["source_count_min"],
+                    source_count_max=row["source_count_max"],
+                )
+                for row in range_rows
+            ),
+            known_filenames=tuple(row[0] for row in name_rows),
         )

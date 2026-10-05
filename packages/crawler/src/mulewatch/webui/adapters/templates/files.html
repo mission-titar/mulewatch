@@ -33,7 +33,7 @@
       <th class="th-tip-host">{% for h in headers %}<a href="{{ h.sources.url }}" data-sort="{{ h.sources.indicator }}">Sources</a>{% else %}Sources{% endfor %}
         <button type="button" class="th-help" aria-label="What Sources counts" aria-describedby="tip-sources">?</button>
         <div id="tip-sources" role="tooltip" class="th-tip">
-          <p>Number of peers seen sharing this file on the eMule network (from the latest observation).</p>
+          <p>Number of peers seen sharing this file on the eMule network (from the latest observation). Unknown once all its observations are compacted.</p>
         </div>
       </th>
       <th>{% for h in headers %}<a href="{{ h.last_seen.url }}" data-sort="{{ h.last_seen.indicator }}">Last seen</a>{% else %}Last seen{% endfor %}</th>
@@ -66,7 +66,7 @@
       <td><a href="/files/{{ row.ed2k_hash }}">{{ row.short_hash }}</a></td>
       <td><span class="cell-name" title="{{ row.filename }}">{{ row.filename }}</span></td>
       <td>{{ row.size_display }}</td>
-      <td>{{ row.source_count }}</td>
+      <td>{{ row.sources_display }}</td>
       <td>{{ row.last_seen_display }}</td>
       <td>{% for d in row.decisions_display %}<div class="cell-line">{{ d.target }}</div>{% else %}·{% endfor %}</td>
       <td>{% for d in row.decisions_display %}<div class="cell-line cell-title" title="{{ d.title }}">{{ d.title }}</div>{% else %}·{% endfor %}</td>
