@@ -12,3 +12,6 @@ An agent adds an entry only after the operator has agreed to it.
 
 - **Notifications for researchers**: one message per file with title, clean name and ed2k link,
   sent on a tier change only. Findings in `agents/specs/2026-10-04-matcher-file-vetoes.md` §7.
+
+- **Lossless compact observation storage**: 10.9M rows / 4.9 GB in three months on the node, mostly
+  repeated sightings; store them compactly by default without losing information. No spec yet.
