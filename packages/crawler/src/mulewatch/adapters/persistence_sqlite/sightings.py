@@ -1,4 +1,4 @@
-"""Every read of a file's observations, raw or compacted, as a ``Sighting`` (spec 2026-10-05).
+"""Every read of a file's observations, raw or compacted, as a ``Sighting``, never both forms.
 Only this module reads ``file_observations``/``file_observation_ranges``, besides compact and merge.
 """
 
@@ -10,14 +10,16 @@ from typing import Any
 from mulewatch.domain.observation import Sighting
 
 
-def covered_by_range(ranges: str, raw: str) -> str:
-    """SQL: a row of ``ranges`` already counts raw row ``raw`` (its hash, UTC day and node)."""
+def covered_by_range(ranges: str, raw: str, *, of_hash: str = "") -> str:
+    """SQL: a row of ``ranges`` already counts raw row ``raw`` (its hash, UTC day and node).
+    ``of_hash``, an SQL expression, narrows the ranges read to one file's."""
     # One uncorrelated scalar IN, built once per statement: a correlated EXISTS was 11x slower in
     # merge, a row-value NOT IN 100x. Hash (32) and day (10) are fixed width: an unambiguous key.
+    where = f" WHERE cr.ed2k_hash = {of_hash}" if of_hash else ""
     return (
         f"({raw}.ed2k_hash || substr({raw}.observed_at, 1, 10) || {raw}.node_id) IN"
         f" (SELECT cr.ed2k_hash || cr.bucket || cn.value FROM {ranges} AS cr,"
-        " json_each(cr.node_ids) AS cn)"
+        f" json_each(cr.node_ids) AS cn{where})"
     )
 
 
@@ -75,7 +77,8 @@ SELECT_LATEST_SIGHTINGS = f"""WITH {LATEST_SIGHTING_CTE}
 SELECT {_COLUMNS} FROM latest_sighting WHERE name IS NOT NULL ORDER BY ed2k_hash
 """
 
-# The file's timeline, both forms, oldest first; ``id`` only orders raw rows of the same instant.
+# The file's timeline, oldest first, minus the raw rows its own ranges already count (reading every
+# range was 3x slower); ``id`` only orders raw rows of the same instant.
 _SELECT_SIGHTINGS = f"""
 SELECT {_COLUMNS} FROM (
     SELECT
@@ -83,7 +86,9 @@ SELECT {_COLUMNS} FROM (
         observed_at AS first_seen, observed_at AS last_seen, source_count AS source_count_min,
         source_count AS source_count_max, size_bytes, media_length_sec, bitrate_kbps, keyword,
         0 AS compacted, id
-    FROM file_observations WHERE ed2k_hash = :hash
+    FROM file_observations AS o
+    WHERE ed2k_hash = :hash
+    AND NOT {covered_by_range("file_observation_ranges", "o", of_hash=":hash")}
     UNION ALL
     SELECT
         r.ed2k_hash, json_extract(r.filenames, '$[0]'), r.filenames, r.observation_count,
