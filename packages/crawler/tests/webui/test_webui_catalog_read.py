@@ -19,7 +19,8 @@ from mulewatch.webui.adapters.catalog_read import (
     CatalogReader,
     _tier_rank_case,
 )
-from mulewatch.webui.domain.views import FileRow
+from mulewatch.webui.domain.views import FileRow, RangeRow
+from tests.webui.conftest import seed_range
 
 # Selects the CTE under test on its own: SQLite drops the CTEs a query does not reference, so
 # the resulting plan is exactly how ``latest_obs`` is resolved.
@@ -939,15 +940,13 @@ def test_list_files_lists_file_with_no_observation(catalog_db: Path) -> None:
     assert rows[0].last_seen == ""
 
 
-def test_list_files_file_with_no_observation_has_zero_sources(catalog_db: Path) -> None:
-    """``source_count`` is 0, not None: ``FileRow.source_count`` is typed ``int``, and the
-    template renders the value straight into a cell, so a None would reach the page as the
-    string "None". Same guard as ``filename`` / ``last_seen`` on the same row."""
+def test_list_files_file_with_no_observation_has_unknown_sources(catalog_db: Path) -> None:
+    """Unknown, not 0: no observation means no count was ever read (the display says so)."""
     _seed_file_without_observation(catalog_db)
     rows = CatalogReader(open_reader(catalog_db)).list_files(
         target=None, tier=None, query=None, page=1
     )
-    assert rows[0].source_count == 0
+    assert rows[0].source_count is None
 
 
 def test_count_files_counts_file_with_no_observation(catalog_db: Path) -> None:
@@ -991,6 +990,83 @@ def test_list_files_observation_tie_break_on_id(catalog_db: Path) -> None:
         target=None, tier=None, query=None, page=1
     )
     assert rows[0].filename == "second.avi"
+
+
+# ---------------------------------------------------------------------------
+# Compacted files: file_observation_ranges stand in for the observations moved out
+# ---------------------------------------------------------------------------
+
+
+def test_list_files_shows_a_range_only_file_by_its_latest_range(catalog_db: Path) -> None:
+    h = _seed_file_without_observation(catalog_db)
+    seed_range(catalog_db, h, "2026-05-02", ["z.avi", "m.avi"])
+    seed_range(catalog_db, h, "2026-05-01", ["a.avi"])
+    rows = CatalogReader(open_reader(catalog_db)).list_files(
+        target=None, tier=None, query=None, page=1
+    )
+    assert rows == [
+        FileRow(
+            ed2k_hash=h,
+            size_bytes=42,
+            filename="m.avi",
+            source_count=None,  # a range keeps min/max/sum, never one latest count
+            last_seen="2026-05-02T23:00:00.000000+00:00",
+            decisions=(),
+        )
+    ]
+
+
+def test_list_files_prefers_the_raw_observation_over_ranges(catalog_db: Path) -> None:
+    _seed(catalog_db)
+    seed_range(catalog_db, "a" * 32, "2026-05-01", ["a.avi"])
+    rows = CatalogReader(open_reader(catalog_db)).list_files(
+        target=None, tier=None, query=None, page=1
+    )
+    assert (rows[0].filename, rows[0].source_count) == ("keroro_062.avi", 5)
+
+
+def test_search_matches_a_name_only_kept_in_ranges(catalog_db: Path) -> None:
+    _seed(catalog_db)
+    seed_range(catalog_db, "a" * 32, "2026-05-01", ["old alias [ES].avi"])
+    reader = CatalogReader(open_reader(catalog_db))
+    rows = reader.list_files(target=None, tier=None, query="alias [es]", page=1)
+    assert [row.ed2k_hash for row in rows] == ["a" * 32]
+    assert reader.count_files(target=None, tier=None, query="alias") == (1, 1)
+    assert reader.tier_counts(target=None, query="alias") == {"download": 1}
+    assert reader.list_files(target=None, tier=None, query="nowhere", page=1) == []
+
+
+def test_file_detail_carries_ranges_and_every_known_name(catalog_db: Path) -> None:
+    _seed(catalog_db)
+    seed_range(catalog_db, "a" * 32, "2026-05-02", ["keroro_062.avi", "zz.avi"], sources=4)
+    seed_range(catalog_db, "a" * 32, "2026-05-01", ["aa.avi"])
+    detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
+    assert detail is not None
+    assert detail.ranges == (
+        RangeRow(
+            bucket="2026-05-01",
+            filenames=("aa.avi",),
+            observation_count=2,
+            source_count_min=1,
+            source_count_max=3,
+        ),
+        RangeRow(
+            bucket="2026-05-02",
+            filenames=("keroro_062.avi", "zz.avi"),
+            observation_count=2,
+            source_count_min=1,
+            source_count_max=4,
+        ),
+    )
+    assert detail.known_filenames == ("aa.avi", "keroro_062.avi", "zz.avi")
+
+
+def test_file_detail_without_ranges_has_none(catalog_db: Path) -> None:
+    _seed(catalog_db)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
+    assert detail is not None
+    assert detail.ranges == ()
+    assert detail.known_filenames == ("keroro_062.avi",)
 
 
 # ---------------------------------------------------------------------------
