@@ -1,6 +1,13 @@
 """bucketize (pure): group observations by (ed2k_hash, UTC day), node-agnostic aggregate."""
 
-from mulewatch.domain.retention.buckets import ObservationBucket, ObservationRow, bucketize
+import pytest
+
+from mulewatch.domain.retention.buckets import (
+    ObservationBucket,
+    ObservationRow,
+    bucketize,
+    covers,
+)
 
 
 def _row(
@@ -90,3 +97,35 @@ def test_single_observation_min_eq_max_eq_sum() -> None:
     (bucket,) = bucketize([_row(sc=7, csc=3, at="2026-03-01T01:00:00.000000+00:00")])
     assert (bucket.source_count_min, bucket.source_count_max, bucket.source_count_sum) == (7, 7, 7)
     assert bucket.first_observed_at == bucket.last_observed_at
+
+
+# A range of two nodes, and raw observations it does or does not already count (spec §4).
+COVERING_RANGE = ObservationBucket(
+    ed2k_hash="a" * 32,
+    bucket="2026-03-01",
+    filenames='["f.avi"]',
+    node_ids='["n1", "n2"]',
+    observation_count=2,
+    first_observed_at="2026-03-01T01:00:00.000000+00:00",
+    last_observed_at="2026-03-01T20:00:00.000000+00:00",
+    source_count_min=1,
+    source_count_max=1,
+    source_count_sum=2,
+    complete_source_count_min=0,
+    complete_source_count_max=0,
+    complete_source_count_sum=0,
+)
+COVER_CASES = [
+    pytest.param(_row(at="2026-03-01T05:00:00.000000+00:00"), True, id="same node"),
+    pytest.param(_row(node="n2", at="2026-03-01T23:59:59.999999+00:00"), True, id="its other node"),
+    pytest.param(_row(node="n3", at="2026-03-01T05:00:00.000000+00:00"), False, id="other node"),
+    pytest.param(_row(at="2026-03-02T00:00:00.000000+00:00"), False, id="other day"),
+    pytest.param(_row(h="b" * 32, at="2026-03-01T05:00:00.000000+00:00"), False, id="other hash"),
+]
+
+
+@pytest.mark.parametrize(("observation", "covered"), COVER_CASES)
+def test_a_range_covers_a_raw_observation_of_its_hash_day_and_nodes(
+    observation: ObservationRow, covered: bool
+) -> None:
+    assert covers(COVERING_RANGE, observation) is covered

@@ -7,7 +7,8 @@ of the source
 transaction (BEGIN…COMMIT, best-effort ROLLBACK): verbatim copy of the 4 intact tables (FK order),
 verbatim copy of the RECENT raw (observed_at >= cutoff_date), bucketize of the OLD raw
 (observed_at < cutoff_date). COMMIT then DETACH (outside a transaction). We NEVER write to the
-source (only SELECTs). The output is assumed NEW (the CLI guarantees it) → no dedup.
+source (only SELECTs). The output is assumed NEW (the CLI guarantees it) → no dedup, except that a
+raw row a source range already counts (``covered_by_range``) is dropped from both raw paths.
 
 UTC-DAY-aligned cutoff (spec §5bis): cutoff_date is a "YYYY-MM-DD" DATE; "old" ⟺
 observed_at < cutoff_date — the lexicographic comparison puts every timestamp of the cutoff day
@@ -84,9 +85,24 @@ _OBSERVATION_COLUMNS = (
     "node_id",
 )
 
+
+def covered_by_range(ranges: str, raw: str) -> str:
+    """SQL twin of ``buckets.covers``: a row of the ``ranges`` table already counts row ``raw``."""
+    # One uncorrelated scalar IN, built once per statement: a correlated EXISTS was 11x slower and
+    # a row-value NOT IN 100x. Hash (32) and day (10) are fixed width, so the key is unambiguous.
+    return (
+        f"({raw}.ed2k_hash || substr({raw}.observed_at, 1, 10) || {raw}.node_id) IN"
+        f" (SELECT cr.ed2k_hash || cr.bucket || cn.value FROM {ranges} AS cr,"
+        " json_each(cr.node_ids) AS cn)"
+    )
+
+
+_NOT_COVERED = f"NOT {covered_by_range(f'{_SRC}.file_observation_ranges', 'o')}"
+
 _SELECT_OLD = (
     "SELECT ed2k_hash, node_id, filename, source_count, complete_source_count, observed_at "
-    f"FROM {_SRC}.file_observations WHERE observed_at < ? ORDER BY ed2k_hash, observed_at, id"
+    f"FROM {_SRC}.file_observations AS o WHERE observed_at < ? AND {_NOT_COVERED} "
+    "ORDER BY ed2k_hash, observed_at, id"
 )
 
 _INSERT_RANGE = (
@@ -126,7 +142,8 @@ def _compact_one(connection: sqlite3.Connection, source: Path, cutoff_date: str)
             recent = ", ".join(_OBSERVATION_COLUMNS)
             connection.execute(
                 f"INSERT INTO main.file_observations ({recent}) "
-                f"SELECT {recent} FROM {_SRC}.file_observations WHERE observed_at >= ?",
+                f"SELECT {recent} FROM {_SRC}.file_observations AS o"
+                f" WHERE observed_at >= ? AND {_NOT_COVERED}",
                 (cutoff_date,),
             )
             _bucketize_old(connection, cutoff_date)
