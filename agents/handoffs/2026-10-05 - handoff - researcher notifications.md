@@ -19,11 +19,12 @@ webhook (spec §8).
 
 ## Pitfalls
 
-- Never pass `body_format=MARKDOWN` to apprise: Discord then gets an embed, and apprise parses
-  every `@word` of the body into mentions, so a network name with `@everyone` pings the channel.
-  Passthrough sends plain content and Discord renders the markdown itself. A test guards it.
-- In plain content Discord still pings a mention outside code: the name sits in an inline code
-  span, and a backtick in it becomes `'` so it cannot close the span.
+- Every `@` is neutralised (since `agents/specs/2026-10-05-discord-embed-notifications.md`): with
+  `body_format=MARKDOWN` apprise parses `@word`, `<@id>` and `<@&id>` of the body into pings, so
+  the adapter puts a zero-width space after every `@` of the title and the body. A test checks it
+  against apprise's own `USER_ROLE_DETECTION_RE`.
+- A name sits in an inline code span, and a backtick in it becomes `'` so it cannot close the
+  span.
 
 ## Next
 

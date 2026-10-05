@@ -178,9 +178,14 @@ Un gros changement de règles peut donc émettre une rafale de notifications, un
 palier a monté. C'est voulu. La passe est idempotente et tourne que le téléchargement soit activé ou
 non. Le démarrage de l'instance et le retour du High-ID ne notifient que le canal *operations*.
 
-Chaque cible préfixe ses messages de l'identifiant du nœud (`[node-id]`). Une cible qui porte déjà
-une identité, comme un webhook Discord nommé (`discord://<nom>@<id>/<token>`), peut s'en passer avec
-`node_prefix: false`.
+Les messages partent en markdown : Discord les affiche en embed, signé `Mulewatch - <node-id>` en
+ligne d'auteur, bleu pour une découverte (`🔎 Notify`, `📥 Download`), vert pour un téléchargement
+terminé (`✅ Downloaded`, avec les segments et le nom du fichier). Aucun message ne mentionne qui
+que ce soit : un `@everyone` dans un nom de fichier ne notifie personne.
+
+Chaque cible préfixe le titre de ses messages de l'identifiant du nœud (`[node-id]`), utile aux
+services qui n'affichent pas d'auteur (syslog, ntfy). Une cible Discord le porte déjà dans sa ligne
+d'auteur et peut s'en passer avec `node_prefix: false`.
 
 ---
 

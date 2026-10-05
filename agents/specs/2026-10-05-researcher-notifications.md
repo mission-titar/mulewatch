@@ -90,6 +90,11 @@ does not linkify `ed2k://`). Rendered:
 - Titles come from a new public `MatchingEngine.target(target_id) -> TargetSegment | None`
   (the engine already indexes targets by id).
 
+Superseded by `agents/specs/2026-10-05-discord-embed-notifications.md`: every message is now sent
+as markdown (a Discord embed), with a title and the sections in another order, and the adapter
+neutralises every `@` so apprise extracts no mention. The paragraph below is kept as the record of
+PR #94.
+
 The apprise adapter keeps apprise's passthrough on purpose: it passes no `body_format`, so a
 Discord URL sends the body as plain message content, which Discord renders as markdown itself.
 Declaring `MARKDOWN` (apprise 2.0) makes apprise send an embed instead, and parse every `@word` of
