@@ -412,6 +412,10 @@ cases:
       - "Dino_Riders_10_Titar_Pierde_Los_EstribosDvdripCast_EuskZeratulTusdivx.avi"
     discarded: true
 
+  - id: real_spanish_audio_tag_is_discarded
+    filename: "Keroro 01 La gran invasion (2006) [DVD 480p x264 10bits AAC(ES)].mkv"
+    discarded: true
+
   # The series name is not an episode marker: "titar 62" is a bare number, vetoes nothing and
   # still matches through numero_nu. "#062" is explicit and is the target's own number.
   - id: series_name_titar_62_is_a_bare_number
