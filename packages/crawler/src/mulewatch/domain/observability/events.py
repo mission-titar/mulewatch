@@ -50,9 +50,20 @@ class ObservationRecorded:
 
 
 @dataclass(frozen=True)
-class DecisionRecorded:
+class DecisionChange:
     target_id: str
-    tier: str
+    title: str
+    before: str | None  # the persisted tier, None for a target never judged
+    after: str  # the fresh tier, or "retracted"
+
+
+@dataclass(frozen=True)
+class DecisionsRecorded:
+    # What one evaluation of a file changed in its judgement, all its targets together.
+    ed2k_hash: str
+    filename: str  # the clean name, the most sourced
+    size_bytes: int
+    changes: tuple[DecisionChange, ...]
 
 
 @dataclass(frozen=True)
@@ -123,7 +134,7 @@ type Event = (
     | SearchTaskDropped
     | AllInstancesBlind
     | ObservationRecorded
-    | DecisionRecorded
+    | DecisionsRecorded
     | DownloadQueued
     | DownloadCompleted
     | ConnectedInstancesSampled

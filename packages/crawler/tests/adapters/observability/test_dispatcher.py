@@ -65,10 +65,26 @@ async def test_two_metrics_one_event() -> None:
 
 
 @pytest.mark.asyncio
-async def test_notifies_both_audiences() -> None:
+async def test_notifies_the_message_when_there_is_no_separate_body() -> None:
     sink, notifier = _RecordingSink(), _RecordingNotifier()
     await _dispatcher(sink, notifier).emit(ev.CrawlerStarted(mode="full"))
-    assert {a for a, _, _ in notifier.calls} == {Audience.COMMUNITY, Audience.OPERATIONS}
+    assert notifier.calls == [
+        (Audience.OPERATIONS, "🟢 instance online (mode full)", Severity.INFO)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_logs_the_message_but_notifies_the_body(caplog: pytest.LogCaptureFixture) -> None:
+    sink, notifier = _RecordingSink(), _RecordingNotifier()
+    change = ev.DecisionChange("062A", "Les demoiselles cambrioleuses", None, "download")
+    with caplog.at_level(logging.INFO, logger="mulewatch.observability"):
+        await _dispatcher(sink, notifier).emit(
+            ev.DecisionsRecorded("a" * 32, "Keroro 062.avi", 1024, (change,))
+        )
+    assert caplog.records[-1].getMessage().startswith("decisions for Keroro 062.avi")
+    assert [(a, b.splitlines()[0]) for a, b, _ in notifier.calls] == [
+        (Audience.COMMUNITY, "📥 Download")
+    ]
 
 
 @pytest.mark.asyncio

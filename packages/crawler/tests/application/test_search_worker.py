@@ -452,7 +452,7 @@ async def test_successful_search_emits_search_executed_with_network_and_count(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
     # A successful GLOBAL search emits SearchExecuted(network="ed2k", n_results=1) FIRST,
-    # before the per-observation events (ObservationRecorded/DecisionRecorded).
+    # before the per-observation events (ObservationRecorded/DecisionsRecorded).
     clock = FakeClock()
     telemetry = RecordingTelemetry()
     client = FakeMuleClient(results=[(_obs(),)])
@@ -461,7 +461,7 @@ async def test_successful_search_emits_search_executed_with_network_and_count(
     await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
     assert telemetry.events[0] == SearchExecuted(network="ed2k", n_results=1)
     kinds = [type(e).__name__ for e in telemetry.events]
-    assert kinds == ["SearchExecuted", "ObservationRecorded", "DecisionRecorded"]
+    assert kinds == ["SearchExecuted", "ObservationRecorded", "DecisionsRecorded"]
 
 
 @pytest.mark.asyncio

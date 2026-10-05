@@ -42,8 +42,8 @@ async def record_observation(
 ) -> int:
     """Process ONE observation (spec §7). Returns the number of rows written (0..N).
 
-    Emits ``ObservationRecorded`` (always) and one ``DecisionRecorded`` per recorded verdict /
-    retraction. A ``RepositoryError`` is absorbed (log + ``0``), the cycle continues (spec §7)."""
+    Emits ``ObservationRecorded`` (always) and one ``DecisionsRecorded`` when a verdict or a
+    retraction was recorded. A ``RepositoryError`` is absorbed (log + ``0``), the cycle continues (spec §7)."""
     try:
         catalog.record_observation(observation)
         await telemetry.emit(ObservationRecorded(network=network))
