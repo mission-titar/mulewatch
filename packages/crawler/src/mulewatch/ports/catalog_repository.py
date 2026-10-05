@@ -54,7 +54,8 @@ class CatalogRepository(Protocol):
     ``download_decisions`` (spec download §5) returns the :class:`DownloadCandidate` whose
     LATEST verdict is tier=download (to be replayed by the download loop). ``last_observation``
     returns the most recent :class:`ObservedFile` of a hash (name+size for the ed2k link), its
-    latest compacted range's once only ranges are left, or ``None``.
+    latest compacted range's once only ranges are left, or ``None``. ``best_observation`` returns
+    the file's clean name (the most sourced, then the latest) with its size, or ``None``.
     ``iter_reevaluation_rows`` streams every hash's latest observation (or, once compacted,
     its latest range) as a :class:`ReevalRow` (spec re-evaluation §6), for the
     startup backfill to rebuild a candidate per hash; ``count_files`` is its progress total.
@@ -76,6 +77,8 @@ class CatalogRepository(Protocol):
     def download_decisions(self) -> tuple[DownloadCandidate, ...]: ...
 
     def last_observation(self, ed2k_hash: str) -> ObservedFile | None: ...
+
+    def best_observation(self, ed2k_hash: str) -> ObservedFile | None: ...
 
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]: ...
 

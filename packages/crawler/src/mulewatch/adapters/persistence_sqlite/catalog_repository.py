@@ -205,6 +205,12 @@ class SqliteCatalogRepository:
             return None
         return ObservedFile(filename=latest.names[0], size_bytes=latest.size_bytes)
 
+    def best_observation(self, ed2k_hash: str) -> ObservedFile | None:
+        """The clean name (most sources, then latest) and size, or ``None`` (read)."""
+        with wrap_sqlite_errors():
+            best = sightings.best_name(self._connection, ed2k_hash)
+        return None if best is None else ObservedFile(filename=best[0], size_bytes=best[1])
+
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
         """Every distinct name this hash was observed under, ranges included, sorted (read)."""
         with wrap_sqlite_errors():

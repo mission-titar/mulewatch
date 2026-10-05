@@ -177,6 +177,49 @@ def test_known_names_are_every_distinct_name_of_both_forms(
     assert sightings.known_names(connection, _C) == ()
 
 
+def test_best_name_of_raw_rows_is_the_most_sourced(connection: sqlite3.Connection) -> None:
+    _file(connection, _A)
+    _raw(connection, _A, "clean.avi", "2026-06-01T10:00", sources=8)
+    _raw(connection, _A, "mojibake.avi", "2026-06-02T10:00", sources=3)
+    assert sightings.best_name(connection, _A) == ("clean.avi", 100)
+
+
+def test_best_name_of_ranges_only_takes_the_latest_then_the_first_name_on_a_tie(
+    connection: sqlite3.Connection,
+) -> None:
+    # A range keeps one source maximum for all its names: the name order settles the tie.
+    _file(connection, _A)
+    _range(connection, _A, "2026-05-02", ["new b.avi", "new a.avi"])
+    _range(connection, _A, "2026-05-01", ["old.avi"])
+    assert sightings.best_name(connection, _A) == ("new a.avi", 4242)
+
+
+@pytest.mark.parametrize(
+    ("raw_sources", "best"),
+    [(5, ("ranged.avi", 4242)), (12, ("raw.avi", 100))],
+    ids=["range wins", "raw wins"],
+)
+def test_best_name_compares_raw_sources_with_range_maximums(
+    connection: sqlite3.Connection, raw_sources: int, best: tuple[str, int]
+) -> None:
+    _file(connection, _A)
+    _raw(connection, _A, "raw.avi", "2026-06-01T10:00", sources=raw_sources)
+    _range(connection, _A, "2026-05-01", ["ranged.avi"])
+    assert sightings.best_name(connection, _A) == best
+
+
+def test_best_name_takes_the_latest_seen_on_a_source_tie(connection: sqlite3.Connection) -> None:
+    _file(connection, _A)
+    _raw(connection, _A, "later.avi", "2026-06-02T10:00")
+    _raw(connection, _A, "earlier.avi", "2026-06-01T10:00")
+    assert sightings.best_name(connection, _A) == ("later.avi", 100)
+
+
+def test_best_name_of_a_file_never_seen_is_none(connection: sqlite3.Connection) -> None:
+    _file(connection, _A)
+    assert sightings.best_name(connection, _A) is None
+
+
 def test_sightings_are_the_timeline_of_both_forms_oldest_first(
     connection: sqlite3.Connection,
 ) -> None:

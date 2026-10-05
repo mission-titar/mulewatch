@@ -109,6 +109,22 @@ WHERE r.ed2k_hash = :hash
 ORDER BY 1
 """
 
+# The name seen with the most sources, latest seen on a tie. Covered raw rows are read too: a
+# maximum counts nothing twice.
+_SELECT_BEST_NAME = """
+SELECT name, size_bytes FROM (
+    SELECT filename AS name, size_bytes, source_count AS sources, observed_at AS seen
+    FROM file_observations WHERE ed2k_hash = :hash
+    UNION ALL
+    SELECT j.value, f.size_bytes, r.source_count_max, r.last_observed_at
+    FROM file_observation_ranges AS r JOIN files AS f ON f.ed2k_hash = r.ed2k_hash,
+    json_each(r.filenames) AS j
+    WHERE r.ed2k_hash = :hash
+)
+ORDER BY sources DESC, seen DESC, name
+LIMIT 1
+"""
+
 
 def _sighting(row: Any) -> Sighting:
     return Sighting(
@@ -142,6 +158,12 @@ def known_names(connection: sqlite3.Connection, ed2k_hash: str) -> tuple[str, ..
     """Every distinct name of the file, both forms, sorted."""
     rows = connection.execute(_SELECT_KNOWN_NAMES, {"hash": ed2k_hash}).fetchall()
     return tuple(row[0] for row in rows)
+
+
+def best_name(connection: sqlite3.Connection, ed2k_hash: str) -> tuple[str, int] | None:
+    """The file's clean name (most sources, then latest) and its size; ``None`` if never seen."""
+    row = connection.execute(_SELECT_BEST_NAME, {"hash": ed2k_hash}).fetchone()
+    return None if row is None else (row[0], row[1])
 
 
 def sightings(connection: sqlite3.Connection, ed2k_hash: str) -> tuple[Sighting, ...]:
