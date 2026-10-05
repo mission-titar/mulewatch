@@ -46,7 +46,6 @@ tokens:
 rules:
   - name: catalog
     tier: catalog
-    scope: unattributed
     any:
       - keroro
 """
@@ -66,7 +65,7 @@ def test_explainer_returns_explanation_on_matching_filename() -> None:
         targets=_minimal_targets(),
     )
     result = explainer.explain(
-        filenames=["Keroro_062A_VF.avi"],
+        filename="Keroro_062A_VF.avi",
         size_bytes=None,
         media_length_sec=None,
         bitrate_kbps=None,
@@ -84,7 +83,7 @@ def test_explainer_returns_none_for_unknown_target() -> None:
         targets=_minimal_targets(),
     )
     result = explainer.explain(
-        filenames=["Keroro_062A_VF.avi"],
+        filename="Keroro_062A_VF.avi",
         size_bytes=None,
         media_length_sec=None,
         bitrate_kbps=None,
@@ -113,7 +112,6 @@ tokens:
 rules:
   - name: catalog
     tier: catalog
-    scope: unattributed
     all:
       - keroro
       - size_ok
@@ -127,7 +125,7 @@ rules:
     )
     # 100 * 1024 * 1024 = 104857600 bytes = exactly 100.0 MiB
     result = explainer.explain(
-        filenames=["keroro_062a.avi"],
+        filename="keroro_062a.avi",
         size_bytes=104857600,
         media_length_sec=None,
         bitrate_kbps=None,
@@ -157,7 +155,6 @@ tokens:
 rules:
   - name: catalog
     tier: catalog
-    scope: unattributed
     all:
       - keroro
       - dur_ok
@@ -171,7 +168,7 @@ rules:
         targets=_minimal_targets(),
     )
     result = explainer.explain(
-        filenames=["keroro_062a.avi"],
+        filename="keroro_062a.avi",
         size_bytes=None,
         media_length_sec=1350,
         bitrate_kbps=1500,
@@ -189,14 +186,14 @@ def test_explainer_engine_cached_across_calls() -> None:
     )
     # Two successive calls — the engine must be built ONCE (stable private attribute)
     r1 = explainer.explain(
-        filenames=["keroro_vf.avi"],
+        filename="keroro_vf.avi",
         size_bytes=None,
         media_length_sec=None,
         bitrate_kbps=None,
         target_id="062A",
     )
     r2 = explainer.explain(
-        filenames=["keroro_vf.avi"],
+        filename="keroro_vf.avi",
         size_bytes=None,
         media_length_sec=None,
         bitrate_kbps=None,
@@ -204,38 +201,3 @@ def test_explainer_engine_cached_across_calls() -> None:
     )
     # Both results are identical (stable engine)
     assert r1 == r2
-
-
-def test_explainer_judges_every_name_and_lists_the_vetoes_fired() -> None:
-    """A veto fired by one name of the file shows up, with the rules fired by another name."""
-    matcher_config = parse_matcher_config(
-        yaml.safe_load(
-            """\
-tokens:
-  keroro:
-    keyword: keroro
-  ita:
-    regex: "\\\\bITA\\\\b"
-  big:
-    attr_between: size_mb
-    min: 99.9
-vetoes: [ita]
-rules:
-  - name: catalog
-    tier: catalog
-    scope: unattributed
-    all: [keroro, big]
-"""
-        )
-    )
-    explainer = MatchingExplainer(matcher_config=matcher_config, targets=_minimal_targets())
-    result = explainer.explain(
-        filenames=["ita.avi", "keroro.avi"],
-        size_bytes=100 * 1024 * 1024,
-        media_length_sec=None,
-        bitrate_kbps=None,
-        target_id="062A",
-    )
-    assert isinstance(result, Explanation)
-    assert result.vetoes_fired == ("ita",)
-    assert result.rules_fired == ("catalog",)  # the size applies to every name

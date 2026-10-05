@@ -39,9 +39,7 @@ _CASES = _corpus_cases()
 @pytest.mark.parametrize("case", _CASES, ids=[str(c["id"]) for c in _CASES])
 def test_golden_corpus(case: dict[str, Any]) -> None:
     engine = _engine()
-    # One file known under several names (aliases of one hash) is judged as a whole.
-    names = case["filenames"] if "filenames" in case else [case["filename"]]
-    decisions = engine.evaluate_all([FileCandidate(filename=str(name)) for name in names])
+    decisions = engine.evaluate(FileCandidate(filename=str(case["filename"])))
     if case.get("discarded", False):
         assert decisions == [], f"{case['id']}: expected discarded, got {decisions}"
         return
@@ -163,92 +161,3 @@ def test_episode_number_matches_a_bare_number(filename: str) -> None:
 )
 def test_episode_number_ignores_non_episode_numbers(filename: str) -> None:
     assert _episode_number_matcher().matches(FileCandidate(filename=filename)) is False
-
-
-# --- vetoes contract (shipped policy, spec 2026-10-04-matcher-file-vetoes §3) ---------------
-
-
-def _shipped_token(name: str) -> RegexMatcher:
-    config = parse_matcher_config(yaml.safe_load(_MATCHER.read_text(encoding="utf-8")))
-    token = config.tokens[name]
-    assert isinstance(token, RegexDef)
-    return RegexMatcher(token.pattern, token.flags)
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "케로로 중사 62.avi",  # Hangul syllables, jamo once folded
-        "ｹﾛﾛ軍曹 62.avi",  # halfwidth katakana, fullwidth once folded
-        "ケロロ 62.avi",  # katakana
-        "[keroro][21][繁體].mp4",  # CJK ideographs (the former explicit marker)
-    ],
-)
-def test_foreign_lang_catches_east_asian_scripts_after_fold(filename: str) -> None:
-    assert _shipped_token("foreign_lang").matches(FileCandidate(filename=filename)) is True
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "Keroro N°062A.avi",
-        "Keroro #062.avi",
-        "Keroro ep 5.avi",
-        "Keroro épisode 12.avi",
-        "Keroro S02E11.avi",
-    ],
-)
-def test_explicit_id_reads_a_marked_episode_number(filename: str) -> None:
-    assert _shipped_token("explicit_id").matches(FileCandidate(filename=filename)) is True
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "Keroro 1920x1080 BDRip.mkv",  # resolution
-        "Keroro Mission Titar 2x11B.avi",  # season x episode
-        "Keroro ep 2x11B.avi",  # season x episode, even after a marker
-        "[TV] Keroro « Emmène-moi sur la lune 2 ».avi",  # bare number of a title
-        "[Keroro].065.[Xvid].avi",  # bare number, no marker
-        "keroro mission titar 62.avi",  # titar and keroro are not episode markers
-        "Keroro #2008.avi",  # more than 3 digits
-    ],
-)
-def test_explicit_id_ignores_unmarked_numbers_and_nxnn(filename: str) -> None:
-    assert _shipped_token("explicit_id").matches(FileCandidate(filename=filename)) is False
-
-
-@pytest.mark.parametrize(
-    ("filename", "vetoes"),
-    [
-        ("Keroro N°062A.avi", ()),
-        ("Keroro N°620.avi", ("other_episode",)),  # 0* must not let 62 claim 620
-        ("Keroro N°062A ITA.avi", ("foreign_lang",)),
-    ],
-)
-def test_other_episode_vetoes_only_another_explicit_number(
-    filename: str, vetoes: tuple[str, ...]
-) -> None:
-    explanation = _engine().explain([FileCandidate(filename=filename)], "062A")
-    assert explanation is not None
-    assert explanation.vetoes_fired == vetoes
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "Keroro Mission Titar 2008 - La Grenouille Cosmique.avi",
-        "keroro 1080p rediffusion.avi",
-        "keroro mission titar #2008.avi",
-        "keroro ep 1080.avi",
-        "keroro mission titar 62.avi",
-        "keroro mission titar 062.avi",
-    ],
-)
-def test_unmarked_or_long_numbers_veto_no_target(filename: str) -> None:
-    # A false other_episode would drop a real VF file for every target.
-    engine = _engine()
-    for target_id in engine._resolved_by_target:
-        explanation = engine.explain([FileCandidate(filename=filename)], target_id)
-        assert explanation is not None
-        assert "other_episode" not in explanation.vetoes_fired, target_id

@@ -1,62 +1,39 @@
-# Matcher config (deployment): THE SINGLE SOURCE OF TRUTH for the policy. Operator-editable.
+# Matcher config (deployment) — THE SINGLE SOURCE OF TRUTH for the policy. Operator-editable.
 # Everything else derives from it: golden corpus + engine tests (packages/matching), crawler
 # wiring, smoke stack. There is NO other copy to keep in sync.
-#
-# vetoes say what a file is NOT (judged on every name of the file), rules say what it IS.
-
-# Raw regex text, substituted as {name} into regex tokens at load time.
-fragments:
-  # What announces an episode number: N°62, #062, ep 62, épisode 62. Not "titar"/"keroro":
-  # "Titar 2008" or "keroro 1080p" would veto a real VF file for every target.
-  episode_marker: "(?:\\bn[°o]|#|\\bep(?:isode)?\\.?)\\s*-?\\s*"
-  # Not a date: no month name and no d/m numeric form right after the number.
-  not_a_date: "(?!\\s*(?:janv?(?:ier)?|fevr?(?:ier)?|mars|avr(?:il)?|mai|juin|juil(?:let)?|aout|sep(?:t(?:embre)?)?|oct(?:obre)?|nov(?:embre)?|dec(?:embre)?)\\b)(?!\\s*[/.\\-]\\s*\\d)"
-
 tokens:
   keroro:        { keyword: keroro }
   titar:         { keyword: titar }
   keroro_titar:  { any: [keroro, titar] }
-  # The CJK range targets the folded form: NFKD turns Hangul syllables into jamo and
-  # halfwidth katakana into fullwidth ones.
-  foreign_lang:  { regex: "\\b(ITA|KOR|Korean|Italiano|Coreano|VOSTFR|VOSTA|Subs?FR|Espa[nñ]ol|English\\s?Dub|ENG|Japan|JAP|Gunsou?|GB18030|GB2312|GBK|GB|HKG)\\b|dino-riders|guerriero|risveglio|sarxento|sargento|benjo|fatacolorata|catala|signor|josconcillo|sgt\\.?\\s*frog|\\((?:ita|j|jp|k|kr|ks)\\)|BIG5|R3_DVDRIP|XeTe|estrenen|CartoonAnimeITA|¡|tropa|sergeant|espana|[\\u1100-\\u11ff\\u3040-\\u30ff\\u3400-\\u9fff]" }
+  foreign_lang:  { regex: "\\b(ITA|KOR|Korean|Italiano|Coreano|VOSTFR|VOSTA|Subs?FR|Espa[nñ]ol|English\\s?Dub|ENG|Japan|JAP|Gunsou?|GB18030|GB2312|GBK|GB|HKG)\\b|dino-riders|guerriero|risveglio|sarxento|sargento|benjo|fatacolorata|catala|signor|josconcillo|sgt\\.?\\s*frog|\\((?:ita|j|jp|k|kr|ks)\\)|BIG5|R3_DVDRIP|XeTe|estrenen|CartoonAnimeITA|¡|tropa|sergeant|繁體|espana" }
+  french_safe:   { not: foreign_lang }
+  is_keroro:     { all: [french_safe, keroro_titar] }
   not_episode:   { regex: "movie|opening|ending|g[eé]n[eé]rique|\\bsample\\b|preview|trailer|bande.?annonce|\\bcomic\\b|\\bdoujin(?:shi)?\\b|同人誌|onlyfans" }
-  # The name carries an explicit episode number, whichever: 1 to 3 digits (#2008 is not one),
-  # not NxNN (a resolution or a season).
-  explicit_id:   { regex: "{episode_marker}\\d{1,3}(?!\\d)(?!\\s*x\\s*\\d)|\\bs\\d{1,2}\\s*e\\d" }
-  # That number is the target's.
-  own_id:        { regex: "{episode_marker}0*{absolute_number}(?!\\d)|\\bs0*{season}\\s*e0*{seasonal_number}(?!\\d)" }
-  # An explicit episode number that is not the target's.
-  other_episode: { all: [explicit_id, { not: own_id }] }
+  is_episode:    { all: [is_keroro, { not: not_episode }] }
   teletoon:      { regex: "t[eé]l[eé]toon" }
   idf1:          { regex: "\\bidf\\s?1\\b" }
   vf:            { regex: "\\b(?:vf|vff|vfb)\\b|version\\s?francaise" }
   source_marker: { any: [teletoon, idf1, vf] }
   segment_id:    { regex: "(?:n[°o]?\\s*0*{absolute_number}|s0*{season}\\s*e0*{seasonal_number}|0*{season}\\s*x\\s*0*{seasonal_number})\\s*{segment}" }
-  segment_id_loose: { regex: "(?:^|[^0-9A-Za-z])0*{absolute_number}{not_a_date}(?:[^0-9A-Za-z]|$)" }
+  segment_id_loose: { regex: "(?:^|[^0-9A-Za-z])0*{absolute_number}(?!\\s*(?:janv?(?:ier)?|fevr?(?:ier)?|mars|avr(?:il)?|mai|juin|juil(?:let)?|aout|sep(?:t(?:embre)?)?|oct(?:obre)?|nov(?:embre)?|dec(?:embre)?)\\b)(?!\\s*[/.\\-]\\s*\\d)(?:[^0-9A-Za-z]|$)" }
   # Target-agnostic bare episode number (Approach 1): a 2-3 digit run bordered by non-alphanumerics
   # on BOTH sides, minus the same date vetoes as segment_id_loose (month name / numeric d/m).
   # Used ONLY by keroro_large's { not: episode_number } guard: a bare number reaching the
   # catch-all is beyond the last target (out of range), so it drops out. Seasonal SxE / NNxNN
   # forms (no A/B letter) are not bare numbers and are deliberately left in the catalog.
-  episode_number: { regex: "(?:^|[^0-9A-Za-z])\\d{2,3}{not_a_date}(?:[^0-9A-Za-z]|$)" }
+  episode_number: { regex: "(?:^|[^0-9A-Za-z])\\d{2,3}(?!\\s*(?:janv?(?:ier)?|fevr?(?:ier)?|mars|avr(?:il)?|mai|juin|juil(?:let)?|aout|sep(?:t(?:embre)?)?|oct(?:obre)?|nov(?:embre)?|dec(?:embre)?)\\b)(?!\\s*[/.\\-]\\s*\\d)(?:[^0-9A-Za-z]|$)" }
   title_hit:     { coverage: title, min: 0.6 }
   is_video:      { regex: "\\.(avi|mkv|mp4|mpg|mpeg|divx|m4v|ogm)$" }
   is_archive:    { regex: "\\.(zip|7z|rar|r\\d\\d|z\\d\\d|part\\d+\\.rar)$" }
-
-# One name is enough: the target is excluded for the whole file.
-vetoes: [foreign_lang, not_episode, other_episode]
-
-# The best name wins. scope: segment pins one segment, episode fans out to every segment,
-# unattributed pins nothing (one decision, only when no segment/episode rule fired).
 rules:
-  - { name: id_segment_exact,    tier: download, scope: segment,      all: [keroro_titar, is_video, segment_id] }
-  - { name: title_confirmed,     tier: download, scope: segment,      all: [keroro_titar, is_video, title_hit, source_marker] }
-  - { name: numero_nu_confirmed, tier: download, scope: episode,      all: [keroro_titar, is_video, segment_id_loose, source_marker] }
-  - { name: title_review,        tier: notify,   scope: segment,      all: [keroro_titar, is_video, title_hit] }
-  - { name: numero_nu,           tier: notify,   scope: episode,      all: [keroro_titar, is_video, segment_id_loose] }
-  - { name: archive_candidate,   tier: notify,   scope: unattributed, all: [keroro_titar, is_archive, { any: [segment_id, title_hit, source_marker] }] }
-  # keroro_large MUST stay the only tier: catalog rule: mulewatch.webui displays ANY
+  - { name: id_segment_exact,    tier: download, all: [is_episode, is_video, segment_id] }
+  - { name: title_confirmed,     tier: download, all: [is_episode, is_video, title_hit, source_marker] }
+  - { name: numero_nu_confirmed, tier: download, all: [is_episode, is_video, segment_id_loose, source_marker] }
+  - { name: title_review,        tier: notify,   all: [is_episode, is_video, title_hit] }
+  - { name: numero_nu,           tier: notify,   all: [is_episode, is_video, segment_id_loose] }
+  - { name: archive_candidate,   tier: notify,   all: [is_episode, is_archive, { any: [segment_id, title_hit, source_marker] }] }
+  # keroro_large MUST stay the only tier: catalog rule — mulewatch.webui displays ANY
   # tier=="catalog" decision as "unidentified" (target-agnostic catch-all assumption).
   # Guarded by packages/matching/tests/test_golden_corpus.py::
   # test_prod_policy_has_exactly_one_catalog_tier_rule_named_keroro_large.
-  - { name: keroro_large,        tier: catalog,  scope: unattributed, all: [keroro_titar, { any: [is_video, is_archive] }, { not: episode_number }] }
+  - { name: keroro_large,        tier: catalog,  all: [is_episode, { any: [is_video, is_archive] }, { not: episode_number }] }

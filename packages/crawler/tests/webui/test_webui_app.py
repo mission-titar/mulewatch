@@ -84,7 +84,6 @@ tokens:
 rules:
   - name: catalog
     tier: catalog
-    scope: unattributed
     any:
       - keroro
 """
@@ -650,90 +649,6 @@ async def test_file_detail_with_decision_returns_200(
     assert resp.status_code == 200
     assert "ed2k://" in resp.text
     assert "062A" in resp.text
-
-
-@pytest.fixture
-def app_vetoed_alias(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
-    """One file seen under a clean name and a foreign alias, with a veto on the alias."""
-    with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files VALUES (?, ?, ?)", (TEST_HASH, 100_000_000, None))
-        for obs_id, name in ((1, "keroro_s2e62a_vf.avi"), (2, "keroro ITA.avi")):
-            conn.execute(
-                "INSERT INTO file_observations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    obs_id,
-                    TEST_HASH,
-                    name,
-                    100_000_000,
-                    5,
-                    3,
-                    None,
-                    None,
-                    None,
-                    None,
-                    "{}",
-                    "keroro",
-                    f"2024-01-0{obs_id}T00:00:00",
-                    "node1",
-                ),
-            )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "062A", "catalog", "catalog", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
-    with sqlite3.connect(local_db) as conn:
-        conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-veto"))
-        conn.execute(
-            "INSERT INTO node_runtime VALUES (?, ?)", ("created_at", "2024-01-01T00:00:00")
-        )
-        conn.commit()
-    matcher_config = parse_matcher_config(
-        {
-            "tokens": {
-                "keroro": {"keyword": "keroro"},
-                "vf": {"regex": "vf"},
-                "ita": {"regex": r"\bITA\b"},
-            },
-            "vetoes": ["ita"],
-            "rules": [
-                {
-                    "name": "catalog",
-                    "tier": "catalog",
-                    "scope": "unattributed",
-                    "all": ["keroro", "vf"],
-                }
-            ],
-        }
-    )
-
-    import mulewatch.webui
-
-    webui_dir = Path(mulewatch.webui.__file__).parent / "adapters"
-    app = build_app(
-        catalog_db=catalog_db,
-        local_db=local_db,
-        matcher_config=matcher_config,
-        targets=_targets(),
-        templates_dir=webui_dir / "templates",
-        static_dir=webui_dir / "static",
-        control=_RecordingControl(),
-        amule_url=_AMULE_URL,
-    )
-    return app, TEST_HASH
-
-
-@pytest.mark.asyncio
-async def test_file_detail_explains_over_every_name_and_lists_the_vetoes_fired(
-    app_vetoed_alias: tuple[Starlette, str],
-) -> None:
-    app, hash_ = app_vetoed_alias
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
-    assert resp.status_code == 200
-    assert "Vetoes fired:" in resp.text
-    assert "<li>ita</li>" in resp.text  # fired by the ITA alias only
-    assert "<li>catalog</li>" in resp.text  # fired by the VF name only
 
 
 @pytest.mark.asyncio

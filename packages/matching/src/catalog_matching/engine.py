@@ -11,7 +11,6 @@ later plan.
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from catalog_matching.combinators import Matcher
 from catalog_matching.config import TIER_RANK, MatcherConfig
 from catalog_matching.matchers import CoverageMatcher
 from catalog_matching.models import FileCandidate, TargetSegment
@@ -20,18 +19,20 @@ from catalog_matching.resolver import MatcherResolver, ResolvedTarget
 
 @dataclass(frozen=True)
 class Explanation:
-    """Why this decision (cf. spec §8.5): fired rules, tokens and vetoes, coverage values.
+    """Why this decision (cf. spec §8.5: fired tokens/rules + coverage value).
 
-    Concerns ONE target, over the names given: a rule, token or veto is listed when true on
-    at least one name. ``rules_fired`` in config order; ``tokens_matched`` and ``vetoes_fired``
-    sorted; ``coverage_values`` holds EVERY coverage token with its best value, sorted by name.
+    Concerns the SINGLE winning target. ``rules_fired``: names of the rules true for this
+    target, in config order (the 1st is the winner). ``tokens_matched``: names of the
+    config's named tokens that match (sorted). ``coverage_values``: for EACH coverage token
+    of the config (whether it matched or not), ``(name, value(candidate))`` sorted — the
+    score helps debug a threshold even below the bar. Tuples (not dicts) to stay
+    FROZEN/hashable and deterministic.
     """
 
     target_id: str
     rules_fired: tuple[str, ...]
     tokens_matched: tuple[str, ...]
     coverage_values: tuple[tuple[str, float], ...]
-    vetoes_fired: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -54,8 +55,8 @@ class MatchDecision:
 class DecisionRecord:
     """The 3 COMPARABLE columns of a persisted decision, without the runtime explainability.
 
-    This is exactly what ``match_decisions`` stores (§11), ``target_id``/``rule_name``/
-    ``tier``, read back for anti-redundancy (orchestration spec §3: only re-``record_decision``
+    This is exactly what ``match_decisions`` stores (§11) — ``target_id``/``rule_name``/
+    ``tier`` — read back for anti-redundancy (orchestration spec §3: only re-``record_decision``
     if the verdict CHANGES). Deliberately distinct from :class:`MatchDecision`: the read
     cannot reconstruct the ``explanation`` (not persisted), and two ``DecisionRecord``s are
     equal iff their three fields are equal (frozen dataclass → field-by-field ``==``).
@@ -98,6 +99,15 @@ class DownloadCandidate:
 _TIER_RANK = TIER_RANK
 
 
+# Rule-name sets driving the multi-target fan-out (spec §4). A rule is ATTRIBUTABLE when its
+# win pins the file to a concrete target via a number/title video signal. SEGMENT_LEVEL rules
+# pin one specific segment (a title, or a lettered number); EPISODE_LEVEL rules designate the
+# whole episode (a bare number) and thus every one of its segments. ATTRIBUTABLE is exactly
+# their union.
+_SEGMENT_LEVEL: frozenset[str] = frozenset({"id_segment_exact", "title_confirmed", "title_review"})
+_EPISODE_LEVEL: frozenset[str] = frozenset({"numero_nu_confirmed", "numero_nu"})
+_ATTRIBUTABLE: frozenset[str] = _SEGMENT_LEVEL | _EPISODE_LEVEL
+
 # (resolved target, rule index, rule name, tier, the name that fired it)
 _Match = tuple[ResolvedTarget, int, str, str, FileCandidate]
 
@@ -122,23 +132,30 @@ def _first_matching_rule(
 def _explain(
     config: MatcherConfig,
     resolved: ResolvedTarget,
-    names: Sequence[FileCandidate],
+    candidate: FileCandidate,
 ) -> Explanation:
-    """Builds the explanation of ``resolved`` over ``names`` (cf. :class:`Explanation`)."""
+    """Builds the explanation of the resolved target ``resolved`` (cf. spec §8.5).
 
-    def fired(matcher: Matcher) -> bool:
-        return any(matcher.matches(name) for name in names)
-
+    ``rules_fired``: rules true in config order. ``tokens_matched``: named tokens that match
+    (sorted). ``coverage_values``: ``(name, value)`` of the coverage tokens (sorted). Reads
+    ``CoverageMatcher.value()`` (outside the Protocol) via ``isinstance``.
+    """
+    rules_fired = tuple(
+        rule.name for rule in config.rules if resolved.rules[rule.name].matches(candidate)
+    )
+    tokens_matched = tuple(
+        sorted(name for name, matcher in resolved.tokens.items() if matcher.matches(candidate))
+    )
+    coverage_values = tuple(
+        (name, matcher.value(candidate))
+        for name, matcher in sorted(resolved.tokens.items())
+        if isinstance(matcher, CoverageMatcher)
+    )
     return Explanation(
         target_id=resolved.target.target_id,
-        rules_fired=tuple(rule.name for rule in config.rules if fired(resolved.rules[rule.name])),
-        tokens_matched=tuple(sorted(n for n, m in resolved.tokens.items() if fired(m))),
-        coverage_values=tuple(
-            (name, max((matcher.value(c) for c in names), default=0.0))
-            for name, matcher in sorted(resolved.tokens.items())
-            if isinstance(matcher, CoverageMatcher)
-        ),
-        vetoes_fired=tuple(sorted(v for v in config.vetoes if fired(resolved.tokens[v]))),
+        rules_fired=rules_fired,
+        tokens_matched=tokens_matched,
+        coverage_values=coverage_values,
     )
 
 
@@ -168,15 +185,16 @@ class MatchingEngine:
             r.target.target_id: r for r in self._resolved
         }
 
-    def explain(self, candidates: Iterable[FileCandidate], target_id: str) -> Explanation | None:
-        """Explains target ``target_id`` over every name of one file; ``None`` if unknown.
+    def explain(self, candidate: FileCandidate, target_id: str) -> Explanation | None:
+        """Explains the match of ``candidate`` against target ``target_id`` (current config).
 
-        Over-long names are skipped, as in :meth:`evaluate_all`.
+        ``None`` if ``target_id`` is unknown to the config. Otherwise an ``Explanation``
+        (empty if no rule fires). Reuses the per-target resolved matcher tree.
         """
         resolved = self._resolved_by_target.get(target_id)
         if resolved is None:
             return None
-        return _explain(self._config, resolved, self._names(candidates))
+        return _explain(self._config, resolved, candidate)
 
     def evaluate(self, candidate: FileCandidate) -> list[MatchDecision]:
         """All decisions for ``candidate`` (spec §4); ``[]`` = file discarded."""
@@ -185,19 +203,18 @@ class MatchingEngine:
     def evaluate_all(self, candidates: Iterable[FileCandidate]) -> list[MatchDecision]:
         """All decisions for ONE file known under every name in ``candidates``; ``[]`` = discard.
 
-        A target is skipped when any veto matches any name (over-long names skipped). Per
-        surviving target, the best rule over all names (min-key below).
-        Matches of a ``segment`` or ``episode`` scoped rule fan out per episode: a
-        segment-scoped match on any segment of an episode emits only those segments,
-        otherwise the episode-scoped matches emit every segment (spec §3). With none, the
-        single-winner min-key over ALL matches yields one ``unattributed`` decision, or ``[]``.
+        Per target, the best rule over all names (min-key below, over-long names skipped).
+        The attributable matches (number/title video rules) fan out per episode: a
+        segment-level signal on any segment of an episode emits only those segments,
+        otherwise the episode-level signal emits every segment (spec §3). With no
+        attributable match, the single-winner min-key over ALL matches yields one catch-all
+        decision (the ``keroro_large`` catalog row or an ``archive_candidate`` row), or ``[]``.
         """
-        names = self._names(candidates)
         best: dict[str, _Match] = {}
-        for resolved in self._resolved:
-            if self._vetoed(resolved, names):
+        for candidate in candidates:
+            if len(candidate.filename) > self._max_filename_length:
                 continue
-            for candidate in names:
+            for resolved in self._resolved:
                 outcome = _first_matching_rule(self._config, resolved, candidate)
                 if outcome is None:
                     continue
@@ -215,26 +232,16 @@ class MatchingEngine:
             return attributable
         return self._single_winner(matches)
 
-    def _names(self, candidates: Iterable[FileCandidate]) -> list[FileCandidate]:
-        return [c for c in candidates if len(c.filename) <= self._max_filename_length]
-
-    def _vetoed(self, resolved: ResolvedTarget, names: Sequence[FileCandidate]) -> bool:
-        """True when any veto matches any name: the target is out for the whole file."""
-        return any(
-            resolved.tokens[veto].matches(name) for veto in self._config.vetoes for name in names
-        )
-
     def _fan_out(self, matches: list[_Match]) -> list[MatchDecision]:
-        """Selects the emitted segments from the segment/episode scoped matches (spec §3/§4)."""
-        rules = self._config.rules
+        """Selects the emitted segments from the attributable matches (spec §3/§4)."""
         by_episode: dict[int, list[_Match]] = {}
         for entry in matches:
-            if rules[entry[1]].scope == "unattributed":
+            if entry[2] not in _ATTRIBUTABLE:
                 continue
             by_episode.setdefault(entry[0].target.absolute_number, []).append(entry)
         emitted: list[_Match] = []
         for group in by_episode.values():
-            segment_level = [entry for entry in group if rules[entry[1]].scope == "segment"]
+            segment_level = [entry for entry in group if entry[2] in _SEGMENT_LEVEL]
             emitted.extend(segment_level or group)
         emitted.sort(key=lambda entry: entry[0].target.target_id)
         return [self._decision(entry) for entry in emitted]
@@ -263,5 +270,5 @@ class MatchingEngine:
             target_id=resolved.target.target_id,
             rule_name=rule_name,
             tier=tier,
-            explanation=_explain(self._config, resolved, (candidate,)),
+            explanation=_explain(self._config, resolved, candidate),
         )

@@ -2,11 +2,6 @@
 
 from dataclasses import dataclass
 
-LOST = "lost"
-FOUND = "found"
-# Closed set of target statuses (a found target is still downloaded: archival redundancy).
-TARGET_STATUSES: frozenset[str] = frozenset({LOST, FOUND})
-
 
 @dataclass(frozen=True)
 class FileCandidate:
@@ -36,7 +31,7 @@ class TargetSegment:
     absolute_number: int
     segment: str
     title: str
-    status: str = LOST
+    status: str = "lost"
 
     @property
     def target_id(self) -> str:
