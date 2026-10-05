@@ -9,6 +9,18 @@ from typing import Any
 
 from mulewatch.domain.observation import Sighting
 
+
+def covered_by_range(ranges: str, raw: str) -> str:
+    """SQL: a row of ``ranges`` already counts raw row ``raw`` (its hash, UTC day and node)."""
+    # One uncorrelated scalar IN, built once per statement: a correlated EXISTS was 11x slower in
+    # merge, a row-value NOT IN 100x. Hash (32) and day (10) are fixed width: an unambiguous key.
+    return (
+        f"({raw}.ed2k_hash || substr({raw}.observed_at, 1, 10) || {raw}.node_id) IN"
+        f" (SELECT cr.ed2k_hash || cr.bucket || cn.value FROM {ranges} AS cr,"
+        " json_each(cr.node_ids) AS cn)"
+    )
+
+
 # Each file's latest sighting: its latest raw observation (seeked through
 # idx_file_observations_hash_observed, never a scan), else its latest range. The only place this
 # fallback is written. One row per catalogued file, all NULL for a file never seen.

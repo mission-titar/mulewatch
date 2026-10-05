@@ -8,7 +8,8 @@ transaction (BEGIN…COMMIT, best-effort ROLLBACK): verbatim copy of the 4 intac
 verbatim copy of the RECENT raw (observed_at >= cutoff_date), bucketize of the OLD raw
 (observed_at < cutoff_date). COMMIT then DETACH (outside a transaction). We NEVER write to the
 source (only SELECTs). The output is assumed NEW (the CLI guarantees it) → no dedup, except that a
-raw row a source range already counts (``covered_by_range``) is dropped from both raw paths.
+raw row a source range already counts (``sightings.covered_by_range``) is dropped from both raw
+paths.
 
 UTC-DAY-aligned cutoff (spec §5bis): cutoff_date is a "YYYY-MM-DD" DATE; "old" ⟺
 observed_at < cutoff_date — the lexicographic comparison puts every timestamp of the cutoff day
@@ -21,6 +22,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from mulewatch.adapters.persistence_sqlite.connection import Clock, open_catalog, utc_now
+from mulewatch.adapters.persistence_sqlite.sightings import covered_by_range
 from mulewatch.compact.errors import CompactError
 from mulewatch.domain.retention.buckets import ObservationRow, bucketize
 
@@ -84,17 +86,6 @@ _OBSERVATION_COLUMNS = (
     "observed_at",
     "node_id",
 )
-
-
-def covered_by_range(ranges: str, raw: str) -> str:
-    """SQL twin of ``buckets.covers``: a row of the ``ranges`` table already counts row ``raw``."""
-    # One uncorrelated scalar IN, built once per statement: a correlated EXISTS was 11x slower and
-    # a row-value NOT IN 100x. Hash (32) and day (10) are fixed width, so the key is unambiguous.
-    return (
-        f"({raw}.ed2k_hash || substr({raw}.observed_at, 1, 10) || {raw}.node_id) IN"
-        f" (SELECT cr.ed2k_hash || cr.bucket || cn.value FROM {ranges} AS cr,"
-        " json_each(cr.node_ids) AS cn)"
-    )
 
 
 _NOT_COVERED = f"NOT {covered_by_range(f'{_SRC}.file_observation_ranges', 'o')}"

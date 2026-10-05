@@ -3,11 +3,12 @@
 Mechanism (merge spec §3/§4): the output is created/opened via ``open_catalog`` (schema
 + append-only triggers, migration ``0001`` — NO duplicated DDL). Two passes over the sources:
 first every source's ``files`` and compacted ranges, then the rest, minus the raw observations a
-range of the output already counts (``covered_by_range``, spec 2026-10-05 §4), so a day is never
-counted twice whatever the source order. For each source and pass: we ``ATTACH`` it (outside a
-transaction), then INSIDE an explicit transaction (``BEGIN``…``COMMIT``, best-effort
-``ROLLBACK`` on error) we copy its tables in **FK order** (identities first), then ``COMMIT``
-and ``DETACH``. A half-copied pass is never committed; a failed merge is re-run safely.
+range of the output already counts (``sightings.covered_by_range``, spec 2026-10-05 §4), so a
+day is never counted twice whatever the source order. For each source and pass: we ``ATTACH`` it
+(outside a transaction), then INSIDE an explicit transaction (``BEGIN``…``COMMIT``,
+best-effort ``ROLLBACK`` on error) we copy its tables in **FK order** (identities first), then
+``COMMIT`` and ``DETACH``. A half-copied pass is never committed; a failed merge is re-run
+safely.
 
 Idempotence (spec §4):
 - ``files``/``sources`` (global content PK) → ``INSERT OR IGNORE`` (first sighting
@@ -28,7 +29,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.compact.compactor import covered_by_range
+from mulewatch.adapters.persistence_sqlite.sightings import covered_by_range
 from mulewatch.merge.errors import MergeError, SchemaVersionMismatchError
 
 # Attach alias of the current source (one at a time → we stay at 1 attached DB
