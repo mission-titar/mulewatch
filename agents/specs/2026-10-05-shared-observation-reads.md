@@ -1,7 +1,7 @@
 # One module for every observation read, and a merge that never counts a day twice
 
 - Date: 2026-10-05
-- Status: DRAFT (awaiting operator review)
+- Status: APPROVED (2026-10-05)
 - Scope: move every read of `file_observations` / `file_observation_ranges` into one shared
   module, so a reader cannot forget the compacted form; stop `merge` and `compact` from counting
   the same observations twice when both forms of a day meet
