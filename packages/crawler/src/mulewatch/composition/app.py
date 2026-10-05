@@ -548,7 +548,7 @@ class CrawlerApp:
             notifications = obs.notifications if obs is not None else ()
             registry = CollectorRegistry()
             notifier = AppriseNotifier(
-                tuple((target.url, target.tag) for target in notifications),
+                tuple((t.url, t.tag, t.node_prefix) for t in notifications),
                 node_id=node_id,
             )
             telemetry = ObservabilityDispatcher(
