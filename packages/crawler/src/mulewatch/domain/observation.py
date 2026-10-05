@@ -62,3 +62,21 @@ class FileObservation:
         return candidate_from_fields(
             self.filename, self.size_bytes, self.media_length_sec, self.bitrate_kbps
         )
+
+
+@dataclass(frozen=True)
+class Sighting:
+    """A file seen once (a raw observation) or over a compacted day (no keyword, no media)."""
+
+    ed2k_hash: str
+    names: tuple[str, ...]
+    observation_count: int
+    first_seen: str
+    last_seen: str
+    source_count_min: int
+    source_count_max: int
+    size_bytes: int
+    media_length_sec: int | None
+    bitrate_kbps: int | None
+    keyword: str | None
+    compacted: bool
