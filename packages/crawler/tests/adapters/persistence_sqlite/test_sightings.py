@@ -196,6 +196,22 @@ def test_sightings_are_the_timeline_of_both_forms_oldest_first(
     assert sightings.sightings(connection, _C) == ()
 
 
+def test_the_timeline_shows_a_day_compacted_for_its_node_once_as_the_range(
+    connection: sqlite3.Connection,
+) -> None:
+    # merge --into leaves both forms in storage (append-only); a read shows the range alone.
+    _file(connection, _A)
+    _range(connection, _A, "2026-05-01", ["a.avi"])
+    _raw(connection, _A, "a.avi", "2026-05-01T10:00")
+    _raw(connection, _A, "other node.avi", "2026-05-01T12:00", node="n2")
+    _raw(connection, _A, "next day.avi", "2026-05-02T10:00")
+    assert sightings.sightings(connection, _A) == (
+        _range_sighting("2026-05-01", ("a.avi",)),
+        _raw_sighting("other node.avi", "2026-05-01T12:00"),
+        _raw_sighting("next day.avi", "2026-05-02T10:00"),
+    )
+
+
 @pytest.mark.parametrize(
     ("ed2k_hash", "observed_at", "node_id", "covered"),
     [
