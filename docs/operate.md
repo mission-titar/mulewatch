@@ -134,7 +134,9 @@ docker compose exec --user amule mulewatch python -m mulewatch.compact \
 `s6-svc -d /etc/services.d/mulewatch`, ce qui laisse aMule garder ses sessions pendant l'opération.
 L'outil écrit une base neuve, qui ne doit pas déjà exister ; c'est ensuite à vous de permuter. Si
 vous faites les deux, **fusionnez d'abord, compactez ensuite** : la compaction voit alors tous les
-nœuds et produit une seule ligne par fichier et par jour.
+nœuds et produit une seule ligne par fichier et par jour. Aucun des deux outils ne compte deux fois
+la même observation : une observation brute déjà résumée dans un jour compacté (même fichier, même
+jour UTC, même nœud) est écartée, et la fusion indique en fin de sortie combien elle en a écarté.
 
 Quand la lancer ? Pas avant que `data/catalog.db` devienne gênant. Repère pratique : environ 5 Go,
 ou six mois d'exploitation continue, selon ce qui arrive en premier, puis tous les trois à six mois.
