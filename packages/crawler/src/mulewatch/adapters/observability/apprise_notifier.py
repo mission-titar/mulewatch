@@ -53,7 +53,7 @@ class AppriseNotifier:
 
     async def notify(self, audience: Audience, body: str, severity: Severity) -> None:
         for group, text in ((self._prefixed, f"[{self._node_id}] {body}"), (self._bare, body)):
-            # No body_format: declared MARKDOWN would make apprise parse "@word" in names into pings.
+            # No body_format: a declared MARKDOWN makes apprise turn "@word" in a name into a ping.
             await group.async_notify(  # type: ignore[attr-defined]
                 body=text, notify_type=_NOTIFY_TYPES[severity], tag=audience.value
             )
