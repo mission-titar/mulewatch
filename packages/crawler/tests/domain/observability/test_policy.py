@@ -1,6 +1,8 @@
 """``describe`` is an exhaustive match: one case per event + each conditional branch
 (a rise or not, first_occurrence true/false)."""
 
+from dataclasses import replace
+
 import pytest
 
 from mulewatch.domain.observability import events as ev
@@ -271,3 +273,9 @@ def test_decisions_log_one_line_listing_every_change() -> None:
 
 def test_a_change_without_a_rise_has_no_notification_body() -> None:
     assert describe(_decisions(_change("062A", "download", "notify"))).notification == ""
+
+
+def test_a_backtick_in_the_name_cannot_close_its_code_span() -> None:
+    # Discord pings a mention outside code: a name must not escape its span.
+    event = replace(_decisions(_change("062A", None, "download")), filename="a`@everyone`b.avi")
+    assert "\n350.2 MiB - `a'@everyone'b.avi`\n" in describe(event).notification
