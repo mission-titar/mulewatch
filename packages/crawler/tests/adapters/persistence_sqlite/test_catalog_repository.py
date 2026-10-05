@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 
 from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from mulewatch.adapters.persistence_sqlite.catalog_repository import (
+    _SELECT_REEVALUATION_ROWS,
+    SqliteCatalogRepository,
+)
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.domain.observation import FileObservation
@@ -354,3 +357,25 @@ def test_iter_reevaluation_rows_is_empty_with_an_empty_catalogue(
     repository: SqliteCatalogRepository,
 ) -> None:
     assert list(repository.iter_reevaluation_rows()) == []
+
+
+def test_iter_reevaluation_rows_breaks_an_observed_at_tie_on_the_highest_id(
+    repository: SqliteCatalogRepository,
+) -> None:
+    # Frozen clock: both rows share observed_at, so the later INSERT (higher id) wins.
+    repository.record_observation(_observation(filename="first.avi"))
+    repository.record_observation(_observation(filename="second.avi"))
+    assert [row.filename for row in repository.iter_reevaluation_rows()] == ["second.avi"]
+
+
+def test_iter_reevaluation_rows_seeks_each_latest_observation_through_the_index(
+    connection: sqlite3.Connection,
+) -> None:
+    # Asserts the PLAN, not a duration: the old anti-join scanned every observation (quadratic).
+    plan = [
+        str(row[3]) for row in connection.execute("EXPLAIN QUERY PLAN " + _SELECT_REEVALUATION_ROWS)
+    ]
+    assert any(
+        step.startswith("SEARCH") and "idx_file_observations_hash_observed" in step for step in plan
+    ), plan
+    assert not any(step.startswith("SCAN o") for step in plan), plan

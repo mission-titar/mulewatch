@@ -98,20 +98,19 @@ _SELECT_KNOWN_FILENAMES = """
 SELECT DISTINCT filename FROM file_observations WHERE ed2k_hash = ? ORDER BY filename
 """
 
-# Every hash's LATEST observation (re-evaluation backfill spec §6), one row per hash:
-# a correlated anti-join keeps only the observation with no strictly-later observation for
-# the same hash (ties broken by id, the most recent INSERT). Stable sort by hash for a
-# deterministic, streamable result (no window function needed, unlike download_decisions).
+# Every hash's LATEST observation (re-evaluation backfill spec §6), one row per hash, sorted.
+# Driven by files: each hash seeks its newest row through idx_file_observations_hash_observed
+# (latest observed_at, then highest id), as the webui's latest_obs does; never a table scan.
 _SELECT_REEVALUATION_ROWS = """
-SELECT o.ed2k_hash, o.filename, o.size_bytes, o.media_length_sec, o.bitrate_kbps
-FROM file_observations AS o
-WHERE (
-    SELECT COUNT(*) FROM file_observations AS o2
-    WHERE o2.ed2k_hash = o.ed2k_hash
-      AND (o2.observed_at > o.observed_at
-           OR (o2.observed_at = o.observed_at AND o2.id > o.id))
-) = 0
-ORDER BY o.ed2k_hash
+SELECT f.ed2k_hash, o.filename, o.size_bytes, o.media_length_sec, o.bitrate_kbps
+FROM files AS f
+JOIN file_observations AS o ON o.id = (
+    SELECT o2.id FROM file_observations AS o2
+    WHERE o2.ed2k_hash = f.ed2k_hash
+    ORDER BY o2.observed_at DESC, o2.id DESC
+    LIMIT 1
+)
+ORDER BY f.ed2k_hash
 """
 
 
