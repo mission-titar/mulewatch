@@ -85,14 +85,6 @@ SELECT ed2k_hash, target_id FROM (
 ORDER BY ed2k_hash, target_id
 """
 
-# Last observation of a hash (name + size for the ed2k link, download spec §5).
-_SELECT_LAST_OBSERVATION = """
-SELECT filename, size_bytes FROM file_observations
-WHERE ed2k_hash = ?
-ORDER BY observed_at DESC, id DESC
-LIMIT 1
-"""
-
 # Every name a hash was ever observed under, raw or compacted into a range (decisions judge
 # the file on all of them, so a compaction must not drop an alias). UNION dedups and sorts.
 _SELECT_KNOWN_FILENAMES = """
@@ -105,32 +97,41 @@ ORDER BY 1
 
 _COUNT_FILES = "SELECT COUNT(*) FROM files"
 
-# Every hash's LATEST observation (re-evaluation backfill spec §6), one row per hash, sorted.
-# Driven by files: each hash seeks its newest row through idx_file_observations_hash_observed
-# (latest observed_at, then highest id), as the webui's latest_obs does; never a table scan.
-# A file compacted down to ranges falls back to its latest range's first name (the array is
-# sorted), files.size_bytes and no media; a file with neither is skipped.
-_SELECT_REEVALUATION_ROWS = """
-SELECT ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps FROM (
-    SELECT
-        f.ed2k_hash,
-        COALESCE(o.filename, (
-            SELECT json_extract(r.filenames, '$[0]') FROM file_observation_ranges AS r
-            WHERE r.ed2k_hash = f.ed2k_hash
-            ORDER BY r.last_observed_at DESC, r.id DESC
-            LIMIT 1
-        )) AS filename,
-        COALESCE(o.size_bytes, f.size_bytes) AS size_bytes,
-        o.media_length_sec,
-        o.bitrate_kbps
-    FROM files AS f
-    LEFT JOIN file_observations AS o ON o.id = (
-        SELECT o2.id FROM file_observations AS o2
-        WHERE o2.ed2k_hash = f.ed2k_hash
-        ORDER BY o2.observed_at DESC, o2.id DESC
+# Each file's LATEST observation, seeked through idx_file_observations_hash_observed (latest
+# observed_at, then highest id) as the webui's latest_obs does; never a table scan. A file
+# compacted down to ranges falls back to its latest range's first name (the array is sorted),
+# files.size_bytes and no media; a file with neither has a NULL filename.
+_LATEST_PER_FILE = """
+SELECT
+    f.ed2k_hash,
+    COALESCE(o.filename, (
+        SELECT json_extract(r.filenames, '$[0]') FROM file_observation_ranges AS r
+        WHERE r.ed2k_hash = f.ed2k_hash
+        ORDER BY r.last_observed_at DESC, r.id DESC
         LIMIT 1
-    )
+    )) AS filename,
+    COALESCE(o.size_bytes, f.size_bytes) AS size_bytes,
+    o.media_length_sec,
+    o.bitrate_kbps
+FROM files AS f
+LEFT JOIN file_observations AS o ON o.id = (
+    SELECT o2.id FROM file_observations AS o2
+    WHERE o2.ed2k_hash = f.ed2k_hash
+    ORDER BY o2.observed_at DESC, o2.id DESC
+    LIMIT 1
 )
+"""
+
+# Last observation of a hash (name + size for the ed2k link, download spec §5).
+_SELECT_LAST_OBSERVATION = f"""
+SELECT filename, size_bytes FROM ({_LATEST_PER_FILE})
+WHERE ed2k_hash = ? AND filename IS NOT NULL
+"""
+
+# Every hash's latest observation (re-evaluation backfill spec §6), one row per hash, sorted.
+_SELECT_REEVALUATION_ROWS = f"""
+SELECT ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps
+FROM ({_LATEST_PER_FILE})
 WHERE filename IS NOT NULL
 ORDER BY ed2k_hash
 """
@@ -245,7 +246,7 @@ class SqliteCatalogRepository:
         return tuple(DownloadCandidate(ed2k_hash=row[0], target_id=row[1]) for row in rows)
 
     def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
-        """Last observation of a hash (name+size for the ed2k link), or ``None`` — READ."""
+        """Last observation of a hash, else its latest range (ed2k link), or ``None`` (read)."""
         with wrap_sqlite_errors():
             row = self._connection.execute(_SELECT_LAST_OBSERVATION, (ed2k_hash,)).fetchone()
         if row is None:
