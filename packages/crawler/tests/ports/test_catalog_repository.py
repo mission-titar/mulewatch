@@ -39,6 +39,9 @@ class _StubRepository:
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
         return ()
 
+    def count_files(self) -> int:
+        return 1
+
     def iter_reevaluation_rows(self) -> Iterator[ReevalRow]:
         return iter(
             (
@@ -79,6 +82,7 @@ def test_protocol_is_satisfied_structurally() -> None:
     assert repository.download_decisions() == ()
     assert repository.last_observation(observation.ed2k_hash) is None
     assert repository.known_filenames(observation.ed2k_hash) == ()
+    assert repository.count_files() == 1
     assert tuple(repository.iter_reevaluation_rows()) == (
         ReevalRow(
             ed2k_hash=observation.ed2k_hash,
