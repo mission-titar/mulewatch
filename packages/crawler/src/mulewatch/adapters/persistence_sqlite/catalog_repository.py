@@ -30,6 +30,7 @@ from catalog_matching.engine import (
     DownloadCandidate,
     MatchDecision,
 )
+from mulewatch.adapters.persistence_sqlite import sightings
 from mulewatch.adapters.persistence_sqlite.connection import Clock, utc_iso, utc_now
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError, wrap_sqlite_errors
 from mulewatch.domain.observation import FileObservation
@@ -85,56 +86,7 @@ SELECT ed2k_hash, target_id FROM (
 ORDER BY ed2k_hash, target_id
 """
 
-# Every name a hash was ever observed under, raw or compacted into a range (decisions judge
-# the file on all of them, so a compaction must not drop an alias). UNION dedups and sorts.
-SELECT_KNOWN_FILENAMES = """
-SELECT filename FROM file_observations WHERE ed2k_hash = :hash
-UNION
-SELECT j.value FROM file_observation_ranges AS r, json_each(r.filenames) AS j
-WHERE r.ed2k_hash = :hash
-ORDER BY 1
-"""
-
 _COUNT_FILES = "SELECT COUNT(*) FROM files"
-
-# Each file's LATEST observation, seeked through idx_file_observations_hash_observed (latest
-# observed_at, then highest id) as the webui's latest_obs does; never a table scan. A file
-# compacted down to ranges falls back to its latest range's first name (the array is sorted),
-# files.size_bytes and no media; a file with neither has a NULL filename.
-_LATEST_PER_FILE = """
-SELECT
-    f.ed2k_hash,
-    COALESCE(o.filename, (
-        SELECT json_extract(r.filenames, '$[0]') FROM file_observation_ranges AS r
-        WHERE r.ed2k_hash = f.ed2k_hash
-        ORDER BY r.last_observed_at DESC, r.id DESC
-        LIMIT 1
-    )) AS filename,
-    COALESCE(o.size_bytes, f.size_bytes) AS size_bytes,
-    o.media_length_sec,
-    o.bitrate_kbps
-FROM files AS f
-LEFT JOIN file_observations AS o ON o.id = (
-    SELECT o2.id FROM file_observations AS o2
-    WHERE o2.ed2k_hash = f.ed2k_hash
-    ORDER BY o2.observed_at DESC, o2.id DESC
-    LIMIT 1
-)
-"""
-
-# Last observation of a hash (name + size for the ed2k link, download spec §5).
-_SELECT_LAST_OBSERVATION = f"""
-SELECT filename, size_bytes FROM ({_LATEST_PER_FILE})
-WHERE ed2k_hash = ? AND filename IS NOT NULL
-"""
-
-# Every hash's latest observation (re-evaluation backfill spec §6), one row per hash, sorted.
-_SELECT_REEVALUATION_ROWS = f"""
-SELECT ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps
-FROM ({_LATEST_PER_FILE})
-WHERE filename IS NOT NULL
-ORDER BY ed2k_hash
-"""
 
 
 class SqliteCatalogRepository:
@@ -246,18 +198,17 @@ class SqliteCatalogRepository:
         return tuple(DownloadCandidate(ed2k_hash=row[0], target_id=row[1]) for row in rows)
 
     def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
-        """Last observation of a hash, else its latest range (ed2k link), or ``None`` (read)."""
+        """Name and size of the latest sighting (the ed2k link), or ``None`` (read)."""
         with wrap_sqlite_errors():
-            row = self._connection.execute(_SELECT_LAST_OBSERVATION, (ed2k_hash,)).fetchone()
-        if row is None:
+            latest = sightings.latest_sighting(self._connection, ed2k_hash)
+        if latest is None:
             return None
-        return ObservedFile(filename=row[0], size_bytes=row[1])
+        return ObservedFile(filename=latest.names[0], size_bytes=latest.size_bytes)
 
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
         """Every distinct name this hash was observed under, ranges included, sorted (read)."""
         with wrap_sqlite_errors():
-            rows = self._connection.execute(SELECT_KNOWN_FILENAMES, {"hash": ed2k_hash}).fetchall()
-        return tuple(row[0] for row in rows)
+            return sightings.known_names(self._connection, ed2k_hash)
 
     def count_files(self) -> int:
         """Number of catalogued hashes, the re-evaluation progress total (read)."""
@@ -266,14 +217,13 @@ class SqliteCatalogRepository:
         return int(row[0])
 
     def iter_reevaluation_rows(self) -> Iterator[ReevalRow]:
-        """Every hash's latest observation, or its latest range's, streamed (backfill spec §6)."""
+        """Every seen hash's latest sighting, streamed (backfill spec §6)."""
         with wrap_sqlite_errors():
-            cursor = self._connection.execute(_SELECT_REEVALUATION_ROWS)
-            for row in cursor:
+            for latest in sightings.iter_latest_sightings(self._connection):
                 yield ReevalRow(
-                    ed2k_hash=row[0],
-                    filename=row[1],
-                    size_bytes=row[2],
-                    media_length_sec=row[3],
-                    bitrate_kbps=row[4],
+                    ed2k_hash=latest.ed2k_hash,
+                    filename=latest.names[0],
+                    size_bytes=latest.size_bytes,
+                    media_length_sec=latest.media_length_sec,
+                    bitrate_kbps=latest.bitrate_kbps,
                 )

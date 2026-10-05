@@ -21,7 +21,7 @@ import json
 import sqlite3
 
 from catalog_matching.config import TIER_RANK
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SELECT_KNOWN_FILENAMES
+from mulewatch.adapters.persistence_sqlite.sightings import known_names
 from mulewatch.webui.domain.views import (
     DecisionView,
     FileDecision,
@@ -483,7 +483,6 @@ class CatalogReader:
         obs_rows = self._conn.execute(_SQL_OBSERVATIONS, (ed2k_hash,)).fetchall()
         dec_rows = self._conn.execute(_SQL_FILE_DECISIONS, (ed2k_hash,)).fetchall()
         range_rows = self._conn.execute(_SQL_RANGES, (ed2k_hash,)).fetchall()
-        name_rows = self._conn.execute(SELECT_KNOWN_FILENAMES, {"hash": ed2k_hash}).fetchall()
 
         decisions = tuple(
             DecisionView(
@@ -526,5 +525,5 @@ class CatalogReader:
                 )
                 for row in range_rows
             ),
-            known_filenames=tuple(row[0] for row in name_rows),
+            known_filenames=known_names(self._conn, ed2k_hash),
         )
