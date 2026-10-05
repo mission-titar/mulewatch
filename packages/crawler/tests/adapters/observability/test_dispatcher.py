@@ -21,20 +21,23 @@ class _RecordingSink:
 
 class _RecordingNotifier:
     def __init__(self) -> None:
-        self.calls: list[tuple[Audience, str, Severity]] = []
+        self.calls: list[tuple[Audience, str, str, Severity]] = []
 
-    async def notify(self, audience: Audience, body: str, severity: Severity) -> None:
-        self.calls.append((audience, body, severity))
+    async def notify(self, audience: Audience, title: str, body: str, severity: Severity) -> None:
+        self.calls.append((audience, title, body, severity))
 
 
 class _RaisingNotifier:
-    async def notify(self, audience: Audience, body: str, severity: Severity) -> None:
+    async def notify(self, audience: Audience, title: str, body: str, severity: Severity) -> None:
         raise RuntimeError("canal mort")
 
 
 class _HangingNotifier:
-    async def notify(self, audience: Audience, body: str, severity: Severity) -> None:
+    async def notify(self, audience: Audience, title: str, body: str, severity: Severity) -> None:
         await asyncio.sleep(10)  # exceeds the test's short timeout
+
+
+_COMPLETED = ev.DownloadCompleted("a" * 32, "Keroro 062.avi", (("062A", "t"),))
 
 
 def _dispatcher(
@@ -69,7 +72,7 @@ async def test_notifies_the_message_when_there_is_no_separate_body() -> None:
     sink, notifier = _RecordingSink(), _RecordingNotifier()
     await _dispatcher(sink, notifier).emit(ev.CrawlerStarted(mode="full"))
     assert notifier.calls == [
-        (Audience.OPERATIONS, "🟢 instance online (mode full)", Severity.INFO)
+        (Audience.OPERATIONS, "", "🟢 instance online (mode full)", Severity.INFO)
     ]
 
 
@@ -82,8 +85,8 @@ async def test_logs_the_message_but_notifies_the_body(caplog: pytest.LogCaptureF
             ev.DecisionsRecorded("a" * 32, "Keroro 062.avi", 1024, (change,))
         )
     assert caplog.records[-1].getMessage().startswith("decisions for Keroro 062.avi")
-    assert [(a, b.splitlines()[0]) for a, b, _ in notifier.calls] == [
-        (Audience.COMMUNITY, "📥 Download")
+    assert [(a, t, b.splitlines()[0]) for a, t, b, _ in notifier.calls] == [
+        (Audience.COMMUNITY, "📥 Download", "**Targets**")
     ]
 
 
@@ -96,10 +99,17 @@ async def test_log_level_matches_severity(caplog: pytest.LogCaptureFixture) -> N
 
 
 @pytest.mark.asyncio
+async def test_a_success_logs_as_info(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.DEBUG, logger="mulewatch.observability"):
+        await _dispatcher(_RecordingSink(), _RecordingNotifier()).emit(_COMPLETED)
+    assert caplog.records[-1].levelno == logging.INFO
+
+
+@pytest.mark.asyncio
 async def test_notification_failure_is_absorbed(caplog: pytest.LogCaptureFixture) -> None:
     sink = _RecordingSink()
     with caplog.at_level(logging.WARNING, logger="mulewatch.observability"):
-        await _dispatcher(sink, _RaisingNotifier()).emit(ev.DownloadCompleted("062A", "a" * 32))
+        await _dispatcher(sink, _RaisingNotifier()).emit(_COMPLETED)
     assert sink.applied  # the metric went through despite the notification failure
     assert any("failed" in r.getMessage() for r in caplog.records)
 
@@ -108,7 +118,5 @@ async def test_notification_failure_is_absorbed(caplog: pytest.LogCaptureFixture
 async def test_notification_timeout_is_absorbed() -> None:
     sink = _RecordingSink()
     # short timeout + hanging notifier → wait_for raises TimeoutError, absorbed.
-    await _dispatcher(sink, _HangingNotifier(), timeout=0.01).emit(
-        ev.DownloadCompleted("062A", "a" * 32)
-    )
+    await _dispatcher(sink, _HangingNotifier(), timeout=0.01).emit(_COMPLETED)
     assert sink.applied

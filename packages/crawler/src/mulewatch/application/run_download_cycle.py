@@ -83,15 +83,17 @@ class DownloadRepository(Protocol):
 class CatalogReader(Protocol):
     """STRUCTURAL Protocol of the catalog READS the loop needs (DECISION D9).
 
-    Subset of ``CatalogRepository`` (download_decisions + last_observation): the loop
-    depends ONLY on what it reads, so the minimal test fake satisfies it without implementing
+    Subset of ``CatalogRepository`` (download_decisions, last_observation, best_observation): the
+    loop depends ONLY on what it reads, so the minimal test fake satisfies it without implementing
     record_observation/record_decision. The real ``SqliteCatalogRepository``
-    satisfies it too (it has these two methods). Stubs on ONE line.
+    satisfies it too. Stubs on ONE line.
     """
 
     def download_decisions(self) -> tuple[DownloadCandidate, ...]: ...
 
     def last_observation(self, ed2k_hash: str) -> ObservedFile | None: ...
+
+    def best_observation(self, ed2k_hash: str) -> ObservedFile | None: ...
 
 
 @dataclass
@@ -166,8 +168,19 @@ async def _record_completion(
     """
     deps.downloads.set_state(ed2k_hash, DownloadState.COMPLETED)
     states[ed2k_hash] = DownloadState.COMPLETED
-    target_id = deps.downloads.get_target_id(ed2k_hash) or "unknown"
-    await deps.telemetry.emit(DownloadCompleted(target_id=target_id, ed2k_hash=ed2k_hash))
+    # Every download target of the hash, else the one it was queued for (the decision may have
+    # dropped since); the hash names a file whose observations are gone.
+    decided = [c.target_id for c in deps.catalog.download_decisions() if c.ed2k_hash == ed2k_hash]
+    target_ids = decided or [deps.downloads.get_target_id(ed2k_hash) or "unknown"]
+    titles = {target.target_id: target.title for target in deps.targets}
+    best = deps.catalog.best_observation(ed2k_hash)
+    await deps.telemetry.emit(
+        DownloadCompleted(
+            ed2k_hash,
+            ed2k_hash if best is None else best.filename,
+            tuple((target_id, titles.get(target_id, "")) for target_id in target_ids),
+        )
+    )
     _logger.info("hash=%s completed", ed2k_hash)
 
 

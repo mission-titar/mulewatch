@@ -16,8 +16,8 @@ class _Sink:
 
 
 class _Notifier:
-    async def notify(self, audience: Audience, body: str, severity: Severity) -> None:
-        self.last = (audience, body, severity)
+    async def notify(self, audience: Audience, title: str, body: str, severity: Severity) -> None:
+        self.last = (audience, title, body, severity)
 
 
 class _Telemetry:

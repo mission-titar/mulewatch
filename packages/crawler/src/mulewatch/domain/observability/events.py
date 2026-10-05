@@ -73,8 +73,9 @@ class DownloadQueued:
 
 @dataclass(frozen=True)
 class DownloadCompleted:
-    target_id: str
     ed2k_hash: str
+    filename: str  # the clean name, the most sourced
+    targets: tuple[tuple[str, str], ...]  # (target_id, title), every download target of the hash
 
 
 @dataclass(frozen=True)

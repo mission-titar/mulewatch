@@ -178,22 +178,27 @@ class FakeDownloadRepo:
 
 
 class FakeCatalogReads:
-    """Catalog read side: download_decisions + last_observation scripted."""
+    """Catalog read side: download_decisions, last_observation and best_observation scripted."""
 
     def __init__(
         self,
         *,
         candidates: tuple[DownloadCandidate, ...] = (),
         observations: dict[str, ObservedFile] | None = None,
+        best: dict[str, ObservedFile] | None = None,
     ) -> None:
         self._candidates = candidates
         self._observations = observations or {}
+        self._best = best or {}
 
     def download_decisions(self) -> tuple[DownloadCandidate, ...]:
         return self._candidates
 
     def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
         return self._observations.get(ed2k_hash)
+
+    def best_observation(self, ed2k_hash: str) -> ObservedFile | None:
+        return self._best.get(ed2k_hash)
 
 
 class FakeDiskSpace:
@@ -884,7 +889,40 @@ async def test_emits_download_completed() -> None:
         telemetry=telemetry,
     )
     await run_download_cycle(deps)
-    assert any(isinstance(e, DownloadCompleted) and e.target_id == "062A" for e in telemetry.events)
+    completed = [e for e in telemetry.events if isinstance(e, DownloadCompleted)]
+    # No observation, no decision left: the hash names the file, the queued row its target.
+    assert completed == [DownloadCompleted(_A, _A, (("062A", "t"),))]
+
+
+@pytest.mark.asyncio
+async def test_a_completion_names_the_clean_file_and_every_download_target_of_the_hash() -> None:
+    targets = (
+        TargetSegment(
+            season=2, seasonal_number=11, absolute_number=62, segment="A", title="ta", status="lost"
+        ),
+        TargetSegment(
+            season=2, seasonal_number=12, absolute_number=62, segment="B", title="tb", status="lost"
+        ),
+    )
+    telemetry = RecordingTelemetry()
+    downloads = FakeDownloadRepo()
+    downloads.states[_A] = DownloadState.DOWNLOADING
+    downloads._target_ids[_A] = "062A"
+    catalog = FakeCatalogReads(
+        candidates=(_candidate(_A, "062A"), _candidate(_A, "062B"), _candidate(_B, "063A")),
+        observations={_A: ObservedFile(filename="Keroro Ã©.avi", size_bytes=100)},
+        best={_A: ObservedFile(filename="Keroro é.avi", size_bytes=100)},
+    )
+    deps = _deps(
+        client=FakeDownloadClient(shared=[(SharedFileEntry(ed2k_hash=_A),)]),
+        downloads=downloads,
+        catalog=catalog,
+        telemetry=telemetry,
+        targets=targets,
+    )
+    await run_download_cycle(deps)
+    completed = [e for e in telemetry.events if isinstance(e, DownloadCompleted)]
+    assert completed == [DownloadCompleted(_A, "Keroro é.avi", (("062A", "ta"), ("062B", "tb")))]
 
 
 # ---------------------------------------------------------------------------

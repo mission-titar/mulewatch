@@ -13,9 +13,9 @@ def test_observation_recorded_carries_network() -> None:
 
 
 def test_event_is_frozen() -> None:
-    event = DownloadCompleted(target_id="062A", ed2k_hash="a" * 32)
+    event = DownloadCompleted(ed2k_hash="a" * 32, filename="x.avi", targets=(("062A", "t"),))
     # Pass the attribute via a variable to avoid ruff B010 while still
     # triggering FrozenInstanceError at runtime (frozen=True).
-    attr = "target_id"
+    attr = "filename"
     with pytest.raises(dataclasses.FrozenInstanceError):
-        setattr(event, attr, "063A")
+        setattr(event, attr, "y.avi")
