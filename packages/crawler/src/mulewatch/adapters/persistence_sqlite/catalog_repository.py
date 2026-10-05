@@ -93,9 +93,14 @@ ORDER BY observed_at DESC, id DESC
 LIMIT 1
 """
 
-# Every name a hash was ever observed under (decisions judge the file on all of them).
+# Every name a hash was ever observed under, raw or compacted into a range (decisions judge
+# the file on all of them, so a compaction must not drop an alias). UNION dedups and sorts.
 _SELECT_KNOWN_FILENAMES = """
-SELECT DISTINCT filename FROM file_observations WHERE ed2k_hash = ? ORDER BY filename
+SELECT filename FROM file_observations WHERE ed2k_hash = :hash
+UNION
+SELECT j.value FROM file_observation_ranges AS r, json_each(r.filenames) AS j
+WHERE r.ed2k_hash = :hash
+ORDER BY 1
 """
 
 _COUNT_FILES = "SELECT COUNT(*) FROM files"
@@ -103,16 +108,31 @@ _COUNT_FILES = "SELECT COUNT(*) FROM files"
 # Every hash's LATEST observation (re-evaluation backfill spec §6), one row per hash, sorted.
 # Driven by files: each hash seeks its newest row through idx_file_observations_hash_observed
 # (latest observed_at, then highest id), as the webui's latest_obs does; never a table scan.
+# A file compacted down to ranges falls back to its latest range's first name (the array is
+# sorted), files.size_bytes and no media; a file with neither is skipped.
 _SELECT_REEVALUATION_ROWS = """
-SELECT f.ed2k_hash, o.filename, o.size_bytes, o.media_length_sec, o.bitrate_kbps
-FROM files AS f
-JOIN file_observations AS o ON o.id = (
-    SELECT o2.id FROM file_observations AS o2
-    WHERE o2.ed2k_hash = f.ed2k_hash
-    ORDER BY o2.observed_at DESC, o2.id DESC
-    LIMIT 1
+SELECT ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps FROM (
+    SELECT
+        f.ed2k_hash,
+        COALESCE(o.filename, (
+            SELECT json_extract(r.filenames, '$[0]') FROM file_observation_ranges AS r
+            WHERE r.ed2k_hash = f.ed2k_hash
+            ORDER BY r.last_observed_at DESC, r.id DESC
+            LIMIT 1
+        )) AS filename,
+        COALESCE(o.size_bytes, f.size_bytes) AS size_bytes,
+        o.media_length_sec,
+        o.bitrate_kbps
+    FROM files AS f
+    LEFT JOIN file_observations AS o ON o.id = (
+        SELECT o2.id FROM file_observations AS o2
+        WHERE o2.ed2k_hash = f.ed2k_hash
+        ORDER BY o2.observed_at DESC, o2.id DESC
+        LIMIT 1
+    )
 )
-ORDER BY f.ed2k_hash
+WHERE filename IS NOT NULL
+ORDER BY ed2k_hash
 """
 
 
@@ -233,9 +253,9 @@ class SqliteCatalogRepository:
         return ObservedFile(filename=row[0], size_bytes=row[1])
 
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
-        """Every distinct name this hash was observed under, sorted (read)."""
+        """Every distinct name this hash was observed under, ranges included, sorted (read)."""
         with wrap_sqlite_errors():
-            rows = self._connection.execute(_SELECT_KNOWN_FILENAMES, (ed2k_hash,)).fetchall()
+            rows = self._connection.execute(_SELECT_KNOWN_FILENAMES, {"hash": ed2k_hash}).fetchall()
         return tuple(row[0] for row in rows)
 
     def count_files(self) -> int:
@@ -245,7 +265,7 @@ class SqliteCatalogRepository:
         return int(row[0])
 
     def iter_reevaluation_rows(self) -> Iterator[ReevalRow]:
-        """Every hash's latest observation, streamed via the cursor (backfill spec §6) — READ."""
+        """Every hash's latest observation, or its latest range's, streamed (backfill spec §6)."""
         with wrap_sqlite_errors():
             cursor = self._connection.execute(_SELECT_REEVALUATION_ROWS)
             for row in cursor:
