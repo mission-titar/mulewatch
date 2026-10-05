@@ -235,7 +235,7 @@ class SearchWorker:
         ``RepositoryError`` per obs is ABSORBED (logged + counted) INSIDE
         ``record_observation`` → the cycle continues (spec §7), a single corrupt obs does not
         bring down the whole sweep. Emits ``SearchExecuted`` (network label + number of
-        results) then ``ObservationRecorded``/``DecisionRecorded`` via ``record_observation``.
+        results) then ``ObservationRecorded``/``DecisionsRecorded`` via ``record_observation``.
         """
         waited = 0.0
         widen = channel is SearchChannel.KAD

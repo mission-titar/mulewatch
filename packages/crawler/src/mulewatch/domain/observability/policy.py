@@ -10,15 +10,18 @@ adds it at exposition (including it would produce ``…_total_total``). Gauges/h
 as-is.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, StrEnum, auto
 from typing import Literal, assert_never
 
+from catalog_matching.config import TIER_RANK
+from catalog_matching.ed2k_link import build_ed2k_link
 from mulewatch.domain.observability.events import (
     AllInstancesBlind,
     ConnectedInstancesSampled,
     CrawlerStarted,
-    DecisionRecorded,
+    DecisionChange,
+    DecisionsRecorded,
     DiskSpaceLow,
     DownloadCompleted,
     DownloadQueued,
@@ -99,12 +102,54 @@ class Report:
 
     ``metrics`` is a TUPLE (one event can feed several metrics —
     ``SearchCycleCompleted`` = counter + histogram). Empty ``audiences`` = no notif.
+    ``notification`` is the notified body when it differs from the logged ``message``.
     """
 
     severity: Severity
     message: str
     metrics: tuple[MetricInstruction, ...] = ()
     audiences: frozenset[Audience] = frozenset()
+    notification: str = ""
+
+
+# The tiers a rise announces, with the heading of the message.
+_RISE_HEADINGS = {"download": "📥 Download", "notify": "🔎 Notify"}
+
+
+def _rank(tier: str | None) -> int:
+    """``TIER_RANK``, where none and ``retracted`` rank below every tier."""
+    return TIER_RANK.get(tier or "", -1)
+
+
+def _is_rise(change: DecisionChange) -> bool:
+    return change.after in _RISE_HEADINGS and _rank(change.after) > _rank(change.before)
+
+
+def _describe_decisions(event: DecisionsRecorded) -> Report:
+    changes = ", ".join(f"{c.target_id} {c.before or 'none'} → {c.after}" for c in event.changes)
+    report = Report(
+        Severity.INFO,
+        f"decisions for {event.filename} ({event.ed2k_hash}): {changes}",
+        tuple(
+            MetricInstruction(MetricName.DECISIONS, "inc", (("tier", c.after),))
+            for c in event.changes
+        ),
+    )
+    risen = [c for c in event.changes if _is_rise(c)]
+    if not risen:
+        return report
+    top = max((c.after for c in risen), key=_rank)
+    link = build_ed2k_link(event.filename, event.size_bytes, event.ed2k_hash)
+    targets = "\n".join(f"{c.target_id} - {c.title}" for c in risen)
+    return replace(
+        report,
+        audiences=frozenset({Audience.COMMUNITY}),
+        notification=(
+            f"{_RISE_HEADINGS[top]}\n\n**File**\n"
+            f"{event.size_bytes / 2**20:.1f} MiB - `{event.filename}`\n`{link}`\n\n"
+            f"**Targets**\n{targets}"
+        ),
+    )
 
 
 def describe(event: Event) -> Report:
@@ -166,20 +211,8 @@ def describe(event: Event) -> Report:
                 f"observation recorded ({event.network})",
                 (MetricInstruction(MetricName.OBSERVATIONS, "inc", (("network", event.network),)),),
             )
-        case DecisionRecorded():
-            audiences: frozenset[Audience]
-            if event.tier == "download":
-                audiences = frozenset({Audience.COMMUNITY})
-            elif event.tier == "notify":
-                audiences = frozenset({Audience.OPERATIONS})
-            else:
-                audiences = frozenset()
-            return Report(
-                Severity.INFO,
-                f"decision {event.tier} for {event.target_id}",
-                (MetricInstruction(MetricName.DECISIONS, "inc", (("tier", event.tier),)),),
-                audiences,
-            )
+        case DecisionsRecorded():
+            return _describe_decisions(event)
         case DownloadQueued():
             return Report(
                 Severity.INFO,
@@ -238,7 +271,7 @@ def describe(event: Event) -> Report:
                 Severity.INFO,
                 f"🟢 instance online (mode {event.mode})",
                 (MetricInstruction(MetricName.CRAWLER_UP, "set", (), 1.0),),
-                frozenset({Audience.COMMUNITY, Audience.OPERATIONS}),
+                frozenset({Audience.OPERATIONS}),
             )
         case PortSyncTriggered():
             return Report(
@@ -251,7 +284,7 @@ def describe(event: Event) -> Report:
                 Severity.INFO,
                 f"High-ID recovered on port {event.port}",
                 (MetricInstruction(MetricName.HIGH_ID_RECOVERED, "inc"),),
-                frozenset({Audience.COMMUNITY}),
+                frozenset({Audience.OPERATIONS}),
             )
         case PortMismatchUnresolved():
             # Fallback alert (DECISION 5): OPERATIONS, edge-triggered (notif on the 1st occurrence

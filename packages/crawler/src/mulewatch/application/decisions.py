@@ -1,4 +1,4 @@
-"""Shared decision helper: evaluate → set-diff → record / retract → emit → nudge (spec §7).
+"""Shared decision helper: evaluate → set-diff → record / retract → nudge → emit (spec §7).
 
 APPLICATION layer, PURE orchestration (no ``try/except`` here: a ``RepositoryError`` is a
 port contract each CALLER absorbs on its own terms, cf. ``record_observation`` and the backfill
@@ -10,7 +10,8 @@ catalog knows for it (``engine.evaluate_all``, spec amuleapi-migration §8.4), s
 longer retract each other. A fresh decision is persisted (and nudged) only when it differs from
 the file's LATEST persisted :class:`DecisionRecord` for THAT target; a target that dropped out
 of the fresh set is retracted, unless it is already retracted (no-op). Returns the number of
-rows written (0..N; a decision OR a retraction each counts as one).
+rows written (0..N; a decision OR a retraction each counts as one). The rows written are emitted
+once, as one ``DecisionsRecorded`` for the file (spec researcher-notifications §2).
 """
 
 from dataclasses import replace
@@ -18,9 +19,9 @@ from dataclasses import replace
 from catalog_matching.engine import MatchingEngine, to_record
 from catalog_matching.models import FileCandidate
 from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
-from mulewatch.domain.observability.events import DecisionRecorded
+from mulewatch.domain.observability.events import DecisionChange, DecisionsRecorded
 from mulewatch.domain.retraction import RETRACTED_TIER
-from mulewatch.ports.catalog_repository import CatalogRepository
+from mulewatch.ports.catalog_repository import CatalogRepository, ObservedFile
 from mulewatch.ports.decision_signal import DecisionSignal
 from mulewatch.ports.telemetry import Telemetry
 
@@ -41,15 +42,25 @@ async def record_decision_if_changed(
     names = catalog.known_filenames(ed2k_hash)
     fresh = engine.evaluate_all(replace(candidate, filename=name) for name in names)
     persisted = catalog.last_decisions(ed2k_hash)
-    written = 0
+    changes: list[DecisionChange] = []
+
+    def change(target_id: str, after: str) -> DecisionChange:
+        target = engine.target(target_id)
+        before = persisted.get(target_id)
+        return DecisionChange(
+            target_id,
+            "" if target is None else target.title,
+            None if before is None else before.tier,
+            after,
+        )
+
     fresh_ids: set[str] = set()
     for decision in fresh:
         fresh_ids.add(decision.target_id)
         if persisted.get(decision.target_id) == to_record(decision):
             continue
         catalog.record_decision(ed2k_hash, decision)
-        written += 1
-        await telemetry.emit(DecisionRecorded(target_id=decision.target_id, tier=decision.tier))
+        changes.append(change(decision.target_id, decision.tier))
         signal.signal(ed2k_hash)
         if decision.tier == "download":
             signal.signal(DOWNLOAD_NUDGE_SUBJECT)
@@ -57,6 +68,11 @@ async def record_decision_if_changed(
         if persisted[target_id].tier == RETRACTED_TIER or target_id in fresh_ids:
             continue
         catalog.record_retraction(ed2k_hash, target_id)
-        written += 1
-        await telemetry.emit(DecisionRecorded(target_id=target_id, tier=RETRACTED_TIER))
-    return written
+        changes.append(change(target_id, RETRACTED_TIER))
+    if changes:
+        # No name left means only retractions were written, which are never notified.
+        file = catalog.best_observation(ed2k_hash) or ObservedFile(candidate.filename, 0)
+        await telemetry.emit(
+            DecisionsRecorded(ed2k_hash, file.filename, file.size_bytes, tuple(changes))
+        )
+    return len(changes)

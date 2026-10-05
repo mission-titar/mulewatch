@@ -1,5 +1,7 @@
 """``describe`` is an exhaustive match: one case per event + each conditional branch
-(known/unknown verdict, download/other tier, first_occurrence true/false)."""
+(a rise or not, first_occurrence true/false)."""
+
+import pytest
 
 from mulewatch.domain.observability import events as ev
 from mulewatch.domain.observability.policy import (
@@ -13,7 +15,6 @@ from mulewatch.domain.observability.policy import (
 
 _COMMUNITY = frozenset({Audience.COMMUNITY})
 _OPERATIONS = frozenset({Audience.OPERATIONS})
-_BOTH = frozenset({Audience.COMMUNITY, Audience.OPERATIONS})
 
 
 CASES: list[tuple[ev.Event, Report]] = [
@@ -75,40 +76,6 @@ CASES: list[tuple[ev.Event, Report]] = [
             Severity.DEBUG,
             "observation recorded (kad)",
             (MetricInstruction(MetricName.OBSERVATIONS, "inc", (("network", "kad"),)),),
-        ),
-    ),
-    (
-        ev.DecisionRecorded(target_id="062A", tier="download"),
-        Report(
-            Severity.INFO,
-            "decision download for 062A",
-            (MetricInstruction(MetricName.DECISIONS, "inc", (("tier", "download"),)),),
-            _COMMUNITY,
-        ),
-    ),
-    (
-        ev.DecisionRecorded(target_id="062A", tier="notify"),
-        Report(
-            Severity.INFO,
-            "decision notify for 062A",
-            (MetricInstruction(MetricName.DECISIONS, "inc", (("tier", "notify"),)),),
-            _OPERATIONS,
-        ),
-    ),
-    (
-        ev.DecisionRecorded(target_id="062A", tier="retracted"),
-        Report(
-            Severity.INFO,
-            "decision retracted for 062A",
-            (MetricInstruction(MetricName.DECISIONS, "inc", (("tier", "retracted"),)),),
-        ),
-    ),
-    (
-        ev.DecisionRecorded(target_id="062A", tier="catalog"),
-        Report(
-            Severity.INFO,
-            "decision catalog for 062A",
-            (MetricInstruction(MetricName.DECISIONS, "inc", (("tier", "catalog"),)),),
         ),
     ),
     (
@@ -179,7 +146,7 @@ CASES: list[tuple[ev.Event, Report]] = [
             Severity.INFO,
             "🟢 instance online (mode full)",
             (MetricInstruction(MetricName.CRAWLER_UP, "set", (), 1.0),),
-            _BOTH,
+            _OPERATIONS,
         ),
     ),
     (
@@ -196,7 +163,7 @@ CASES: list[tuple[ev.Event, Report]] = [
             Severity.INFO,
             "High-ID recovered on port 51820",
             (MetricInstruction(MetricName.HIGH_ID_RECOVERED, "inc"),),
-            _COMMUNITY,
+            _OPERATIONS,
         ),
     ),
     (
@@ -222,3 +189,85 @@ CASES: list[tuple[ev.Event, Report]] = [
 def test_describe_maps_every_event() -> None:
     for event, expected in CASES:
         assert describe(event) == expected, f"wrong Report for {event!r}"
+
+
+_HASH = "8f3a1c0b9e7d44a2b6c1f0e9d8a7b6c5"
+
+
+def _decisions(*changes: ev.DecisionChange) -> ev.DecisionsRecorded:
+    return ev.DecisionsRecorded(
+        ed2k_hash=_HASH, filename="Keroro 062.avi", size_bytes=367_185_920, changes=changes
+    )
+
+
+def _change(target_id: str, before: str | None, after: str) -> ev.DecisionChange:
+    title = {"062A": "Les demoiselles cambrioleuses", "062B": "Le grand combat sous-marin"}
+    return ev.DecisionChange(target_id, title[target_id], before, after)
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "notified"),
+    [
+        (None, "notify", True),
+        (None, "download", True),
+        ("retracted", "notify", True),
+        ("retracted", "download", True),
+        ("notify", "download", True),
+        ("catalog", "notify", True),
+        ("download", "download", False),
+        ("notify", "notify", False),
+        ("download", "notify", False),
+        ("notify", "catalog", False),
+        (None, "catalog", False),
+        ("download", "retracted", False),
+    ],
+)
+def test_only_a_rise_to_notify_or_download_reaches_the_community(
+    before: str | None, after: str, notified: bool
+) -> None:
+    report = describe(_decisions(_change("062A", before, after)))
+    assert report.audiences == (_COMMUNITY if notified else frozenset())
+    assert report.metrics == (MetricInstruction(MetricName.DECISIONS, "inc", (("tier", after),)),)
+
+
+def test_a_file_with_risen_targets_is_one_message_naming_the_file_and_targets() -> None:
+    report = describe(
+        _decisions(_change("062A", None, "download"), _change("062B", None, "notify"))
+    )
+    assert report.notification == (
+        "📥 Download\n"
+        "\n"
+        "**File**\n"
+        "350.2 MiB - `Keroro 062.avi`\n"
+        f"`ed2k://|file|Keroro%20062.avi|367185920|{_HASH}|/`\n"
+        "\n"
+        "**Targets**\n"
+        "062A - Les demoiselles cambrioleuses\n"
+        "062B - Le grand combat sous-marin"
+    )
+    assert report.metrics == (
+        MetricInstruction(MetricName.DECISIONS, "inc", (("tier", "download"),)),
+        MetricInstruction(MetricName.DECISIONS, "inc", (("tier", "notify"),)),
+    )
+
+
+def test_the_message_lists_only_the_risen_targets_under_their_highest_tier() -> None:
+    report = describe(
+        _decisions(_change("062A", "catalog", "notify"), _change("062B", "notify", "retracted"))
+    )
+    assert report.notification.startswith("🔎 Notify\n")
+    assert report.notification.endswith("**Targets**\n062A - Les demoiselles cambrioleuses")
+
+
+def test_decisions_log_one_line_listing_every_change() -> None:
+    report = describe(
+        _decisions(_change("062A", None, "download"), _change("062B", "notify", "retracted"))
+    )
+    assert report.severity == Severity.INFO
+    assert report.message == (
+        f"decisions for Keroro 062.avi ({_HASH}): 062A none → download, 062B notify → retracted"
+    )
+
+
+def test_a_change_without_a_rise_has_no_notification_body() -> None:
+    assert describe(_decisions(_change("062A", "download", "notify"))).notification == ""

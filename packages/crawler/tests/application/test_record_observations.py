@@ -251,7 +251,7 @@ async def test_emits_observation_then_decision_on_change(
         obs, catalog=catalog, engine=engine, signal=signal, telemetry=telemetry, network="ed2k"
     )
     kinds = [type(e).__name__ for e in telemetry.events]
-    assert kinds == ["ObservationRecorded", "DecisionRecorded"]
+    assert kinds == ["ObservationRecorded", "DecisionsRecorded"]
     assert telemetry.events[0] == ObservationRecorded(network="ed2k")
 
 
