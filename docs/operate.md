@@ -167,14 +167,20 @@ Deux effets possibles pour un fichier déjà catalogué :
   `tier="retracted"` : le catalogue reste append-only, rien n'est supprimé. Le catalogue web le
   traite alors comme non identifié et il sort de la file de téléchargement. On ne « dé-télécharge »
   jamais : un fichier déjà récupéré reste.
-- **Re-classement.** Un fichier qui change de palier déclenche l'action du nouveau palier. Le palier
-  `download` le met en file et notifie le canal *community* ; `notify` notifie le canal *operations*
-  (configurez une cible `tag: operations` sous `observability.notifications` dans `crawler.yml`).
-  Les paliers `catalog` et `retracted` sont silencieux.
+- **Re-classement.** Un fichier qui change de palier déclenche l'action du nouveau palier : le
+  palier `download` le met en file. Un fichier qui **monte** à `notify` ou `download` notifie le
+  canal *community* (configurez une cible `tag: community` sous `observability.notifications` dans
+  `crawler.yml`) : un seul message par fichier, avec son nom, sa taille, son lien ed2k et les
+  segments concernés. Une baisse, un passage à `catalog`, une rétractation ou un changement de
+  règle sans changement de palier restent dans les logs, sans notification.
 
-Un gros changement de règles peut donc émettre une rafale de notifications, bornée aux fichiers dont
-le palier a réellement changé. C'est voulu. La passe est idempotente et tourne que le téléchargement
-soit activé ou non.
+Un gros changement de règles peut donc émettre une rafale de notifications, une par fichier dont le
+palier a monté. C'est voulu. La passe est idempotente et tourne que le téléchargement soit activé ou
+non. Le démarrage de l'instance et le retour du High-ID ne notifient que le canal *operations*.
+
+Chaque cible préfixe ses messages de l'identifiant du nœud (`[node-id]`). Une cible qui porte déjà
+une identité, comme un webhook Discord nommé (`discord://<nom>@<id>/<token>`), peut s'en passer avec
+`node_prefix: false`.
 
 ---
 
