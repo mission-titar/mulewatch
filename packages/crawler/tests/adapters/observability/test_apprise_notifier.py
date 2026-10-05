@@ -50,6 +50,14 @@ async def test_notify_sends_the_prefixed_body_and_the_bare_one_to_the_tag() -> N
 
 
 @pytest.mark.asyncio
+async def test_notify_keeps_the_apprise_passthrough_format() -> None:
+    # A declared MARKDOWN turns Discord mentions in a hostile filename into real pings.
+    prefixed, bare = _FakeApprise(), _FakeApprise()
+    await _notifier(prefixed, bare).notify(Audience.COMMUNITY, "x", Severity.INFO)
+    assert all("body_format" not in call for call in prefixed.sent + bare.sent)
+
+
+@pytest.mark.asyncio
 async def test_severity_maps_to_failure() -> None:
     fake = _FakeApprise()
     await _notifier(fake).notify(Audience.OPERATIONS, "panne", Severity.ERROR)
