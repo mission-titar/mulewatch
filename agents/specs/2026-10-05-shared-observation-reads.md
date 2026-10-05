@@ -75,7 +75,7 @@ module docstring. No grep gate in the test suite (operator preference against th
 behavioural guard is `test_compacted_catalog.py`, which keeps running every read on a catalog
 built by the real compactor.
 
-## 4. Never twice: merge and compact
+## 4. Never twice: reads, merge and compact
 
 A raw observation is **covered** by a range when the range has the same hash, its `bucket` is the
 observation's UTC day, and its `node_ids` contains the observation's `node_id`. Compaction only
@@ -86,8 +86,14 @@ buckets whole past days, so a covered raw row is the same observation the range 
   skipped.
 - `compact`: same rule on its input, which may already hold both forms (a merged catalog): a
   covered raw row is not bucketed again.
-- The predicate lives once, in `domain/retention/` (pure), with the SQL form next to the two
-  tools' queries; both tools are tested against the double-count scenario of §1.
+- **Reads never show both forms** (review of PR #91, 2026-10-05): storage may still hold both,
+  since `merge --into` an output that already has raw rows, then a source whose ranges cover them,
+  cannot delete them (append-only), and that is the normal incremental cycle of a central catalog.
+  The `sightings` timeline therefore drops a raw row covered by a range of the same file. The
+  latest sighting and the known names need no filter (same observation, same name).
+- The predicate is defined once, as SQL, in `sightings.py`; the timeline, `merge` and `compact`
+  all use it. No pure Python twin (it would only exist for a parity test). Both tools are tested
+  against the double-count scenario of §1.
 
 Why keep the range rather than the raw rows: the tables are append-only, and the range is the
 form the operator chose for those days. Nothing is lost: the range already counts them.
