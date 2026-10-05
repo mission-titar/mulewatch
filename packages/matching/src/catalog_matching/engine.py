@@ -168,6 +168,11 @@ class MatchingEngine:
             r.target.target_id: r for r in self._resolved
         }
 
+    def target(self, target_id: str) -> TargetSegment | None:
+        """The target segment of ``target_id``, or ``None`` if unknown."""
+        resolved = self._resolved_by_target.get(target_id)
+        return None if resolved is None else resolved.target
+
     def explain(self, candidates: Iterable[FileCandidate], target_id: str) -> Explanation | None:
         """Explains target ``target_id`` over every name of one file; ``None`` if unknown.
 

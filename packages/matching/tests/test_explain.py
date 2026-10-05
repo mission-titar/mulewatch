@@ -97,3 +97,13 @@ def test_explain_skips_over_long_names_like_evaluate_all() -> None:
     assert result is not None
     assert result.rules_fired == ("keroro_large",)
     assert result.vetoes_fired == ()
+
+
+def test_target_returns_the_known_target_segment() -> None:
+    target = _engine().target("062A")
+    assert target is not None
+    assert target.title == "Les demoiselles cambrioleuses"
+
+
+def test_target_of_an_unknown_id_is_none() -> None:
+    assert _engine().target("999Z") is None
