@@ -797,8 +797,11 @@ async def test_file_detail_explains_over_a_compacted_alias_and_lists_compacted_d
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get(f"/files/{hash_}")
     assert "<li>ita</li>" in resp.text  # the ITA alias now lives in a range only
-    assert "Compacted days" in resp.text
-    assert "<td>2023-12-31</td>" in resp.text
+    assert "Compacted days" not in resp.text  # one timeline, no separate table
+    day = resp.text.split("<td>2023-12-31 (compacted day)</td>")
+    assert len(day) == 2
+    assert "<td>1 to 3</td>" in day[0].rsplit("<tr>", 1)[1]  # min to max over the day
+    assert "<td>2</td>" in day[1].split("</tr>")[0]  # the day's observation count
 
 
 @pytest.mark.asyncio
@@ -812,17 +815,20 @@ async def test_file_detail_of_a_range_only_file_still_has_a_link_and_an_explanat
     assert "Evaluated against the current configuration" in resp.text
     assert "<li>ita</li>" in resp.text
     assert "<li>catalog</li>" in resp.text  # the VF name of the older range
-    assert "No observations." in resp.text
+    assert "No observations." not in resp.text  # its compacted days are its timeline
+    assert "<td>2023-12-30 (compacted day)</td>" in resp.text
+    assert '<div class="cell-line">keroro_vf.avi</div>' in resp.text
 
 
 @pytest.mark.asyncio
-async def test_file_detail_without_ranges_has_no_compacted_section(
+async def test_file_detail_without_ranges_has_no_compacted_day(
     populated_app: tuple[Starlette, str],
 ) -> None:
     app, hash_ = populated_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get(f"/files/{hash_}")
-    assert "Compacted days" not in resp.text
+    assert "(compacted day)" not in resp.text
+    assert "<td>1</td>" in resp.text  # a raw observation counts once
 
 
 @pytest.mark.asyncio
