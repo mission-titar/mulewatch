@@ -36,6 +36,9 @@ class _StubRepository:
     def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
         return None
 
+    def best_observation(self, ed2k_hash: str) -> ObservedFile | None:
+        return None
+
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
         return ()
 
@@ -81,6 +84,7 @@ def test_protocol_is_satisfied_structurally() -> None:
     assert repository.last_decisions(observation.ed2k_hash) == {}
     assert repository.download_decisions() == ()
     assert repository.last_observation(observation.ed2k_hash) is None
+    assert repository.best_observation(observation.ed2k_hash) is None
     assert repository.known_filenames(observation.ed2k_hash) == ()
     assert repository.count_files() == 1
     assert tuple(repository.iter_reevaluation_rows()) == (

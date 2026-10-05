@@ -152,6 +152,14 @@ def test_last_observation_unknown_hash_is_none(repository: SqliteCatalogReposito
     assert repository.last_observation(_A) is None
 
 
+def test_best_observation_is_the_clean_name_and_its_size(
+    repository: SqliteCatalogRepository,
+) -> None:
+    repository.record_observation(_obs(_A, name="clean.avi", size=7))
+    assert repository.best_observation(_A) == ObservedFile(filename="clean.avi", size_bytes=7)
+    assert repository.best_observation(_B) is None
+
+
 def test_known_filenames_are_the_distinct_sorted_names_of_that_hash_only(
     repository: SqliteCatalogRepository,
 ) -> None:

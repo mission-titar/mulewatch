@@ -124,6 +124,8 @@ def test_crawler_reads_see_every_file_and_alias(compacted: Path) -> None:
     for ed2k_hash, by_day in _NAMES.items():
         assert repository.known_filenames(ed2k_hash) == tuple(sorted(by_day.values()))
     assert repository.last_observation(_GONE) == ObservedFile("Keroro vf v2.avi", 1000)
+    assert repository.best_observation(_GONE) == ObservedFile("Keroro vf v2.avi", 1000)
+    assert repository.best_observation(_SPLIT) == ObservedFile("Keroro vf.mkv", 1000)
     connection.close()
 
 
