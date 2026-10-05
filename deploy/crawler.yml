@@ -39,8 +39,8 @@ observability:
   # notifications:
   #   - url: "discord://${DISCORD_WEBHOOK_ID}/${DISCORD_WEBHOOK_TOKEN}"
   #     tag: operations
-  #   # Findings for researchers; the webhook's name already identifies the node.
-  #   - url: "discord://mulewatch-mynode@${DISCORD_COMMUNITY_ID}/${DISCORD_COMMUNITY_TOKEN}"
+  #   # Findings for researchers; the embed's author line already names the node.
+  #   - url: "discord://${DISCORD_COMMUNITY_ID}/${DISCORD_COMMUNITY_TOKEN}"
   #     tag: community
   #     node_prefix: false
 
