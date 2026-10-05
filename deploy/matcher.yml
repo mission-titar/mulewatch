@@ -51,6 +51,7 @@ vetoes: [foreign_lang, not_episode, other_episode]
 rules:
   - { name: id_segment_exact,    tier: download, scope: segment,      all: [keroro_titar, is_video, segment_id] }
   - { name: title_confirmed,     tier: download, scope: segment,      all: [keroro_titar, is_video, title_hit, source_marker] }
+  - { name: id_episode_explicit, tier: download, scope: episode,      all: [keroro_titar, is_video, own_id, source_marker] }
   - { name: numero_nu_confirmed, tier: download, scope: episode,      all: [keroro_titar, is_video, segment_id_loose, source_marker] }
   - { name: title_review,        tier: notify,   scope: segment,      all: [keroro_titar, is_video, title_hit] }
   - { name: numero_nu,           tier: notify,   scope: episode,      all: [keroro_titar, is_video, segment_id_loose] }

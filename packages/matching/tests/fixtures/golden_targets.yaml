@@ -111,6 +111,11 @@ episodes:
     segments:
       - { letter: A, title: "Nos vacances d'été d'il y a 20 ans" }
   - season: 2
+    seasonal_number: 23
+    absolute_number: 74
+    segments:
+      - { letter: A, title: "Keroro special" }
+  - season: 2
     seasonal_number: 24
     absolute_number: 75
     segments:

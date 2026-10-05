@@ -347,6 +347,15 @@ cases:
     decisions:
       - { target_id: 076A, tier: download, rule_name: title_confirmed }
 
+  # Teletoon split the episode 74 special in two parts with unrelated titles; the targets list it
+  # as mono-segment, so only the explicit N°074 attributes the B part.
+  - id: real_074B_split_special_is_episode_74
+    filenames:
+      - "[TV] KERORO MISSION TITAR N°074B « La couronne du paranormal » [Dimanche 05 octobre 2008 à 10H30 sur TELETOON].avi"
+      - "[TV] KERORO MISSION TITAR NÂ°074B Â« La couronne du paranormal Â» [Dimanche 05 octobre 2008 Ã\u00a0 10H30 sur TELETOON].avi"
+    decisions:
+      - { target_id: 074A, tier: download, rule_name: id_episode_explicit }
+
   - id: real_075B_keeps_only_mono_075A
     filename: "[TV] KERORO MISSION TITAR N°075B « L'éveil de la troisième Garance 2 » [Dimanche 05 octobre 2008 à 10H50 sur TELETOON].avi"
     decisions:

@@ -286,6 +286,7 @@ def test_explanation_on_real_62a_lists_fired_rules_tokens_and_coverage() -> None
     assert explanation.rules_fired == (
         "id_segment_exact",
         "title_confirmed",
+        "id_episode_explicit",
         "title_review",
         "keroro_large",
     )
