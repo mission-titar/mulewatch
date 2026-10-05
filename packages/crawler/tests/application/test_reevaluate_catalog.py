@@ -6,12 +6,14 @@ repos on tmp_path"); only ``signal``/``telemetry`` are fakes (``RecordingSignal`
 first so it shows up in ``iter_reevaluation_rows`` (the source the backfill iterates).
 """
 
+import logging
 import sqlite3
 
 import pytest
 
 from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision, MatchingEngine
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from mulewatch.application import reevaluate_catalog as reevaluate_module
 from mulewatch.application.reevaluate_catalog import ReevalSummary, reevaluate_catalog
 from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
 from mulewatch.domain.observation import FileObservation
@@ -191,3 +193,30 @@ async def test_backfill_judges_a_hash_on_all_its_names_not_only_the_latest(
     assert catalog.last_decisions(_HASH_DL) == {
         "062A": DecisionRecord(target_id="062A", rule_name="id_segment_exact", tier="download")
     }
+
+
+@pytest.mark.asyncio
+async def test_progress_is_logged_at_each_multiple_of_the_cadence_only(
+    catalog: SqliteCatalogRepository,
+    engine: MatchingEngine,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setattr(reevaluate_module, "_PROGRESS_EVERY", 2)
+    catalog.record_observation(_obs(_HASH_DL, _DL_NAME))
+    catalog.record_observation(_obs(_HASH_CAT, _CAT_NAME))
+    catalog.record_observation(_obs(_HASH_MULTI, "random.txt"))
+    with caplog.at_level(logging.INFO, logger="mulewatch.application.reevaluate_catalog"):
+        await reevaluate_catalog(
+            catalog=catalog,
+            engine=engine,
+            signal=RecordingSignal(),
+            telemetry=RecordingTelemetry(),
+        )
+    assert [record.getMessage() for record in caplog.records] == [
+        "catalogue re-evaluation: 2/3 files, 2 rows written"
+    ]
+
+
+def test_progress_cadence_is_every_200_files() -> None:
+    assert reevaluate_module._PROGRESS_EVERY == 200

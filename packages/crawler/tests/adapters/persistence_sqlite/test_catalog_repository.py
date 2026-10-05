@@ -379,3 +379,13 @@ def test_iter_reevaluation_rows_seeks_each_latest_observation_through_the_index(
         step.startswith("SEARCH") and "idx_file_observations_hash_observed" in step for step in plan
     ), plan
     assert not any(step.startswith("SCAN o") for step in plan), plan
+
+
+def test_count_files_counts_catalogued_hashes_not_observations(
+    repository: SqliteCatalogRepository,
+) -> None:
+    assert repository.count_files() == 0
+    repository.record_observation(_observation())
+    repository.record_observation(_observation())
+    repository.record_observation(dataclasses.replace(_observation(), ed2k_hash=_HASH_B))
+    assert repository.count_files() == 2

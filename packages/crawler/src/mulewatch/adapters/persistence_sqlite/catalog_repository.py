@@ -98,6 +98,8 @@ _SELECT_KNOWN_FILENAMES = """
 SELECT DISTINCT filename FROM file_observations WHERE ed2k_hash = ? ORDER BY filename
 """
 
+_COUNT_FILES = "SELECT COUNT(*) FROM files"
+
 # Every hash's LATEST observation (re-evaluation backfill spec §6), one row per hash, sorted.
 # Driven by files: each hash seeks its newest row through idx_file_observations_hash_observed
 # (latest observed_at, then highest id), as the webui's latest_obs does; never a table scan.
@@ -235,6 +237,12 @@ class SqliteCatalogRepository:
         with wrap_sqlite_errors():
             rows = self._connection.execute(_SELECT_KNOWN_FILENAMES, (ed2k_hash,)).fetchall()
         return tuple(row[0] for row in rows)
+
+    def count_files(self) -> int:
+        """Number of catalogued hashes, the re-evaluation progress total (read)."""
+        with wrap_sqlite_errors():
+            row = self._connection.execute(_COUNT_FILES).fetchone()
+        return int(row[0])
 
     def iter_reevaluation_rows(self) -> Iterator[ReevalRow]:
         """Every hash's latest observation, streamed via the cursor (backfill spec §6) — READ."""

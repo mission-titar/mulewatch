@@ -25,6 +25,9 @@ from mulewatch.ports.telemetry import Telemetry
 
 _logger = logging.getLogger("mulewatch.application.reevaluate_catalog")
 
+# One INFO progress line per this many files, so a long sweep visibly advances.
+_PROGRESS_EVERY = 200
+
 
 @dataclass(frozen=True)
 class ReevalSummary:
@@ -51,6 +54,7 @@ async def reevaluate_catalog(
     Per-item isolation (spec §7): a ``RepositoryError`` on one row is logged and the sweep
     continues with the next row.
     """
+    total = catalog.count_files()
     evaluated = 0
     written = 0
     for row in catalog.iter_reevaluation_rows():
@@ -59,7 +63,7 @@ async def reevaluate_catalog(
             row.filename, row.size_bytes, row.media_length_sec, row.bitrate_kbps
         )
         try:
-            count = await record_decision_if_changed(
+            written += await record_decision_if_changed(
                 row.ed2k_hash,
                 candidate,
                 catalog=catalog,
@@ -73,6 +77,8 @@ async def reevaluate_catalog(
                 row.ed2k_hash,
                 error,
             )
-            continue
-        written += count
+        if evaluated % _PROGRESS_EVERY == 0:
+            _logger.info(
+                "catalogue re-evaluation: %d/%d files, %d rows written", evaluated, total, written
+            )
     return ReevalSummary(evaluated=evaluated, written=written)
