@@ -2,18 +2,15 @@
 
 import sqlite3
 from collections.abc import Callable
-from dataclasses import astuple
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.compact.compactor import compact_catalog, covered_by_range
+from mulewatch.compact.compactor import compact_catalog
 from mulewatch.compact.errors import CompactError
-from mulewatch.domain.retention.buckets import ObservationRow
 
-from ..domain.retention.test_buckets import COVER_CASES, COVERING_RANGE
 from ..merge.helpers import HASH_A, count, make_catalog
 from .helpers import insert_ranges, read_observation_days, read_ranges
 
@@ -190,24 +187,6 @@ def test_broken_schema_source_rolls_back(tmp_path: Path) -> None:
             keep_recent_days=90,
             clock=_clock("2026-06-01T00:00:00+00:00"),
         )
-
-
-@pytest.mark.parametrize(("observation", "covered"), COVER_CASES)
-def test_the_sql_covered_predicate_agrees_with_the_domain(
-    tmp_path: Path, observation: ObservationRow, covered: bool
-) -> None:
-    src = make_catalog(tmp_path / "src.db", {"files": [{"ed2k_hash": _H, "size_bytes": 1}]})
-    insert_ranges(src, [astuple(COVERING_RANGE)])
-    connection = open_catalog(src)
-    try:
-        row = connection.execute(
-            f"SELECT {covered_by_range('main.file_observation_ranges', 'o')}"
-            " FROM (SELECT ? AS ed2k_hash, ? AS observed_at, ? AS node_id) AS o",
-            (observation.ed2k_hash, observation.observed_at, observation.node_id),
-        ).fetchone()
-    finally:
-        connection.close()
-    assert bool(row[0]) is covered
 
 
 def test_a_raw_observation_already_in_a_range_is_not_counted_again(tmp_path: Path) -> None:

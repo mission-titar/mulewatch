@@ -35,23 +35,37 @@ def _raw(
     *,
     sources: int = 5,
     media: int | None = None,
+    node: str = "n1",
 ) -> None:
     connection.execute(
         "INSERT INTO file_observations (ed2k_hash, filename, size_bytes, source_count,"
         " complete_source_count, media_length_sec, bitrate_kbps, raw_meta, keyword,"
-        " observed_at, node_id) VALUES (?, ?, 100, ?, 1, ?, ?, '[]', 'keroro', ?, 'n1')",
-        (ed2k_hash, name, sources, media, None if media is None else 900, at),
+        " observed_at, node_id) VALUES (?, ?, 100, ?, 1, ?, ?, '[]', 'keroro', ?, ?)",
+        (ed2k_hash, name, sources, media, None if media is None else 900, at, node),
     )
 
 
-def _range(connection: sqlite3.Connection, ed2k_hash: str, day: str, names: list[str]) -> None:
+def _range(
+    connection: sqlite3.Connection,
+    ed2k_hash: str,
+    day: str,
+    names: list[str],
+    nodes: tuple[str, ...] = ("n1",),
+) -> None:
     connection.execute(
         "INSERT INTO file_observation_ranges (ed2k_hash, bucket, filenames, node_ids,"
         " observation_count, first_observed_at, last_observed_at, source_count_min,"
         " source_count_max, source_count_sum, complete_source_count_min,"
         " complete_source_count_max, complete_source_count_sum)"
-        " VALUES (?, ?, ?, '[\"n1\"]', 7, ?, ?, 2, 9, 30, 0, 1, 1)",
-        (ed2k_hash, day, json.dumps(sorted(names)), f"{day}T01:00", f"{day}T23:00"),
+        " VALUES (?, ?, ?, ?, 7, ?, ?, 2, 9, 30, 0, 1, 1)",
+        (
+            ed2k_hash,
+            day,
+            json.dumps(sorted(names)),
+            json.dumps(sorted(nodes)),
+            f"{day}T01:00",
+            f"{day}T23:00",
+        ),
     )
 
 
@@ -180,6 +194,29 @@ def test_sightings_are_the_timeline_of_both_forms_oldest_first(
         _raw_sighting("late.avi", "2026-06-02T10:00"),
     )
     assert sightings.sightings(connection, _C) == ()
+
+
+@pytest.mark.parametrize(
+    ("ed2k_hash", "observed_at", "node_id", "covered"),
+    [
+        pytest.param(_A, "2026-03-01T05:00:00.000000+00:00", "n1", True, id="same node"),
+        pytest.param(_A, "2026-03-01T23:59:59.999999+00:00", "n2", True, id="its other node"),
+        pytest.param(_A, "2026-03-01T05:00:00.000000+00:00", "n3", False, id="other node"),
+        pytest.param(_A, "2026-03-02T00:00:00.000000+00:00", "n1", False, id="other day"),
+        pytest.param(_B, "2026-03-01T05:00:00.000000+00:00", "n1", False, id="other hash"),
+    ],
+)
+def test_a_range_covers_a_raw_row_of_its_hash_its_day_and_one_of_its_nodes(
+    connection: sqlite3.Connection, ed2k_hash: str, observed_at: str, node_id: str, covered: bool
+) -> None:
+    _file(connection, _A)
+    _range(connection, _A, "2026-03-01", ["f.avi"], nodes=("n1", "n2"))
+    row = connection.execute(
+        f"SELECT {sightings.covered_by_range('file_observation_ranges', 'o')}"
+        " FROM (SELECT ? AS ed2k_hash, ? AS observed_at, ? AS node_id) AS o",
+        (ed2k_hash, observed_at, node_id),
+    ).fetchone()
+    assert bool(row[0]) is covered
 
 
 @pytest.mark.parametrize(
