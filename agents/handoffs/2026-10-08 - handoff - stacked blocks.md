@@ -99,7 +99,7 @@ this handoff are outside the count). Gate `uv run poe check` green at every tip.
   brief: the three MAJOR fixes it had called operator decisions are the lead's own.
 - Cascaded rebases: 0.
 - Runs re-triggered: 2 (#100, #102).
-- The operator's reading of the bodies: to fill before the merge.
+- The operator's reading of the bodies: readable ("c'était bien", 2026-10-08).
 
 ## Pitfalls learned
 
@@ -110,14 +110,19 @@ this handoff are outside the count). Gate `uv run poe check` green at every tip.
 - zsh expands an unquoted `=====` as a command lookup and fails; quote separators in chained reads.
 - `textwrap` reflow can split a code span across lines, and did again in block 30 (`gh pr view`).
   Reflow whole paragraphs, never single overlong lines, then list lines with an odd backtick count.
+- `gh pr checks <n> --watch` started right after a push exits at once with "no checks reported",
+  before GitHub registers the run's checks; watch the run itself with `gh run watch <id>` (the id
+  from `gh run list --branch <branch>`). `agents/workflow.md` still prescribes `gh pr checks`.
+- A correction sent to a working teammate arrives after its report, both fix-backs of this lot
+  came from one: reread a brief before dispatching it.
 - The lead once took the operator's agreement on a summary of the spec for its approval; the
   operator corrected it, and the rule now says so (D2).
 
 ## Not validated
 
-- The atomic `gh stack merge --rebase` under `required_conversation_resolution: true`, the spec's
-  deciding claim: observable only at this lot's merge. If it fails, D4 falls back to plain stacked
-  branches merged bottom up, and the lot stops for the operator.
+- Validated at the merge: the atomic `gh stack merge --rebase` merged #99, #100 and #102 into
+  `main` in one operation (89167df), with no unresolved conversation; the blocked-thread case of
+  `required_conversation_resolution: true` stays untried.
 - The spec mandate has not run under its mulewatch wording; the holistic one ran once, on this lot,
   which changed no behaviour, so item 10's evidence rule is untried.
 - The tier Direct order (handoff before Integrate) and the fix-back wait have not been exercised.
