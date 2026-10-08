@@ -69,7 +69,7 @@ the unpatched upstream source or release, pinned by version and checksum (the aM
 | Soulseek | slskd | upstream `slskd/slskd` (multi-arch) | none |
 | Direct Connect (NMDC/ADC) | AirDC++ Web Client | ours, from the upstream portable release (see risks) | none |
 | Gnutella + G2 | gtk-gnutella | ours, built from upstream source | **one local patch** |
-| BitTorrent DHT (opt-in) | Bitmagnet + PostgreSQL | upstream `ghcr.io/bitmagnet-io/bitmagnet`, upstream `postgres` | none |
+| BitTorrent DHT (opt-in) | Bitmagnet + PostgreSQL, filtered crawl (below) | upstream `ghcr.io/bitmagnet-io/bitmagnet`, upstream `postgres` | none |
 | BitTorrent downloads (opt-in, with Bitmagnet) | qBittorrent (`qbittorrent-nox`) | upstream `qbittorrentofficial/qbittorrent-nox` (multi-arch) | none |
 
 Rejected, verified 2026-10-08:
@@ -82,10 +82,26 @@ Rejected, verified 2026-10-08:
 - **A dedicated G2 client**: G2 is nearly dead (4 hosts refreshed within 24 h on the main GWC).
   gtk-gnutella's G2 leaf mode covers it for free.
 - **magnetico**: YAGNI while Bitmagnet's own crawler suffices.
+- **qBittorrent alone, without a crawler**: the DHT (BEP 5) maps an infohash to peers and holds
+  no names, so it cannot be searched by keyword. Finding torrents by name means sampling
+  infohashes (BEP 51), fetching each one's metadata (BEP 9) and filtering: a crawler. qBittorrent
+  does neither; its search runs plugins against websites (`src/webui/api/searchcontroller.cpp`).
+  Alone it could only download, or watch infohashes already known.
+- **Public torrent index sites**, for now: no match was ever found on them, and their retention
+  is good, so content listed there would hardly be lost. Worth adding later only if Bitmagnet
+  ingests them cheaply.
 - **Transmission, for BitTorrent downloads**: no official image, and no way to stop after the
   metadata, so pieces of unwanted files can arrive before the file selection applies; an empty
   `files_unwanted` means "all files", a trap on single-file torrents. qBittorrent adds a magnet
   with `stopCondition=MetadataReceived`, then `filePrio` selects the one file Bitmagnet indexed.
+
+**Bitmagnet crawls filtered.** A crawler cannot avoid walking the whole DHT, but it need not
+store it: Bitmagnet's classifier has a `delete` action (`bitmagnet.io/guides/classifier.md`,
+`internal/classifier/action_delete.go`) that drops every torrent whose name fails a condition.
+With our keywords as the condition, PostgreSQL keeps only what concerns us, instead of the
+100 GB the prototype accumulated (Bitmagnet's FAQ: about 80 GB per 10 million torrents). The
+crawl's CPU and bandwidth remain. Stage 5 decides how the classifier condition derives from
+mulewatch's config, since no keyword may live anywhere but in config (section 5).
 
 **Why gtk-gnutella needs a patch.** In a topless build, the shell's only search verb, `search
 add`, can never create a search: `gcu_search_gui_new_search()` returns `FALSE` when
