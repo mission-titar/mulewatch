@@ -6,3 +6,6 @@ deploy/**/*.yml  text eol=lf
 deploy/**/*.json text eol=lf
 tests/smoke/*.yaml text eol=lf
 compose*.yaml  text eol=lf
+
+# Fichiers générés, hors du budget d'un bloc (agents/workflow.md) : attribut nu, jamais `=true`.
+uv.lock linguist-generated

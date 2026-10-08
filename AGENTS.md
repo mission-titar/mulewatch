@@ -13,12 +13,13 @@ It is a **virtual uv workspace** with four packages: `packages/crawler/` (packag
 The live state, history, and recommended next step are deliberately **not** in this file (they would rot here). They live in:
 
 - `agents/handoffs/` — one continuation guide per milestone (`<ISO date> - handoff - <context>.md`). **The newest is the entry point**: current state, what was just built, learned pitfalls, next step, and what is *not yet validated against real hardware*.
-- `agents/specs/2026-06-10-crawler-mvp-design.md` — the authoritative MVP design (17 sections). Other dated specs in that dir record each subsystem's design + decisions; plans are in `agents/plans/`.
+- `agents/workflow.md`: how work moves (tiers, phases, the stacked blocks, pull request bodies, Wrap, defect classes, evidence, review findings). **Read it before starting a lot.**
+- `agents/specs/2026-06-10-crawler-mvp-design.md`: the authoritative MVP design (17 sections). Other dated specs in that dir record each subsystem's design + decisions; `agents/plans/` is historical, no plan is written since a tier Spec lot's spec is its brief.
 - `docs/contributing/testing.md` — every test suite (unit + the integration markers), prerequisites, CI pistes.
 - `docs/install.md`: bring a node up (the two compose stacks, VPN, secrets, first boot, High-ID/Low-ID); `docs/operate.md`: operate & tune one (lifecycle, optional High-ID + its risks, metrics, container hardening, catalog tools, known limits); `docs/troubleshooting.md`: symptom → cause → fix entries (any level).
 - `agents/reference/` — dated empirical findings about amuled. The EC notes there are a historical record since the 2026-09-22 migration to amuleapi; the live API reference is aMule's own `docs/api/REFERENCE.md`, in the source tree the image builds from.
-- `BACKLOG.md` (repo root) — what the project intends to do next, one entry of at most two lines each, linking the spec that holds the detail. **Read it before proposing work**, and write to it only after the operator has agreed. It carries no history: an entry is deleted when it ships or is dropped, never annotated.
-- `git tag`: releases are annotated `vX.Y.Z`, **pushed**, with the milestone name in the tag MESSAGE (`v1.0.1 - performance patch`), not in the tag itself. Pushing the tag is what publishes the versioned image: `release.yml` triggers on `v*`, publishing `X.Y.Z` **and** `latest`, then the GitHub release (title and notes from the tag message). Every push to `main` publishes `main`/`sha-<short>` and nothing else: `latest` means the newest release, never the tip of `main`, so an unreleased build is tested through the `main` tag.
+- `BACKLOG.md` (repo root): what the project intends to do next, one entry of at most two lines each, linking the spec that holds the detail. **Read it before proposing work**, and write to it only after the operator has agreed. It carries no history: an entry is deleted when it ships or is dropped, never annotated. What reaches it (defect class 3, a review finding's exit) is in `agents/workflow.md`.
+- `git tag`: releases are annotated `vX.Y.Z`, **pushed**, with the milestone name in the tag MESSAGE (`v1.0.1 - performance patch`), not in the tag itself. Pushing the tag is what publishes the versioned image: `release.yml` triggers on `v*`, publishing `X.Y.Z` **and** `latest`, then the GitHub release (title and notes from the tag message). Every push to `main` publishes `main`/`sha-<short>` and nothing else: `latest` means the newest release, never the tip of `main`, so an unreleased build is tested through the `main` tag. A release is the operator's decision, which the lead proposes after a lot's stack merges (`agents/workflow.md`, Wrap).
 
 ### Where the code lives
 
@@ -82,56 +83,13 @@ Integration suites (Docker / ffmpeg, deselected by default, excluded from covera
 - **`mypy --strict`** over **both `src` and `tests`**. **`ruff`** selects `E,F,I,UP,B,SIM`, line-length **100**.
 - **Clean / Hexagonal**: `domain/` is **pure** — no I/O, no `yaml`/DB/network/clock/logging imports. All I/O lives in `adapters/`. The dependency graph is a DAG. `${NAME}` env-var interpolation in `crawler.yml` is resolved by the config adapter before anything reaches the domain — the domain itself never touches env vars.
 - **Python only** (>=3.13). Conventional commits (`feat(domain):`, `fix(domain):`, `test:`, `chore:`, `docs:`).
-- **Language: all code is English** (decided 2026-07-02) — identifiers AND prose: comments, docstrings, runtime-emitted messages/logs, CI step names, and commit messages. `.gitignore` is the one deliberate exception, decided 2026-09-17: it is operator-facing housekeeping, and it is consistently French. The only other French in the codebase is genuine *domain data* (real VF episode titles like `La Grenouille Cosmique`, eMule filenames, non-ASCII test fixtures) — data, not prose. **New docs under `agents/specs/`, `agents/plans/` and `agents/handoffs/` are written in English** (decided 2026-07-03); past docs keep their original language (no retro-translation). **Everything under `docs/` is French** (decided 2026-09-17), contributor section included: `docs/` is the published documentation site and its readers are operators. Conversational replies to the operator stay in their chosen language.
-- **Subagent-driven execution** (Act phase) + **holistic review** (Verify phase): the cross-cutting review regularly catches bugs — don't skip it.
+- **Language: all code is English** (decided 2026-07-02), identifiers AND prose: comments, docstrings, runtime-emitted messages/logs, CI step names, and commit messages. `.gitignore` is the one deliberate exception, decided 2026-09-17: it is operator-facing housekeeping, and it is consistently French, like `.gitattributes`, the same kind of housekeeping. The only other French in the codebase is genuine *domain data* (real VF episode titles like `La Grenouille Cosmique`, eMule filenames, non-ASCII test fixtures): data, not prose. **New docs under `agents/specs/`, `agents/plans/` and `agents/handoffs/` are written in English** (decided 2026-07-03); past docs keep their original language (no retro-translation). **Everything under `docs/` is French** (decided 2026-09-17), contributor section included: `docs/` is the published documentation site and its readers are operators. Conversational replies to the operator stay in their chosen language.
+- **One named teammate per block** (Act) and **the holistic review once per tier Spec lot**, at the head of Wrap over the top of the stack (`agents/workflow.md`): the cross-cutting review regularly catches bugs, don't skip it. A lot of one block is offered its waiver and the operator decides; tier Direct has none.
 - For library/framework/CLI questions, use the current docs, not recalled knowledge.
 
 ## Workflow
 
-- **Committing is cheap**, you're allowed to commit autonomously.
-
-### 1. Discuss
-
-**Free-form text** discussion with the user. No code, no plan — just understanding.
-
-### 2. Spec
-
-Two forms, depending on complexity:
-
-- **Simple / obvious** : inline spec in the conversation, a few paragraphs.
-- **Structured** : spec markdown (`agents/specs/<date>-<slug>.md`)
-
-**The spec is reviewed and approved by the user**.
-
-### 3. Act
-
-`main` is **integration-only** ; never edit directly on it. 
-As soon as code or docs will be modified, **branch first**.
-
-**Branching :** ask the user :
-1. Stay on current branch
-2. New branch **in-place** (`git switch -c <branch>`) — suggested default for edits the user follows in their editor
-3. New **worktree** (`EnterWorktree`) — suggested default when dispatching coding agents
-4. Other (user describes)
-
-Naming: `<type>/<kebab-slug>` (conventional-commit types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`).
-
-**Execution: subagent-driven by default.** Delegate work to teammates or subagents to keep the main context clean. Exception: very simple, short, localized action (e.g. one file, one change) → do inline.
-
-### 4. Verify
-
-Run the **full gate** (unit tests 100% branch per package, ruff, mypy, sqlfluff, check_templates). Review the produced code **holistically** — this review regularly catches cross-cutting bugs.
-
-Any non-documentation change reaches `main` **through a PR** (see Wrap) so CI's required `validate / gate` runs before merge — this holistic review is the last local check before that PR.
-
-### 5. Wrap
-
-Once the gate is green and code reviewed:
-
-1. **Write a handoff** in `agents/handoffs/<ISO date> - handoff - <context>.md`: current state, what was just built, learned pitfalls. The handoff is committed before continuing the wrap phase.
-2. **Integrate.** **Push the branch and open a PR** for any change touching code, config, tests, `deploy/`, or CI: `main`'s branch protection requires the `validate / gate` check, but `enforce_admins: false` means a local admin merge silently bypasses CI — don't. Wait for the gate green, then merge (linear history is required → **squash or rebase**, not a merge commit). **Exception — documentation-only** (diff touches only `docs/**` + root `*.md`): a local merge/commit to `main` is fine, no PR needed. "Leave as-is" stays available when the user wants to handle it later.
-3. **Tag** annotated `vX.Y.Z`, first line `vX.Y.Z - <milestone name>`, then what shipped. **Push it** — that is what builds and signs the versioned image, then creates its GitHub release.
-4. **Clean up** branch and/or worktree if applicable.
+Tiers, phases, blocks, the stack, pull requests, Wrap and review findings: `agents/workflow.md`.
 
 ## Architecture — the matching engine
 
