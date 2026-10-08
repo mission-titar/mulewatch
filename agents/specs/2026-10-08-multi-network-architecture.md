@@ -88,8 +88,16 @@ Rejected, verified 2026-10-08:
   does neither; its search runs plugins against websites (`src/webui/api/searchcontroller.cpp`).
   Alone it could only download, or watch infohashes already known.
 - **Public torrent index sites**, for now: no match was ever found on them, and their retention
-  is good, so content listed there would hardly be lost. Worth adding later only if Bitmagnet
-  ingests them cheaply.
+  is good, so content listed there would hardly be lost. Bitmagnet does not ingest them on its
+  own (Torznab is output only; input is the DHT and `POST /import` NDJSON): adding one later
+  means a small Torznab-or-RSS-to-`/import` loop, which the `delete` classifier then filters.
+- **Tribler**: an overlay on BitTorrent, not a separate network. It downloads through libtorrent
+  on the mainline DHT (`download_manager.py:47-52`), and its only discovery left in v8
+  (`ContentDiscoveryCommunity`) indexes public torrents its users touched, whose infohashes the
+  mainline DHT already carries. The one exclusive niche, a torrent seeded only through Tribler's
+  hidden services, is marginal and would need Tribler itself to download. Its remote search asks
+  20 random peers per query. Cheap to add later (`ghcr.io/tribler/tribler -s`, REST + SSE, no
+  patch) if that niche ever matters.
 - **Transmission, for BitTorrent downloads**: no official image, and no way to stop after the
   metadata, so pieces of unwanted files can arrive before the file selection applies; an empty
   `files_unwanted` means "all files", a trap on single-file torrents. qBittorrent adds a magnet
