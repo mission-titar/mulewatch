@@ -70,6 +70,7 @@ the unpatched upstream source or release, pinned by version and checksum (the aM
 | Direct Connect (NMDC/ADC) | AirDC++ Web Client | ours, from the upstream portable release (see risks) | none |
 | Gnutella + G2 | gtk-gnutella | ours, built from upstream source | **one local patch** |
 | BitTorrent DHT (opt-in) | Bitmagnet + PostgreSQL | upstream `ghcr.io/bitmagnet-io/bitmagnet`, upstream `postgres` | none |
+| BitTorrent downloads (opt-in, with Bitmagnet) | qBittorrent (`qbittorrent-nox`) | upstream `qbittorrentofficial/qbittorrent-nox` (multi-arch) | none |
 
 Rejected, verified 2026-10-08:
 
@@ -81,6 +82,10 @@ Rejected, verified 2026-10-08:
 - **A dedicated G2 client**: G2 is nearly dead (4 hosts refreshed within 24 h on the main GWC).
   gtk-gnutella's G2 leaf mode covers it for free.
 - **magnetico**: YAGNI while Bitmagnet's own crawler suffices.
+- **Transmission, for BitTorrent downloads**: no official image, and no way to stop after the
+  metadata, so pieces of unwanted files can arrive before the file selection applies; an empty
+  `files_unwanted` means "all files", a trap on single-file torrents. qBittorrent adds a magnet
+  with `stopCondition=MetadataReceived`, then `filePrio` selects the one file Bitmagnet indexed.
 
 **Why gtk-gnutella needs a patch.** In a topless build, the shell's only search verb, `search
 add`, can never create a search: `gcu_search_gui_new_search()` returns `FALSE` when
@@ -88,14 +93,29 @@ add`, can never create a search: `gcu_search_gui_new_search()` returns `FALSE` w
 listens for their results, and the core drops hits that match no search. The only patch-free
 route (a GTK build under Xvfb plus the `log_query_hit_records` debug log) folds names to ASCII
 and loses the servent GUID and the hit-to-query link. The patch stays local and minimal, in
-`src/shell/search.c` only:
+`src/shell/`:
 
 1. `search add` creates and starts a search when topless.
-2. One generic results listener prints every non-spam hit to stdout, with no keyword filter (the
-   prototype hard-coded its keywords in C, so changing them silently emptied Gnutella).
-3. It calls `search_add_kept()` the way the GUI does, which dynamic querying relies on.
+2. One generic results listener keeps every non-spam hit in memory under an opaque token, with
+   no keyword filter (the prototype hard-coded its keywords in C, so changing them silently
+   emptied Gnutella). It calls `search_add_kept()` the way the GUI does, which dynamic querying
+   relies on.
+3. `search results` lists hits as token, name, size, SHA-1 and servent GUID, **never the
+   address**.
+4. `search download <token>` starts a download from a held hit, as the GUI's
+   `search_gui_download` does (`download_new()` with the hit's address, GUID, push proxies and
+   TLS flag).
+5. `download sources <id>` lists a download's sources as servent GUID, bytes received and status,
+   never the address.
 
-Node counts need no patch: `print node_g2_count` and its siblings already exist.
+The token design keeps peer addresses inside the gnutella container: the shim and the core never
+see one, which D10 requires. Rebuilding a `magnet:?xs=` in the shim would leak the address and
+lose the TLS flag.
+
+Everything else needs no patch. Node counts and reachability: `print node_g2_count` and its
+siblings, `print is_firewalled`, `status`. Download tracking: `download list`, `download show ID
+size downloaded complete finished seeding pathname`. Downloads by magnet already bypass the UI
+stub (`download add` calls `download_handle_magnet()`, `src/shell/download.c:70-74`).
 
 ### D4. Repository layout
 
@@ -234,10 +254,10 @@ never reads downloaded bytes, and each client downloads into its own bind mount.
 | Network | Download through | Status |
 |---|---|---|
 | eD2k | aMule | exists |
-| Soulseek | slskd's transfers API | to detail in its stage |
-| Direct Connect | AirDC++'s queue API | to detail in its stage |
-| Gnutella / G2 | gtk-gnutella | to verify: topless downloads may hit the same UI stub as searches |
-| BitTorrent | Bitmagnet only indexes; a torrent client container is needed | open question (section 6) |
+| Soulseek | slskd's transfers API | verified, see D13 |
+| Direct Connect | AirDC++'s queue API | verified, see D13 |
+| Gnutella / G2 | gtk-gnutella, through the patch's `search download` | verified, see D13 |
+| BitTorrent | qBittorrent, from the infohash and file Bitmagnet indexed | verified, see D13 |
 
 ### D10. Sources: pseudonymous identifiers, never addresses
 
@@ -293,6 +313,80 @@ notifications. They describe observations: a reappearance does not prove the sha
 One `vX.Y.Z` tag versions the core and every image we build (`mulewatch`, `mulewatch-amule`,
 `mulewatch-gnutella`, `mulewatch-airdcpp`), through the existing git-driven versioning.
 
+### D13. Download lifecycle
+
+The four states stay (`domain/download/states.py`): `queued`, `downloading`, `completed`,
+`failed`. What differs between clients is carried by fields, not by more states:
+
+| Field | Meaning |
+|---|---|
+| `bytes_done`, `bytes_total` | progress, as today |
+| `last_progress_at` | when `bytes_done` last grew: shows a stall |
+| `waiting_reason` | remote queue, no source online, metadata pending, local slots |
+| `failure_reason` | on `failed`: cancelled, rejected, timed out, error, lost (the existing TTL) |
+
+Rules every download adapter follows, each with its test:
+
+1. **Waiting is not failing.** A download parked in a remote queue or with no source online stays
+   `queued` or `downloading`, for months if need be: a lost episode may have one sharer who
+   connects twice a year. A stall is shown, never turned into `failed`.
+2. **`lost` only means the client no longer knows the download.** The existing
+   `download.lost_after_seconds` TTL keeps that meaning and nothing else.
+3. **Completion is a positive, client-specific signal, checked against a false positive.** Each
+   adapter names its signal and ships the test that a half-done or misplaced file does not pass.
+   The prototype and the node both had one: a download marked `completed` at 20 %.
+4. **The core reconciles after every client restart.** It re-reads the client's queue, and
+   re-enqueues what the client dropped. The 2026-09-11 stall (the download loop never
+   reconnected after amuled restarted) must be impossible for every client.
+5. **Relaunch is the core's job for clients that give up.** slskd fails a transfer for good
+   after its own retries, and fails every in-flight transfer on restart. The core re-enqueues on
+   client restart, and when the source shows up again (a `reappeared` or new search hit from the
+   same source, D11), bounded by the existing dedup rule.
+6. **The disk cap stays measured.** Free space comes from the filesystem holding each client's
+   download mount, outstanding bytes from each client's queue, summed across clients sharing a
+   filesystem.
+7. **Sources are the identities that sent us data**, per D10, read from the client after or
+   during the transfer.
+
+| | aMule | slskd | AirDC++ | gtk-gnutella | qBittorrent |
+|---|---|---|---|---|---|
+| Start | `add_link` (ed2k link) | `POST /transfers/downloads/batches`, our id as the batch GUID (409 on replay) | `POST /search/{id}/results/{tth}/download`, or `POST /queue/bundles/file` by TTH | `search download <token>` (patch) | `POST /torrents/add` with `stopCondition=MetadataReceived`, then `filePrio`, then `start` |
+| Progress | `size_done / size_full` | `bytesTransferred / size` | `downloaded_bytes / size` | `download show ID size downloaded` | `files[i].progress` |
+| Completion signal | file listed in `GET /shared` | `DownloadFileComplete` event (`GET /events` or webhook), not the `Succeeded` state | `status.completed` and `time_finished > 0` | `complete`, `finished`, `seeding` all true, `pathname` under the complete dir | file `progress == 1`, `amount_left == 0`, state in the `*UP` family, not checking or moving |
+| Known false positive | the 20 % case (fixed) | `Succeeded` is persisted before the file is moved: a failed move leaves a `Succeeded` transfer with an `exception` and the file still in `incomplete/` | a failed rename leaves the verified file beside its target while the status says `completed` | none known | `moving` not finished |
+| Content check | MD4 | none in the protocol: byte count only | TTH, verified while receiving | SHA-1 before the move | piece hashes |
+| After a client restart | kept | **dropped** ("Application shut down"): re-enqueue | kept, same bundle id | kept; **completed downloads in seeding are purged on a clean restart**, so completion must be recorded before | kept |
+| Retries | forever | 3 attempts, then final | forever, auto-searches new sources | forever, swarming | forever |
+| Sources (no address) | user hash, nickname | `username` | CID, nicks, hub (`GET /transfers`); drop `ip` | servent GUID (patch) | none stable: nothing stored |
+| Push or poll | poll (SSE exists) | **poll**: no push for transfers | WebSocket | poll through the shim | poll (`/sync/maindata`) |
+
+After completion, BitTorrent stops seeding (`ratioLimit=0`, `seedingTimeLimit=0`); the other
+clients keep their default sharing behaviour, as aMule does today.
+
+### D14. Client status
+
+Every adapter reports one generic status, which feeds the webui and edge-triggered alerts
+(`EdgeState`, as Low-ID does today):
+
+| Field | Meaning |
+|---|---|
+| `api_reachable` | the client's API answers |
+| `network_connected` | logged in or connected to its network, with a per-network detail |
+| `inbound` | `reachable`, `unreachable` or `unknown`: inbound connections possible |
+| `version` | what the client reports |
+
+| Client | `network_connected` | `inbound` |
+|---|---|---|
+| aMule | ed2k server or Kad connected (`GET /status`) | High-ID (`ed2k.high_id`), Kad firewalled state |
+| slskd | `isLoggedIn` (`GET /api/v0/server`) | `unknown`: slskd checks nothing |
+| AirDC++ | connected hubs out of configured (`GET /hubs`, `connect_state`) | active or passive mode (`GET /connectivity/status`), declared, not tested |
+| gtk-gnutella | G1 ultrapeers + G2 hubs (`print node_*_count`) | `print is_firewalled`, `is_udp_firewalled` |
+| Bitmagnet | DHT crawler running (health endpoint: to verify) | `unknown` |
+| qBittorrent | `connection_status` (`GET /transfer/info`, to verify) | `connected` or `firewalled` from the same field |
+
+The status never carries an address: AirDC++ reports `external_ip`, slskd reports the VPN's
+public address; adapters drop both.
+
 ## 4. Stages
 
 Domain changes come before topology changes, so that every stage ships on its own.
@@ -300,10 +394,10 @@ Domain changes come before topology changes, so that every stage ships on its ow
 | # | Stage | Contents |
 |---|---|---|
 | 1 | Generic identity | D8: catalog migration to `(network, native_id)`, network-agnostic `FileObservation`, in today's single container |
-| 2 | Search and download ports | D9: generic bounded-search and download ports, aMule adapters on them; persistent and passive ports declared |
+| 2 | Search, download and status ports | D9, D13, D14: generic ports, aMule adapters on them; persistent and passive search ports declared |
 | 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: `mulewatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` |
 | 4 | Sources and events | D10, D11: source history, eD2k download sources, `docs/legal.md` |
-| 5 | New networks, one by one | search, then download where the client can: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet (opt-in) |
+| 5 | New networks, one by one | search, download (D13) and status (D14) per client: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet + qBittorrent (opt-in) |
 
 ## 5. Lessons from the prototype, as test cases
 
@@ -334,11 +428,13 @@ The prototype's review found edge cases that become fake-server tests for the ne
   go through GraphQL, not the database (which also keeps PostgreSQL credentials out of the core).
 - **VPN providers.** Not every provider forwards ports, and each caps simultaneous tunnels.
 - **Storage growth.** A full source history adds to the 4.9 GB / three months already measured.
-- **BitTorrent downloads** need a torrent client (a container of its own, e.g. qBittorrent or
-  Transmission, upstream image) next to Bitmagnet. Which one, and whether it joins stage 5, is
-  not decided.
-- **gtk-gnutella downloads when topless** are unverified (`download add magnet:` may go through the
-  same UI stub as `search add`). If they fail, the local patch grows or Gnutella stays search-only.
+- **gtk-gnutella purges completed downloads on a clean restart.** If the core misses the
+  completion before a restart, the download looks lost. The shim, which lives in the client's
+  container, can confirm the file sits in the complete directory (a listing, never the bytes).
+- **Torrent file indexes.** Pad files (BEP 47) can shift Bitmagnet's file index against the
+  client's: match the file by path and size, not by index.
+- **Soulseek has no content hash.** A completed Soulseek file is only "the expected byte count
+  arrived"; a resumed transfer over a changed remote file can be corrupt.
 - **The p2pwatch repository** is archived once stage 5 has ported what it is worth.
 
 ## 7. Verified sources
