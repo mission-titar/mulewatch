@@ -1,7 +1,7 @@
 # Multi-network architecture: a generic core and one container per client, renamed p2pwatch
 
 - Date: 2026-10-08
-- Status: DRAFT (awaiting operator review)
+- Status: APPROVED (operator sign-off 2026-10-08, discussion phase)
 - Scope: turn mulewatch into p2pwatch, a generic watch core that drives several P2P networks, each client in
   its own container; this is an umbrella spec, every stage below gets its own detailed spec
 - Release: staged; stage 3 (aMule leaves the core image) is breaking and ships as `v5.0.0`
