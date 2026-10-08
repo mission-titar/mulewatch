@@ -1,8 +1,8 @@
 # Review mandate: holistic
 
-**Artefact: a whole lot on the top of its stack**, `git diff origin/main...origin/<top branch>`, every code block's
-pull request open and no block being written. Run once per lot in tier Spec, at the head of Wrap, before the operator
-reviews the stack, in an agent the lead dispatches by name.
+**Artefact: a whole lot on the top of its stack**, `git diff origin/main...origin/<top branch>`, the pull request of
+every block before the closing one open and no block being written. Run once per lot in tier Spec, at the head of Wrap,
+before the operator reviews the stack, in an agent the lead dispatches by name.
 
 **This document states its mandate before its argument.** The bullets bind. The `**Detail.**` paragraph that closes a
 section explains and binds nothing.
@@ -55,20 +55,21 @@ because the failure the file leaves is the short return message being cut, and t
 9. **Diff hygiene.** Files that should not have changed, refactors nobody requested, generated or build artefacts,
    leftover scaffolding, formatting churn unrelated to the work.
 10. **Test evidence, across the lot.** Strict TDD (`AGENTS.md`): behaviour that arrived with no failing test watched
-    first is a finding. So are behaviour no test exercises, a structural assertion nothing was shown to break, and a
-    threshold met by a test that would pass against a broken implementation. **Never move the shared working tree**:
-    read a file with `git show <commit>:<path>`, and where a run needs a tree, make a detached one with
-    `git worktree add --detach` and remove it.
+    first is a finding, read from each pull request body's block report, which names per new behaviour the test watched
+    failing and the line of its failure output. So are behaviour no test exercises, a structural assertion nothing was
+    shown to break, and a threshold met by a test that would pass against a broken implementation. **Never move the
+    shared working tree**: read a file with `git show <commit>:<path>`, and where a run needs a tree, make a detached
+    one with `git worktree add --detach` and remove it.
 11. **Self-sufficient comments.** A comment states the why where it stands. One that defers to an identifier the reader
     must open elsewhere (a decision id, a section number, a ticket) explains nothing without that document. External
     references and clickable links are acceptable when they carry enough context.
 
 **Detail.** One webui route left in the framework's default error format breaks what the others uphold, which is why
 contract uniformity is read across the whole change. The gate enforces 100 % branch coverage on each package's unit
-tests only: the integration suites, `packages/crawler/Dockerfile` and `docker/` (entrypoint, s6 services), `deploy/`,
-`tests/smoke/` and the CI workflows are outside it, and so is any line under `# pragma: no cover`. Coverage anyway
-proves nothing about whether anyone asked for the branch. Renumbering a section silently breaks anchors pointing into
-it; `uv run poe docs-build`, run by `docs.yml` and not by the gate, fails on a dead link under `docs/` and nowhere else.
-The working tree is on the top of the stack when you start and the closing block stacks on it right after you, so a
-detached HEAD you leave behind is the next block's problem, and a worktree holding a branch of the stack stops
+tests only: the integration suites, `packages/crawler/Dockerfile` and `packages/crawler/docker/` (entrypoint, s6
+services), `deploy/`, `tests/smoke/` and the CI workflows are outside it, and so is any line under `# pragma: no cover`.
+Coverage anyway proves nothing about whether anyone asked for the branch. Renumbering a section silently breaks anchors
+pointing into it; `uv run poe docs-build`, run by `docs.yml` and not by the gate, fails on a dead link under `docs/` and
+nowhere else. The working tree is on the top of the stack when you start and the closing block stacks on it right after
+you, so a detached HEAD you leave behind is the next block's problem, and a worktree holding a branch of the stack stops
 `gh stack rebase` from moving it.

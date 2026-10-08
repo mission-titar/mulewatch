@@ -12,6 +12,7 @@ reasons this document leaves out.
   the first targeting `main`.
 - **Lead**: the main loop the operator talks to. Keeps the lot's thread, creates the branches, rewrites the stack,
   writes no block of a tier Spec lot.
+- **Closing block**: a tier Spec lot's last block, stacked on top of the others, holding Wrap's corrections.
 - **Teammate**: a named background agent that implements one block, stays idle once its pull request is open, and is
   stopped when the stack merges.
 - **Tier** (Direct or Spec) is a property of the lot; **defect class** (1, 2 or 3) is a property of an adjacent defect
@@ -24,12 +25,13 @@ reasons this document leaves out.
 
 | Tier   | Trigger | What runs |
 |--------|---------|-----------|
-| Direct | One block: no design decision, no new dependency, no change to an operator-facing surface (config keys, either DB's schema, webui routes, metrics, notifications, the `merge`/`compact` CLIs, compose env) | Act, Verify, Integrate and Wrap, inline by the lead. No review unless the operator asks for one. One branch (`git switch -c`), one pull request, or the docs-only local merge (Integrate). |
+| Direct | One block: no design decision, no new dependency, no change to an operator-facing surface (config keys, either DB's schema, webui routes, metrics, notifications, the `merge`/`compact` CLIs, compose env) | Act, Verify (ending with the handoff), Integrate and Wrap, inline by the lead. No review unless the operator asks for one. One branch (`git switch -c`), one pull request, or the docs-only local merge (Integrate). |
 | Spec   | Anything else | Discuss, Spec, then per block Act, Verify and Integrate in a teammate, then Wrap with the holistic review. |
 
 ## Branches
 
-- **`main` is integration-only**: never edit on it. Branch before the first file is written.
+- **`main` is integration-only**: never edit on it. Branch before the first file is written, except a tier Spec lot's
+  spec (Spec).
 - **Naming**: `<type>/<kebab-slug>`, `<type>` a conventional-commit type (`feat`, `fix`, `docs`, `chore`, `test`,
   `refactor`). A tier Spec lot's branches are named in its spec's block table.
 - **Tier Direct branches in place** (`git switch -c`). **Tier Spec stacks in the one working tree**, never a worktree
@@ -85,7 +87,8 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
 ### 2. Spec
 
 - **One document, `agents/specs/<ISO date>-<slug>.md`**, in English, its block table included. No separate plan: the
-  block's row, the spec and `AGENTS.md` are the teammate's brief.
+  teammate's brief is the one Act states.
+- **Written untracked in the tree on `main` until approved**, then committed in the first block's first commit.
 - **The block table numbers blocks by tens and names each branch**, so an inserted block takes a free number.
 - **Every decision the spec settles states its reason.** It names every adjacent `BACKLOG.md` item and why each stays
   open, or says there is none.
@@ -93,6 +96,8 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
 - **No block of a tier Spec lot starts before the operator has read and approved the spec file.** Agreement on a
   summary of the spec in conversation is not that approval.
 - **The spec ships in the first block's pull request.**
+- **A claim corrected after the operator's approval keeps `(Corrected: <what changed>)` beside it**, which the holistic
+  review checks against the diff.
 
 ### 3. Act
 
@@ -101,7 +106,8 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
   the top branch out, so the lead switches back before committing to a lower one. Only the lead rewrites the stack.
 - **One teammate per block, one working at a time.** The next block starts once the previous one is green locally and
   its pull request open, not once it has merged.
-- **The brief points at the block's row in the spec, the spec, `AGENTS.md` and the branch, and restates nothing.**
+- **The brief points at the block's row in the spec, the spec, `AGENTS.md`, this document's Act, Verify, Integrate
+  (the pull request's body included) and Defect classes, and the branch, and restates nothing.**
 - **Strict TDD**, as `AGENTS.md` states it.
 - **An adjacent defect takes its class** (Defect classes). A defect class 2 question stops the teammate.
 - **The teammate speaks only when it stops**: a defect class 2 question, a blocker (a denied permission included), or
@@ -112,8 +118,8 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
 
 - **Entirely on the local branch**: the teammate runs `uv run poe check` in the foreground and fixes until green.
 - **It measures the block** with the command under "What a block is".
-- **The last code block's teammate drafts the handoff** from the lot's block reports (`gh pr view`) and its own, for
-  the closing block to correct.
+- **The teammate of the last block before the closing one drafts the handoff** from the lot's block reports
+  (`gh pr view`) and its own, for the closing block to correct.
 
 ### 5. Integrate
 
@@ -121,11 +127,12 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
   conventional commit) and the body with `gh pr edit`, sends the link to the lead with the report that continuous
   integration has started, and ends its turn.
 - **The lead arms `gh pr checks <number> --watch` in the background** as soon as a run starts, before answering.
-- **A failing run, or a change the operator asks for, is fixed in the block it concerns**: the lead forwards it by name,
-  the teammate checks its branch out (`gh stack checkout <branch>`), commits the fix, runs the gate and stops. The lead
-  then cascades with `gh stack rebase --upstack` and pushes with `gh stack push`. On a conflict the lead aborts
+- **A failing run, or a change the operator asks for, is fixed in the block it concerns**: once the active teammate has
+  stopped with its work committed and the tree clean, the lead forwards it by name, the teammate checks its branch
+  out (`gh stack checkout <branch>`), commits the fix, runs the gate and stops. The lead then cascades with
+  `gh stack rebase --upstack` and pushes with `gh stack push`. On a conflict the lead aborts
   (`gh stack rebase --abort`), the conflicting branch's teammate rebases it onto its new parent and runs the gate, and
-  the cascade resumes. Every teammate whose branch moved is told.
+  the cascade resumes. Every teammate whose branch moved is told, and the one stopped for the fix is resumed.
 - **Before the operator merges, the lead rebases the whole stack onto the current `main`** with `gh stack rebase` then
   `gh stack push`, since `main` requires up-to-date branches and moves during a lot (Dependabot, the weekly
   `amule-bump`, docs-only merges), and waits for every run to be green again.
@@ -135,25 +142,42 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
   (`gh pr merge --rebase`).
 - **No admin merge**: `main` requires the `validate / gate` check, and `enforce_admins: false` lets a local admin merge
   bypass it silently.
-- **Docs-only exception, tier Direct**: a diff touching only `docs/**` and root `*.md` may be committed or merged
-  locally to `main`, with no pull request.
+- **Docs-only exception, tier Direct**: a diff touching only `docs/**`, `agents/**` and root `*.md` may be committed or
+  merged locally to `main`, with no pull request.
 - **On the operator's "merged"**, the lead stops every teammate of the lot by name, brings the working tree back to
   `main` (`git switch main && git pull --ff-only`) and deletes the lot's local branches.
 
 #### The pull request's body
 
-- Write for a tech lead who knows the project's architecture and language, has not read the specification, and will not read the code line by line. The operator reviews a whole stack of pull requests in one sitting, so each must stand alone: a body that needs the specification sends the reader away from the pull request.
-- Give the context, then why the change is needed, then how it is done at the level of the architecture. Never describe what changed, file by file or line by line. The diff already shows what changed; the reader's question is whether this is the right change. If understanding it needs code details, the change probably wants reorganising.
-- Fit the length to the change: a small change reads in a few lines, and 50 lines of text is a ceiling for the largest, not a target. A mermaid diagram's code does not count; a code block does. A body longer than the change it explains costs the reviewer more than the diff, and a long body gets skimmed.
-- Use whatever makes the review easier: a mermaid diagram, a table, or a short code example. A toy example can show a behaviour better than a description of it.
-- A diagram shows one thing, with few nodes, in the form that fits it: a sequence diagram for an exchange between components, a state diagram for a lifecycle, a flowchart for a decision. If it cannot be read at a glance, split it or leave it out. A diagram the reader has to decode costs more than the paragraph it replaces.
-- Do not comment on code quality, list risks, or list what was not verified. Code quality speaks for itself in the diff. A list of risks or of unverified points anchors the reviewer on what the author already knows, when the review is worth most on what the author does not know.
-- Put the block's report last, collapsed: `<details><summary>Block report, for the handoff</summary>`, then `</details>`. It holds the evidence (gate, continuous integration, budget), the departures from the spec, the class 1 fixes, the class 2 questions with their answers, the pitfalls and what was not verified. The handoff is written from these reports, so lose nothing it needs; collapsed, the report stays out of the reader's way. Continuous integration and the stack are already shown by GitHub, so the visible body repeats neither.
+- Write for a tech lead who knows the project's architecture and language, has not read the specification, and will not
+  read the code line by line. The operator reviews a whole stack of pull requests in one sitting, so each must stand
+  alone: a body that needs the specification sends the reader away from the pull request.
+- Give the context, then why the change is needed, then how it is done at the level of the architecture. Never describe
+  what changed, file by file or line by line. The diff already shows what changed; the reader's question is whether this
+  is the right change. If understanding it needs code details, the change probably wants reorganising.
+- Fit the length to the change: a small change reads in a few lines, and 50 lines of text is a ceiling for the largest,
+  not a target. A mermaid diagram's code does not count; a code block does. A body longer than the change it explains
+  costs the reviewer more than the diff, and a long body gets skimmed.
+- Use whatever makes the review easier: a mermaid diagram, a table, or a short code example. A toy example can show a
+  behaviour better than a description of it.
+- A diagram shows one thing, with few nodes, in the form that fits it: a sequence diagram for an exchange between
+  components, a state diagram for a lifecycle, a flowchart for a decision. If it cannot be read at a glance, split it or
+  leave it out. A diagram the reader has to decode costs more than the paragraph it replaces.
+- Do not comment on code quality, list risks, or list what was not verified. Code quality speaks for itself in the diff.
+  A list of risks or of unverified points anchors the reviewer on what the author already knows, when the review is
+  worth most on what the author does not know.
+- Put the block's report last, collapsed: `<details><summary>Block report, for the handoff</summary>`, then
+  `</details>`. It holds the evidence (gate, continuous integration, budget, and per new behaviour the test watched
+  failing with the line of its failure output), the departures from the spec, the class 1 fixes, the class 2 questions
+  with their answers, the pitfalls and what was not verified. The handoff is written from these reports, so lose nothing
+  it needs; collapsed, the report stays out of the reader's way. Continuous integration and the stack are already shown
+  by GitHub, so the visible body repeats neither.
 
 ### 6. Wrap
 
-- **Once per tier Spec lot, once the last code block's pull request is open**, before the operator's review. Tier
-  Direct wraps inline on its one branch: (c), (d) without the counts, (e) and (f).
+- **Once per tier Spec lot, once the pull request of the last block before the closing one is open**, before the
+  operator's review. Tier Direct wraps inline on its one branch: (c) and (d), without the counts, at the end of Verify,
+  before Integrate; (e) and (f) once its pull request merges.
 - **(a) The holistic review**, by a named agent on `agents/reviews/holistic.md`, over
   `git diff origin/main...origin/<top branch>`: the stack is not merged yet, so the merge base with `main` is the lot's
   start, even after `main` moves or the stack is rebased onto it. A lot of one block is offered its waiver and the
@@ -161,15 +185,15 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
   `amule-bump`) is never read holistically.
 - **The closing block, stacked on top with its own pull request**, then holds: (b) the holistic findings fixed, each
   named in the handoff with its exit; (c) `BACKLOG.md` reconciled; (d) the handoff, in
-  `agents/handoffs/<ISO date> - handoff - <context>.md`, drafted in the last code block and corrected here: current
-  state, what was built, pitfalls, what is not validated, next step.
+  `agents/handoffs/<ISO date> - handoff - <context>.md`, drafted in the last block before the closing one and
+  corrected here: current state, what was built, pitfalls, what is not validated, next step.
 - **(d) also counts the lot's fix-backs, cascaded rebases, the runs they re-triggered, and the operator's reading of
   the bodies.** More runs re-triggered than blocks, or bodies called unreadable again, means stacking costs more than
   pull requests in series.
 - **(e) The lead reports what was done and the friction met.**
-- **(f) After the stack merges, the lead proposes a release if the lot changed what the image ships**, announcing the
-  version number first. The operator decides; the tag is then pushed as `AGENTS.md` describes (`git tag`). A lot that
-  changes only documents or process ships nothing.
+- **(f) After the stack, or tier Direct's pull request, merges, the lead proposes a release if the lot changed what the
+  image ships**, announcing the version number first. The operator decides; the tag is then pushed as `AGENTS.md`
+  describes (`git tag`). A lot that changes only documents or process ships nothing.
 - **The closing block splits like any other** when it passes a bound.
 
 ## Defect classes
