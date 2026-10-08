@@ -28,3 +28,6 @@ vendor/
 
 # Documentation site build output (zensical)
 site/
+
+# Rapports des agents de revue (spec, holistique), jamais versionnés
+.reviews/
