@@ -78,7 +78,15 @@ Rejected, verified 2026-10-08:
   did not even build with a recent OCaml until late 2024. aMule covers eD2k better.
 - **eiskaltdcpp-daemon**: last release 2021, and its RPC has no authentication.
 - **Nicotine+ headless**: no remote API. slskd has one, plus native gluetun support.
-- **Gnutonium**: young, G1 only. A fallback to watch, not a choice.
+- **A natively headless Gnutella client, to avoid the patch.** gtk-gnutella's topless mode is an
+  upstream build option, not a GUI client run blind; only its shell lacks search. The survey of
+  native headless clients found one live candidate, **Gnutonium** (TypeScript on Bun, GPL-3, 62
+  commits, one author, rewritten 2026-03): G1 only, no UDP at all besides UPnP discovery
+  (`src/nat/ssdp.ts`), hence no OOB hits, no GUESS, no DHT, no push-proxies, so no download
+  when both ends are firewalled; no HTTP API (a library to wrap). It receives fewer hits and
+  reaches fewer sources than gtk-gnutella. Re-evaluate it once it has UDP/OOB and push-proxies.
+  Everything else is dead or a toy: Mutella, gnut, giFT, Sharelin (2004 to 2014), WireShare
+  (GUI only), Phex (2009), Go/Rust/Python attempts that stop at the handshake.
 - **A dedicated G2 client**: G2 is nearly dead (4 hosts refreshed within 24 h on the main GWC).
   gtk-gnutella's G2 leaf mode covers it for free.
 - **magnetico**: YAGNI while Bitmagnet's own crawler suffices.
