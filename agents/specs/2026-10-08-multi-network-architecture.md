@@ -1,25 +1,26 @@
-# Multi-network architecture: a generic core and one container per client
+# Multi-network architecture: a generic core and one container per client, renamed p2pwatch
 
 - Date: 2026-10-08
 - Status: DRAFT (awaiting operator review)
-- Scope: turn mulewatch into a generic watch core that drives several P2P networks, each client in
+- Scope: turn mulewatch into p2pwatch, a generic watch core that drives several P2P networks, each client in
   its own container; this is an umbrella spec, every stage below gets its own detailed spec
 - Release: staged; stage 3 (aMule leaves the core image) is breaking and ships as `v5.0.0`
 - Related: `agents/specs/2026-09-16-single-container-embedded-amule.md` (partly reversed here),
   `agents/specs/2026-09-13-scope-reduction-catalog-notify-download.md`,
   `application/port_sync_loop.py`, `adapters/persistence_sqlite/migrations/catalog/0001_initial.sql`,
-  `docs/legal.md`, the p2pwatch proof of concept (separate repository, reviewed 2026-10-08)
+  `docs/legal.md`, the `mission-titar/p2pwatch_poc` prototype (reviewed 2026-10-08)
 
 ## 1. Context and goals
 
-A proof of concept, p2pwatch, watched eD2k/Kad (by importing mulewatch's catalog), Soulseek,
+A prototype, `p2pwatch_poc`, watched eD2k/Kad (by importing mulewatch's catalog), Soulseek,
 Direct Connect, Gnutella/G2 and the BitTorrent DHT from one stdlib-only Python process that
 compiled or downloaded every client into `vendor/` and ran them as subprocesses. Reviewed as a
 whole, the only behaviour it adds over mulewatch is the extra networks, a network-agnostic file
 identity, and two event kinds (`new-location`, `reappeared`). Catalog, matching, notifications,
 webui, scheduling and packaging are all weaker copies of what mulewatch already does.
 
-So we evolve mulewatch instead of maturing p2pwatch.
+So we evolve mulewatch instead of maturing the prototype, and the evolved project takes the
+name `p2pwatch` (D15).
 
 **Watch several networks.** Only eD2k has produced results so far. That is not a reason to drop
 the others: the point of a watch is that having seen nothing does not mean nothing is there. The
@@ -37,7 +38,6 @@ we have.
 
 - No new feature beyond what the stages below list.
 - No patch to any client except one local gtk-gnutella patch (decision 3).
-- No rename: the project stays `mulewatch`. A rename may come later.
 - No retention bound on the source history for now (decision 10).
 
 ## 3. Decisions
@@ -109,7 +109,7 @@ store it: Bitmagnet's classifier has a `delete` action (`bitmagnet.io/guides/cla
 With our keywords as the condition, PostgreSQL keeps only what concerns us, instead of the
 100 GB the prototype accumulated (Bitmagnet's FAQ: about 80 GB per 10 million torrents). The
 crawl's CPU and bandwidth remain. Stage 5 decides how the classifier condition derives from
-mulewatch's config, since no keyword may live anywhere but in config (section 5).
+the core's config, since no keyword may live anywhere but in config (section 5).
 
 **Why gtk-gnutella needs a patch.** In a topless build, the shell's only search verb, `search
 add`, can never create a search: `gcu_search_gui_new_search()` returns `FALSE` when
@@ -149,12 +149,12 @@ an image is a workspace member, under the same gate (100 % branch coverage, `myp
 
 ```
 packages/
-  crawler/      the core, image ghcr.io/mission-titar/mulewatch (name and dist unchanged)
+  crawler/      the core, image ghcr.io/mission-titar/p2pwatch (package and dist p2pwatch, D15)
   matching/     unchanged
-  amule/        image mulewatch-amule: aMule build stage (moved from crawler), amule_config
+  amule/        image p2pwatch-amule: aMule build stage (moved from crawler), amule_config
                 (moved), the local port-sync loop (D7)
-  gnutella/     image mulewatch-gnutella: gtk-gnutella build, patches/, an HTTP shim
-  airdcpp/      image mulewatch-airdcpp: upstream portable release, no code of ours
+  gnutella/     image p2pwatch-gnutella: gtk-gnutella build, patches/, an HTTP shim
+  airdcpp/      image p2pwatch-airdcpp: upstream portable release, no code of ours
   amule_bump/   unchanged
   vex_guards/   unchanged
 ```
@@ -174,7 +174,8 @@ deploy/
   soulseek/                   same three files, slskd
   directconnect/              same three files, AirDC++
   gnutella/                   same three files, gtk-gnutella
-  bitmagnet/                  same three files, Bitmagnet + PostgreSQL
+  bittorrent/                 same three files: Bitmagnet + PostgreSQL to discover,
+                              qBittorrent to download (opt-in)
 ```
 
 `compose.yml` lists every network, the operator edits only its include lines:
@@ -334,8 +335,8 @@ notifications. They describe observations: a reappearance does not prove the sha
 
 ### D12. One version for every image
 
-One `vX.Y.Z` tag versions the core and every image we build (`mulewatch`, `mulewatch-amule`,
-`mulewatch-gnutella`, `mulewatch-airdcpp`), through the existing git-driven versioning.
+One `vX.Y.Z` tag versions the core and every image we build (`p2pwatch`, `p2pwatch-amule`,
+`p2pwatch-gnutella`, `p2pwatch-airdcpp`), through the existing git-driven versioning.
 
 ### D13. Download lifecycle
 
@@ -411,6 +412,27 @@ Every adapter reports one generic status, which feeds the webui and edge-trigger
 The status never carries an address: AirDC++ reports `external_ip`, slskd reports the VPN's
 public address; adapters drop both.
 
+### D15. The project is renamed p2pwatch
+
+The project now watches several networks, and is about to publish several new images. Renaming a
+published GHCR image is painful (a package is never renamed, it is abandoned for a new one), so
+the rename lands before the first new image, in stage 3, inside the same breaking `v5.0.0`
+release that already asks operators to migrate their compose layout. One migration, not two.
+
+| What | Before | After |
+|---|---|---|
+| GitHub repository | `mission-titar/mulewatch` | `mission-titar/p2pwatch` (free; the prototype is `p2pwatch_poc`) |
+| Core image | `ghcr.io/mission-titar/mulewatch` | `ghcr.io/mission-titar/p2pwatch`; the old package stays frozen at its last 4.x |
+| Client images | none | `p2pwatch-amule`, `p2pwatch-gnutella`, `p2pwatch-airdcpp` |
+| Python package and dist | `mulewatch` (153 `.py` files reference it) | `p2pwatch` |
+| Test env vars | `MULEWATCH_TEST_API_*` | `P2PWATCH_TEST_API_*` |
+| Docs site | `mission-titar.github.io/mulewatch` | `mission-titar.github.io/p2pwatch` |
+
+GitHub redirects git and web URLs after a repository rename; whether the Pages site and the GHCR
+package links follow is to verify, and `docs/migration-5x.md` covers the switch either way.
+No Prometheus metric carries the old name. Past specs, plans and handoffs keep `mulewatch`: they
+are history, never retro-edited.
+
 ## 4. Stages
 
 Domain changes come before topology changes, so that every stage ships on its own.
@@ -419,7 +441,7 @@ Domain changes come before topology changes, so that every stage ships on its ow
 |---|---|---|
 | 1 | Generic identity | D8: catalog migration to `(network, native_id)`, network-agnostic `FileObservation`, in today's single container |
 | 2 | Search, download and status ports | D9, D13, D14: generic ports, aMule adapters on them; persistent and passive search ports declared |
-| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: `mulewatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` |
+| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: rename to p2pwatch (D15), `p2pwatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` |
 | 4 | Sources and events | D10, D11: source history, eD2k download sources, `docs/legal.md` |
 | 5 | New networks, one by one | search, download (D13) and status (D14) per client: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet + qBittorrent (opt-in) |
 
@@ -459,7 +481,7 @@ The prototype's review found edge cases that become fake-server tests for the ne
   client's: match the file by path and size, not by index.
 - **Soulseek has no content hash.** A completed Soulseek file is only "the expected byte count
   arrived"; a resumed transfer over a changed remote file can be corrupt.
-- **The p2pwatch repository** is archived once stage 5 has ported what it is worth.
+- **The `p2pwatch_poc` repository** is archived once stage 5 has ported what it is worth.
 
 ## 7. Verified sources
 
