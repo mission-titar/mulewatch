@@ -56,7 +56,7 @@ this handoff are outside the count). Gate `uv run poe check` green at every tip.
   and mulewatch's real coverage perimeter.
 - Block 30: the spec gained four `(Corrected: ...)` markers (D2, D4, D6, D13), one per decision a
   holistic fix changed. Tier Direct moves (c), the backlog, before Integrate along with (d), the
-  handoff: the operator's decision named the handoff, and the backlog is a file of the same branch.
+  handoff: the report's suggested fix named the handoff, and the backlog is a file of the same branch.
   The spec is written untracked on `main` until approved, as this lot did. The `(Corrected: ...)`
   marker applies after the operator's approval, so the spec review's own fixes carry none.
 
@@ -70,14 +70,15 @@ this handoff are outside the count). Gate `uv run poe check` green at every tip.
 - Class 2: one, raised by the holistic review's docs-only finding. Answer (operator, 2026-10-08):
   option (a), the docs-only local merge extends to `agents/**`.
 - Holistic review (`.reviews/stacked-blocks-holistic.md`, 4 MAJOR, 11 MINOR), every finding's exit
-  is "fixed in the lot", in block 30:
+  is "fixed in the lot", in block 30. The lead applied the report's suggested fix to each
+  (the default exit), except the docs-only exception, which is the operator's answer:
 
 | Severity | Finding | Fix |
 |---|---|---|
 | MAJOR | The teammate's brief never points at `agents/workflow.md` | Brief lists its Act, Verify, Integrate and Defect classes; `AGENTS.md` says read it before a lot or a block |
-| MAJOR | Holistic item 10 cannot tell test-first from test-after | Block report carries, per new behaviour, the test watched failing and its failure line; item 10 reads it from the bodies (operator's decision) |
-| MAJOR | A fix-back collides with the active teammate in the one tree | Forwarded only once the active teammate has stopped, work committed, tree clean; it is resumed after (operator's decision) |
-| MAJOR | Tier Direct's order cannot be followed | Handoff at the end of Verify, before Integrate (operator's decision); (f) covers tier Direct's pull request |
+| MAJOR | Holistic item 10 cannot tell test-first from test-after | Block report carries, per new behaviour, the test watched failing and its failure line; item 10 reads it from the bodies |
+| MAJOR | A fix-back collides with the active teammate in the one tree | Forwarded only once the active teammate has stopped, work committed, tree clean; it is resumed after |
+| MAJOR | Tier Direct's order cannot be followed | Handoff at the end of Verify, before Integrate; (f) covers tier Direct's pull request |
 | MINOR | Docs-only exception excludes `agents/**` | Extended to `agents/**` (operator's decision, option (a)) |
 | MINOR | Nowhere to write the spec before approval | Untracked on `main` until approved, committed in the first block |
 | MINOR | `(Corrected: ...)` undefined | Defined in workflow.md's Spec phase and spec.md's Detail |
@@ -92,11 +93,12 @@ this handoff are outside the count). Gate `uv run poe check` green at every tip.
 
 ## Lot counts (D9)
 
-- Fix-backs: 1. Block 20's handoff draft was added after its pull request opened: the lead's brief
+- Fix-backs: 2. Block 20's handoff draft was added after its pull request opened: the lead's brief
   first said block 20 was not the last code block, and the correcting message crossed the
-  teammate's report.
+  teammate's report. Then this handoff, corrected after #102 opened when the lead amended its
+  brief: the three MAJOR fixes it had called operator decisions are the lead's own.
 - Cascaded rebases: 0.
-- Runs re-triggered: 1 (#100).
+- Runs re-triggered: 2 (#100, #102).
 - The operator's reading of the bodies: to fill before the merge.
 
 ## Pitfalls learned
