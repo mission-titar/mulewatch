@@ -35,7 +35,7 @@ we have.
 
 ## 2. Non-goals
 
-- No new feature beyond what the stages below list. Downloads stay eD2k-only.
+- No new feature beyond what the stages below list.
 - No patch to any client except one local gtk-gnutella patch (decision 3).
 - No rename: the project stays `mulewatch`. A rename may come later.
 - No retention bound on the source history for now (decision 10).
@@ -118,37 +118,50 @@ packages/
 **The gnutella shim exists because the core cannot read another container's stdout.** It drives
 gtk-gnutella's shell, reads the patched hit lines, and serves them over HTTP.
 
-### D5. Deployment: one compose fragment per network
+### D5. Deployment: one base compose, one `include:` per network
 
 ```
 deploy/
-  core.compose.yml              the core alone
-  ed2k.compose.yml              aMule
-  ed2k.vpn.compose.yml          its gluetun, network_mode for aMule
-  soulseek.compose.yml          slskd
-  soulseek.vpn.compose.yml
-  directconnect.compose.yml     AirDC++
-  directconnect.vpn.compose.yml
-  gnutella.compose.yml          gtk-gnutella
-  gnutella.vpn.compose.yml
-  bitmagnet.compose.yml         Bitmagnet + PostgreSQL (opt-in)
+  compose.yml                 the core service, plus one include line per network
+  ed2k/
+    service.yml               aMule's service definition, no ports, no networking
+    direct.compose.yml        extends service.yml, publishes the P2P ports on the host
+    vpn.compose.yml           its own gluetun, extends service.yml, network_mode: service:gluetun
+  soulseek/                   same three files, slskd
+  directconnect/              same three files, AirDC++
+  gnutella/                   same three files, gtk-gnutella
+  bitmagnet/                  same three files, Bitmagnet + PostgreSQL
 ```
 
-The operator selects networks once, in `.env`, through Compose's native `COMPOSE_FILE` variable,
-so every command stays a bare `docker compose up -d`:
+`compose.yml` lists every network, the operator edits only its include lines:
 
-```
-COMPOSE_FILE=core.compose.yml:ed2k.compose.yml:ed2k.vpn.compose.yml:soulseek.compose.yml
+```yaml
+include:
+  - ed2k/direct.compose.yml            # or ed2k/vpn.compose.yml
+  - soulseek/direct.compose.yml        # or soulseek/vpn.compose.yml
+  # - directconnect/direct.compose.yml # commented out: network disabled
 ```
 
-`.env.example` selects the core plus eD2k, so an existing node keeps today's behaviour. Fragments
-are merged by Compose's multi-file mechanism, not by `include:` (which conflicted before, see
-`base.compose.yml`).
+**Nothing is behind a VPN by default.** Every shipped include points at the `direct` variant.
+Opening ports or paying for a VPN with enough simultaneous tunnels and port forwarding is the
+operator's choice: it is a technical step and a risk assessment we do not make for them.
+`docs/install.md` and `docs/legal.md` lay out the trade-off; the shipped default enables eD2k
+only, so an existing node keeps today's behaviour.
+
+**This honours the 2026-09-16 lesson on `include:`.** An included service cannot be redefined by
+the including file (`services.<name> conflicts with imported resource`). Here `compose.yml`
+never redefines an included service, and each variant is self-contained. What the two variants
+share lives in `service.yml` and is reached with `extends:`, as `base.compose.yml` is today, so
+`ports:` stays out of the shared fragment (Compose merges `ports` additively and cannot remove
+one).
+
+Pitfall for stage 3: relative paths in an included file resolve against that file's directory,
+so bind mounts must say where they point (`../data/ed2k`), or the include must set
+`project_directory`.
 
 **One gluetun per client that needs a forwarded port.** A VPN tunnel usually forwards one port,
 and it changes, so two clients that both need inbound connections cannot share one gluetun.
-Clients without port forwarding may share a tunnel. Providers cap simultaneous connections, so
-the operator's provider limits how many forwarded clients a node runs.
+Providers also cap simultaneous tunnels, which caps how many forwarded clients a node can run.
 
 ### D6. Client lifecycle: the core never restarts a client
 
@@ -163,7 +176,8 @@ reports state; it does not repair it.
 
 aMule cannot rebind its listen port at runtime: a changed port only applies on the next start,
 and a failed bind leaves amuled running in Low-ID instead of exiting (`amule.cpp:1480-1491`).
-Port-sync is therefore set per client, not as a single core mechanism:
+Port-sync only runs in a network's `vpn` variant (in the `direct` variant the operator forwards a
+fixed port). It is set per client, not as a single core mechanism:
 
 | Client | Port-sync | Where |
 |---|---|---|
@@ -199,7 +213,7 @@ Identities never cross networks: the same TTH and ed2k hash never prove two rows
 rule (never lose a field). Stage 1 specifies the migration of every table that references
 `files`.
 
-### D9. Three search modes, three ports
+### D9. Three search modes, one download capability
 
 | Mode | Clients |
 |---|---|
@@ -210,6 +224,20 @@ rule (never lose a field). Stage 1 specifies the migration of every table that r
 `MuleClient` is today's bounded-search port with eD2k specifics (`SearchChannel`, `widen_search`,
 `KadStatus`). Stage 2 splits the generic bounded-search contract from those specifics, which stay
 in the aMule adapter. The matching engine (`catalog_matching`) applies to every network unchanged.
+
+**Downloading is a capability of every client that can download**, not an eD2k feature: a lost
+episode is worth fetching from whichever network shares it. Today's download port
+(`mule_download_client.py`) is aMule-shaped; stage 2 makes it generic, and each network's stage
+wires its client to it. The existing download invariants hold for every network: the crawler
+never reads downloaded bytes, and each client downloads into its own bind mount.
+
+| Network | Download through | Status |
+|---|---|---|
+| eD2k | aMule | exists |
+| Soulseek | slskd's transfers API | to detail in its stage |
+| Direct Connect | AirDC++'s queue API | to detail in its stage |
+| Gnutella / G2 | gtk-gnutella | to verify: topless downloads may hit the same UI stub as searches |
+| BitTorrent | Bitmagnet only indexes; a torrent client container is needed | open question (section 6) |
 
 ### D10. Sources: pseudonymous identifiers, never addresses
 
@@ -226,17 +254,24 @@ stable for an installation and identify a sharer without saying who they are.
 
 | Network | Stored | Observed through |
 |---|---|---|
-| eD2k | user hash, nickname | sources of the downloads mulewatch starts anyway (`GET /downloads/{hash}/clients`). Never a download started to get sources |
-| Soulseek | username | search responses |
-| Direct Connect | CID (ADC, hub-verified `hash(PID) == CID`); (nick, hub) on NMDC | search results |
-| Gnutella / G2 | servent GUID (persistent under `sticky_guid`) | query hits |
+| eD2k | user hash, nickname | the sources of our downloads (`GET /downloads/{hash}/clients`) |
+| Soulseek | username | search responses, sources of our downloads |
+| Direct Connect | CID (ADC, hub-verified `hash(PID) == CID`); (nick, hub) on NMDC | search results, sources of our downloads |
+| Gnutella / G2 | servent GUID (persistent under `sticky_guid`) | query hits, sources of our downloads |
 | BitTorrent DHT | nothing: no stable identity exists | none |
 
 These identifiers are unauthenticated (an eD2k user hash is only bound to a key under Secure
 Identification, and a reinstall changes it): a hint, never a proof, like file names already are.
 
 eD2k search results carry no source identity at all, and a Kad source search only runs for an
-active partfile (`PartFile.cpp:1806`, `DownloadQueue.cpp:1612`). Hence the download-only rule.
+active partfile (`PartFile.cpp:1806`, `DownloadQueue.cpp:1612`). Hence, on eD2k:
+
+- **Recorded**: every source a download of ours gets data from, or could, whichever side opens
+  the connection. A Low-ID source reaches us through our High-ID callback; that is a protocol
+  detail, it is still a source sharing with us.
+- **Never recorded**: a peer that merely contacts us without sharing anything with us
+  (`GET /clients`, `/known_clients`).
+- **Never done**: a download started only to obtain sources.
 
 The history is kept in full for now, one row per (file, source, day). It must stay compactable:
 the backlog's storage-growth entry applies to it too.
@@ -265,10 +300,10 @@ Domain changes come before topology changes, so that every stage ships on its ow
 | # | Stage | Contents |
 |---|---|---|
 | 1 | Generic identity | D8: catalog migration to `(network, native_id)`, network-agnostic `FileObservation`, in today's single container |
-| 2 | Search-mode ports | D9: generic bounded-search port, aMule adapter on it; persistent and passive ports declared |
-| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: `mulewatch-amule` image, local port-sync, compose fragments, core hardening. Breaking: `v5.0.0` |
+| 2 | Search and download ports | D9: generic bounded-search and download ports, aMule adapters on them; persistent and passive ports declared |
+| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: `mulewatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` |
 | 4 | Sources and events | D10, D11: source history, eD2k download sources, `docs/legal.md` |
-| 5 | New networks, one by one | Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet (opt-in) |
+| 5 | New networks, one by one | search, then download where the client can: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet (opt-in) |
 
 ## 5. Lessons from the prototype, as test cases
 
@@ -299,10 +334,11 @@ The prototype's review found edge cases that become fake-server tests for the ne
   go through GraphQL, not the database (which also keeps PostgreSQL credentials out of the core).
 - **VPN providers.** Not every provider forwards ports, and each caps simultaneous tunnels.
 - **Storage growth.** A full source history adds to the 4.9 GB / three months already measured.
-- **`COMPOSE_FILE` on Windows** uses `;` as separator (`COMPOSE_PATH_SEPARATOR`): to cover in
-  `docs/install.md`.
-- **Inbound eD2k peers** (`GET /clients`, `/known_clients`) also expose user hashes without any
-  download. Recording them is not decided.
+- **BitTorrent downloads** need a torrent client (a container of its own, e.g. qBittorrent or
+  Transmission, upstream image) next to Bitmagnet. Which one, and whether it joins stage 5, is
+  not decided.
+- **gtk-gnutella downloads when topless** are unverified (`download add magnet:` may go through the
+  same UI stub as `search add`). If they fail, the local patch grows or Gnutella stays search-only.
 - **The p2pwatch repository** is archived once stage 5 has ported what it is worth.
 
 ## 7. Verified sources
