@@ -106,7 +106,7 @@ jobs:
           echo "ref=${{ env.IMAGE }}@sha256:${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Generate the Syft-JSON SBOM (native, for the checks and the VEX-aware daily scan)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         env:
           SYFT_SELECT_CATALOGERS: +sbom-cataloger
         with:
@@ -118,7 +118,7 @@ jobs:
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate the CycloneDX SBOM (portable, for external consumers)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         env:
           SYFT_SELECT_CATALOGERS: +sbom-cataloger
         with:
