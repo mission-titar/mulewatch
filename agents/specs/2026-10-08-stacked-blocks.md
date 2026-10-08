@@ -37,7 +37,7 @@ point there too. *Reason: the process is read whole by the lead and by part by e
 
 | Tier   | Trigger | What runs |
 |--------|---------|-----------|
-| Direct | One block: no design decision, no new dependency, no change to an operator-facing surface (config keys, either DB's schema, webui routes, metrics, notifications, the `merge`/`compact` CLIs, compose env) | Act, Verify, Integrate, Wrap, inline by the lead. No review unless the operator asks for one. One branch (`git switch -c`), one pull request, or the existing docs-only local merge. |
+| Direct | One block: no design decision, no new dependency, no change to an operator-facing surface (config keys, either DB's schema, webui routes, metrics, notifications, the `merge`/`compact` CLIs, compose env) | Act, Verify, Integrate, Wrap, inline by the lead. No review unless the operator asks for one. One branch (`git switch -c`), one pull request, or the existing docs-only local merge. (Corrected: the handoff is written at the end of Verify, before Integrate; the docs-only local merge also covers `agents/**`.) |
 | Spec   | Anything else | Discuss, Spec, then per block Act, Verify, Integrate in a teammate, then Wrap with the holistic review (D9). |
 
 **No block of a tier Spec lot starts before the operator has read and approved the spec file**,
@@ -74,7 +74,8 @@ bound under this command, so about four lots in ten will split.*
 untracked file it does not mean to commit lies in the tree. `gh stack init` checks the top branch
 out, so the lead switches back before committing to a lower one. A teammate opens its pull request
 with `gh stack submit --auto --open`, ready for review. A fix lands in the block it concerns
-(`gh stack checkout <branch>`), then the lead cascades with `gh stack rebase --upstack` and
+(`gh stack checkout <branch>`) (Corrected: forwarded only once the active teammate has stopped with
+its work committed and the tree clean), then the lead cascades with `gh stack rebase --upstack` and
 `gh stack push`. **Before the operator merges, the lead rebases the whole stack onto the current
 `main` with `gh stack rebase` then `gh stack push`**, since `main` requires up-to-date branches and
 moves during a lot (Dependabot, the weekly `amule-bump`, docs-only merges), and waits for every
@@ -96,7 +97,9 @@ report that does not arrive be asked for again instead of paying for a second ru
 **D6. The pull request's body is written for a tech lead.** `pinry-reborn`'s seven rules, copied
 verbatim: context, why, how at the level of the architecture, never a file-by-file account; length
 fitted to the change, 50 lines a ceiling; the block's report last, collapsed in
-`<details><summary>Block report, for the handoff</summary>`. *Reason: these rules won the operator's
+`<details><summary>Block report, for the handoff</summary>` (Corrected: its evidence names, per new
+behaviour, the test watched failing and the line of its failure output, which holistic item 10
+reads). *Reason: these rules won the operator's
 blind ranking in `pinry-reborn` over bodies that were the block's report, which the operator called
 unreadable.*
 
@@ -152,7 +155,8 @@ wrong.
 
 **D13. The spec's block table numbers blocks by tens and names each branch**, so an inserted block
 takes a free number. The spec ships in the first block's pull request. A tier Spec lot writes no
-separate plan: the block's row, the spec and `AGENTS.md` are the teammate's brief. *Reason: no plan
+separate plan: the block's row, the spec and `AGENTS.md` are the teammate's brief (Corrected: with
+`agents/workflow.md`'s Act, Verify, Integrate and Defect classes). *Reason: no plan
 has been written since 2026-09-17 while specs continued, so the brief already works without one.*
 
 ## The claim that decides

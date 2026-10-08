@@ -20,7 +20,8 @@ paragraph that closes a section explains and binds nothing.
   report.
 - **Do not edit anything.** Stay inside the repository.
 
-**Detail.** The findings are closed in the document before the operator reads it. The name is there
+**Detail.** The findings are closed in the document before the operator reads it; a claim corrected
+after the operator's approval keeps `(Corrected: <what changed>)` beside it. The name is there
 so a report that does not arrive can be asked for again: that is the only second message you will
 ever get. The report goes to a file because the message channel truncates, and a report cut cleanly
 between two findings reads as a complete report with fewer findings; `.reviews/` is in `.gitignore`,
