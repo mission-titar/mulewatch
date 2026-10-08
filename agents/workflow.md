@@ -126,7 +126,9 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
 - **The teammate opens its pull request ready for review with `gh stack submit --auto --open`**, sets the title (a
   conventional commit) and the body with `gh pr edit`, sends the link to the lead with the report that continuous
   integration has started, and ends its turn.
-- **The lead arms `gh pr checks <number> --watch` in the background** as soon as a run starts, before answering.
+- **The lead arms `gh run watch <id> --exit-status` in the background** as soon as a run starts, before answering,
+  the id from `gh run list --commit <pushed sha> --limit 1 --json databaseId -q '.[0].databaseId'`, retried while
+  empty. Not `gh pr checks --watch`: right after a push it exits at once on "no checks reported".
 - **A failing run, or a change the operator asks for, is fixed in the block it concerns**: once the active teammate has
   stopped with its work committed and the tree clean, the lead forwards it by name, the teammate checks its branch
   out (`gh stack checkout <branch>`), commits the fix, runs the gate and stops. The lead then cascades with
@@ -187,9 +189,9 @@ Tier Direct is not drawn: it skips Discuss, Spec and both reviews.
   named in the handoff with its exit; (c) `BACKLOG.md` reconciled; (d) the handoff, in
   `agents/handoffs/<ISO date> - handoff - <context>.md`, drafted in the last block before the closing one and
   corrected here: current state, what was built, pitfalls, what is not validated, next step.
-- **(d) also counts the lot's fix-backs, cascaded rebases, the runs they re-triggered, and the operator's reading of
-  the bodies.** More runs re-triggered than blocks, or bodies called unreadable again, means stacking costs more than
-  pull requests in series.
+- **(d) also counts the lot's fix-backs, cascaded rebases and the runs they re-triggered**, plus any body the operator
+  called unreadable unprompted. More runs re-triggered than blocks, or an unreadable body, means stacking costs more
+  than pull requests in series.
 - **(e) The lead reports what was done and the friction met.**
 - **(f) After the stack, or tier Direct's pull request, merges, the lead proposes a release if the lot changed what the
   image ships**, announcing the version number first. The operator decides; the tag is then pushed as `AGENTS.md`
