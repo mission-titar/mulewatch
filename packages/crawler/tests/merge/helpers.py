@@ -3,8 +3,8 @@
 WAL requires a real file (``open_catalog`` rejects ``:memory:``): each helper creates a
 ``catalog.db`` on disk via ``open_catalog`` (schema + append-only triggers), inserts the given
 rows by explicit columns, closes, and returns the path. Style aligned with
-``tests/adapters/persistence_sqlite/test_append_only.py`` (direct INSERTs, FK: ``files``/
-``sources`` before the journals).
+``tests/adapters/persistence_sqlite/test_append_only.py`` (direct INSERTs, FK: ``files``
+before the journals).
 """
 
 import sqlite3
@@ -16,7 +16,6 @@ from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 # Columns excluding id, in schema order (0001_initial.sql): for direct INSERTs and
 # natural-key reads in the assertions.
 FILE_COLUMNS = ("ed2k_hash", "size_bytes", "aich_hash")
-SOURCE_COLUMNS = ("user_hash", "client_name", "client_version")
 FILE_OBSERVATION_COLUMNS = (
     "ed2k_hash",
     "filename",
@@ -32,22 +31,6 @@ FILE_OBSERVATION_COLUMNS = (
     "observed_at",
     "node_id",
 )
-SOURCE_OBSERVATION_COLUMNS = (
-    "user_hash",
-    "ed2k_hash",
-    "ip",
-    "port",
-    "nickname",
-    "client_name",
-    "client_version",
-    "country",
-    "id_type",
-    "has_complete_file",
-    "origin",
-    "raw_meta",
-    "observed_at",
-    "node_id",
-)
 MATCH_DECISION_COLUMNS = (
     "ed2k_hash",
     "target_id",
@@ -59,9 +42,7 @@ MATCH_DECISION_COLUMNS = (
 
 _COLUMNS_BY_TABLE: Mapping[str, Sequence[str]] = {
     "files": FILE_COLUMNS,
-    "sources": SOURCE_COLUMNS,
     "file_observations": FILE_OBSERVATION_COLUMNS,
-    "source_observations": SOURCE_OBSERVATION_COLUMNS,
     "match_decisions": MATCH_DECISION_COLUMNS,
 }
 
@@ -93,19 +74,13 @@ def make_catalog(
     """Create a real ``catalog.db`` at ``path`` and insert ``content`` (per table, FK order).
 
     ``content`` maps a table name → rows (dict column→value). We insert in FK order
-    (``files``/``sources`` before the journals) so that references are satisfied. Returns
+    (``files`` before the journals) so that references are satisfied. Returns
     ``path`` for chaining.
     """
     connection = open_catalog(path)
     try:
         if content is not None:
-            for table in (
-                "files",
-                "sources",
-                "file_observations",
-                "source_observations",
-                "match_decisions",
-            ):
+            for table in ("files", "file_observations", "match_decisions"):
                 rows = content.get(table)
                 if rows:
                     insert_rows(connection, table, rows)
