@@ -72,6 +72,13 @@ Pages: `/files` 81.9 ms vs `main` 90.9, busiest detail 429.3 vs 556.5, `/files?q
 the accepted limit). That run predates 0009's `wal_checkpoint(TRUNCATE)`: the WAL kept its 0.236 GB until
 the connection closed.
 
+Block 210 on the same snapshot (`-top.md` section 5, image at `38f29db`): with the connection still open, as
+the crawler holds it, the WAL is 4,152 B (its header plus one frame, the `user_version = 9` write) against
+235,585,752 B at block 200, `catalog.db` 205,664,256 B, and the four lines `migration 6: applying` to
+`migration 9: applying` are logged. That `open_catalog` took 295.2 s in all, against 196.5 s at block 200:
+the checkpoint acts on 0.24 GB of WAL, the rest is taken for the bind mount's spread (0007 alone ranged
+169.7 to 234.3 s), unproven since that run did not time each migration. `docs/limits.md` says 3 to 5 min.
+
 Lossless at 0007: `mismatches: 0`, shown failing at 1 (one observation deleted) and 23,296,222 (a fold
 without `file_type`). 0008: counts and an observations checksum equal before and after, every `file_id`
 equal to a stdlib `uuid5` of the spec's namespace. Pages at block 140's tip: `/files` 85.5 ms vs 88.6 ms
@@ -128,8 +135,8 @@ Class 1 fixes found on the way: the merger's module docstring still said migrati
 
 ## Not validated
 
-- **0009's WAL truncation and the `migration N: applying` line on the real copy**: the top-of-stack run
-  predates them (block 210); the lead's check on the closing tip was still running when this was written.
+- **Why the boot at block 210 took 295 s against 196.5 s** on the same snapshot: bind-mount spread is the
+  likely cause, not shown, since that run did not time each migration.
 - The troubleshooting `df` from a container on a native Docker Engine (checked under Docker Desktop only).
 - Merging real node catalogs (no integration suite covers merge); the webui pages in a browser.
 
