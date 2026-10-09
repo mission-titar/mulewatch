@@ -55,12 +55,22 @@ top. Nothing is merged and no release follows (D16): the node pulls `latest`, wh
 ## Measurements (D18, real catalog copy, 2026-10-09)
 
 A copy of the node's catalog (11.65M observations, 5.3 GB), the image over a Docker Desktop bind mount,
-`--memory 2g`. Reports in `.reviews/stage1-d18-before-140.md`, `-at-140.md`, `-before-180.md` (gitignored).
+`--memory 2g`. Reports in `.reviews/stage1-d18-before-140.md`, `-at-140.md`, `-before-180.md` and `-top.md`
+(gitignored); the last one ran the top of the stack at `1886959`, 0006 to 0009 in one boot.
 
 | Step | Wall time | Peak `anon` | Peak disk above start |
 |---|---|---|---|
-| 0006 + 0007 | 169.7 s and 234.3 s (two runs) | 288 MiB | +0.44 GB |
-| 0008 | 10.4 s | 324 MiB | +0.24 GB |
+| 0006 + 0007 | 169.7 s and 234.3 s (two runs), 165.8 s at the top | 288 MiB | +0.44 GB, +0.454 GB at the top |
+| 0008 | 10.4 s, 12.7 s at the top | 324 MiB, 333 MiB at the top | +0.24 GB |
+| 0009 (`VACUUM`) | 9.2 s | 296 MiB | +0.44 GB (the WAL left by 0008 plus a 0.204 GB temp copy in `/var/tmp`) |
+
+At the top: about 3 min of migrations in all, `OOMKilled` false, `user_version` 9, the final file 205,664,256 B
+(0.206 GB). Lossless through 0008: `mismatches: 0`, the two planted failures giving 1 and 23,296,222. The
+schema queries return no row, the webui answers 200 for `/files/<file_id>` with the native id and 404 for the
+eD2k hash and `zz`, the `git diff` criteria print nothing, the plans show 0 violations on 18 statements.
+Pages: `/files` 81.9 ms vs `main` 90.9, busiest detail 429.3 vs 556.5, `/files?q=keroro` 143.1 vs 90.1 (+59 %,
+the accepted limit). That run predates 0009's `wal_checkpoint(TRUNCATE)`: the WAL kept its 0.236 GB until
+the connection closed.
 
 Lossless at 0007: `mismatches: 0`, shown failing at 1 (one observation deleted) and 23,296,222 (a fold
 without `file_type`). 0008: counts and an observations checksum equal before and after, every `file_id`
@@ -98,7 +108,7 @@ MAJOR, 13 MINOR (its header counts 12). Each exit:
 | Severity | Finding | Exit |
 |---|---|---|
 | MAJOR | `AGENTS.md`'s merge invariant says it never mutates a DB in place | Fixed, in the reviewer's wording |
-| MAJOR | D18's second run, at the top of the stack, not done | PENDING: the lead's run |
+| MAJOR | D18's second run, at the top of the stack, not done | Done by the lead (Measurements): every bound passes; `docs/limits.md` carries 0009's figures and the real 0.21 GB |
 | MINOR | merge's CLI lets `open_catalog`'s `MigrationError` out as a traceback | Fixed: wrapped into `MergeError`, test on an output newer than the code |
 | MINOR | Two stale merge docstrings (no migration replayed, no domain dependency) | Fixed |
 | MINOR | The WAL the `VACUUM` grew stays until the next restart | Fixed: 0009 runs `wal_checkpoint(TRUNCATE)`, test watched failing (WAL 45,352 B, bound one frame) |
@@ -118,18 +128,29 @@ Class 1 fixes found on the way: the merger's module docstring still said migrati
 
 ## Not validated
 
-- **The top of the stack on the real copy** (D18's second run, the lead's): PENDING. 0006 to 0009 in one
-  boot, 0009's duration, memory and disk, the WAL after it, the catalog file under 0.5 GB after `VACUUM`,
-  the lossless check through 0008, the pages again (`/files` passed by a thin margin at block 140).
-  `docs/limits.md` still gives the spike's synthetic 0.21 GB final size.
+- **0009's WAL truncation and the `migration N: applying` line on the real copy**: the top-of-stack run
+  predates them (block 210); the lead's check on the closing tip was still running when this was written.
 - The troubleshooting `df` from a container on a native Docker Engine (checked under Docker Desktop only).
 - Merging real node catalogs (no integration suite covers merge); the webui pages in a browser.
 
 ## Wrap counts
 
-PENDING the lead's final counts. So far: 0 fix-backs, 0 cascaded rebases, one extra run on #117 for a
-docstring dash, no body called unreadable. Block 180 split into 175 and 180 before any push, which cost no
-run.
+- Fix-backs: 0. Cascaded rebases: 0. Runs re-triggered by them: 0.
+- Two splits at the file bound, before any push, by rewriting unpushed branches: block 180 into 175 and 180,
+  the closing block into 205 and 210. No run re-triggered.
+- One extra run on #117, from its own second push (a docstring dash).
+- Bodies called unreadable: none so far; the operator has not reviewed the stack yet.
+
+Under the workflow's threshold (more runs re-triggered than blocks), stacking cost less than pull requests in
+series.
+
+## Friction
+
+- `gh stack` 0.1.1 cannot insert a branch mid-stack non-interactively (`modify` is interactive): the lead
+  removed the unpushed top entry from `.git/gh-stack` by hand and re-added the branches.
+- The lead switched branches under a working teammate once (the closing block's split): an uncommitted edit
+  landed on the other branch. No harm, since the files did not overlap, but cut branches only while the
+  teammate is stopped.
 
 ## Next
 

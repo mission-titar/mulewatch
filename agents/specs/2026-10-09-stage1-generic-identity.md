@@ -596,10 +596,11 @@ Each criterion names the output that would prove it wrong.
   are folded in. The check at block 140's tip decides.
 - **The read shapes are new.** A latest sighting is now the maximum over a file's few variants of a seek on
   the key of `observations`. The bounds of D18 guard the `/files` page.
-  - **Accepted limit: the name search is slower.** `/files?q=` is not a D18 bound. On the real copy at block
-    140's tip, `/files?q=keroro` took 150.8 ms against `main`'s 98.0 ms (median of 5), slower in all three
-    rounds: with `q`, every statement joins the latest sighting, which SQLite builds for every file. Accepted
-    by the operator 2026-10-09 as not a major path, to improve later if needed. (Corrected: added at Wrap.)
+  - **Accepted limit: the name search is slower.** `/files?q=` is not a D18 bound. On the real copy,
+    `/files?q=keroro` took 150.8 ms against `main`'s 98.0 ms at block 140's tip, and 143.1 ms against 90.1 ms
+    (+59 %) at the top of the stack (medians of 5): with `q`, every statement joins the latest sighting,
+    which SQLite builds for every file. Accepted by the operator 2026-10-09 as not a major path, to improve
+    later if needed. (Corrected: added at Wrap.)
 - **The fold must not drift** between the migration and the mapper (D11). The cross test guards it.
 - **`INSERT OR IGNORE` swallows CHECK violations.** The repository keeps validating the eD2k `native_id` in
   Python before writing, as it does for the hash today.
