@@ -8,12 +8,13 @@ import pytest
 from catalog_matching.engine import DownloadCandidate, Explanation, MatchDecision
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.catalog_repository import ObservedFile
 
-_A = "a" * 32
-_B = "b" * 32
-_C = "c" * 32
+_A = FileKey(Network.ED2K, "a" * 32)
+_B = FileKey(Network.ED2K, "b" * 32)
+_C = FileKey(Network.ED2K, "c" * 32)
 _NODE = "11111111-2222-3333-4444-555555555555"
 
 
@@ -27,9 +28,9 @@ class _AdvancingClock:
         return moment
 
 
-def _obs(hash_hex: str, *, name: str = "Keroro.avi", size: int = 100) -> FileObservation:
+def _obs(file: FileKey, *, name: str = "Keroro.avi", size: int = 100) -> FileObservation:
     return FileObservation(
-        ed2k_hash=hash_hex,
+        ed2k_hash=file.native_id,
         filename=name,
         size_bytes=size,
         source_count=1,
@@ -67,7 +68,9 @@ def test_download_decisions_includes_hash_whose_latest_verdict_is_download(
     repository.record_observation(_obs(_A))
     repository.record_decision(_A, _decision("catalog"))
     repository.record_decision(_A, _decision("download"))  # more recent = download
-    assert repository.download_decisions() == (DownloadCandidate(ed2k_hash=_A, target_id="062A"),)
+    assert repository.download_decisions() == (
+        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
+    )
 
 
 def test_download_decisions_includes_a_single_download_only_decision(
@@ -75,7 +78,9 @@ def test_download_decisions_includes_a_single_download_only_decision(
 ) -> None:
     repository.record_observation(_obs(_A))
     repository.record_decision(_A, _decision("download"))  # a single decision, = download
-    assert repository.download_decisions() == (DownloadCandidate(ed2k_hash=_A, target_id="062A"),)
+    assert repository.download_decisions() == (
+        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
+    )
 
 
 def test_download_decisions_excludes_hash_whose_latest_verdict_is_not_download(
@@ -98,7 +103,9 @@ def test_download_decisions_isolates_per_hash(
     repository.record_decision(_A, _decision("download"))  # _A latest = download
     repository.record_decision(_B, _decision("download"))
     repository.record_decision(_B, _decision("catalog"))  # _B latest = catalog
-    assert repository.download_decisions() == (DownloadCandidate(ed2k_hash=_A, target_id="062A"),)
+    assert repository.download_decisions() == (
+        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
+    )
 
 
 def test_download_decisions_is_empty_with_no_decisions(
@@ -116,8 +123,8 @@ def test_download_decisions_returns_both_segments_of_one_hash(
     repository.record_decision(_A, _decision("download", "062A"))
     repository.record_decision(_A, _decision("download", "062B"))
     assert repository.download_decisions() == (
-        DownloadCandidate(ed2k_hash=_A, target_id="062A"),
-        DownloadCandidate(ed2k_hash=_A, target_id="062B"),
+        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
+        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062B"),
     )
 
 
@@ -128,7 +135,9 @@ def test_download_decisions_isolates_per_target_within_one_hash(
     repository.record_observation(_obs(_A))
     repository.record_decision(_A, _decision("download", "062A"))
     repository.record_decision(_A, _decision("catalog", "062B"))
-    assert repository.download_decisions() == (DownloadCandidate(ed2k_hash=_A, target_id="062A"),)
+    assert repository.download_decisions() == (
+        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
+    )
 
 
 def test_last_observation_returns_filename_and_size(

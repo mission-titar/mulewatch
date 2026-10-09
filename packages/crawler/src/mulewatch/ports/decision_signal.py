@@ -3,8 +3,7 @@
 Coupling by data + nudge (spec §3): the loop persists the decision (append-only = free
 reliability, a missing consumer replays from the table) THEN ``signal``s the hub to wake an
 in-process consumer immediately. Fallback polling stays the net; a lost nudge is harmless.
-The "subject" is the identity of what changed (in plan C: the ``ed2k_hash`` whose verdict
-changed) — a future consumer (plan D/E) ``await wait(subject)``.
+The "subject" names what a consumer ``await wait(subject)``s on: today only the download nudge.
 
 ASYNC Protocol. ``signal`` is synchronous (called from the sync post-commit pipeline, must
 never block); ``wait`` is async (the consumer sleeps on it). Implemented on the adapter side

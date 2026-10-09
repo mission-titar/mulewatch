@@ -8,10 +8,11 @@ import pytest
 from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 
-_A = "a" * 32
+_A = FileKey(Network.ED2K, "a" * 32)
 _NODE = "11111111-2222-3333-4444-555555555555"
 
 
@@ -25,9 +26,9 @@ class _AdvancingClock:
         return moment
 
 
-def _obs(hash_hex: str) -> FileObservation:
+def _obs(file: FileKey) -> FileObservation:
     return FileObservation(
-        ed2k_hash=hash_hex,
+        ed2k_hash=file.native_id,
         filename="Keroro.avi",
         size_bytes=100,
         source_count=1,

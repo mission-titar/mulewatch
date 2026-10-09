@@ -12,6 +12,7 @@ from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatal
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog, utc_iso
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import CatalogRepository, ReevalRow
@@ -19,6 +20,7 @@ from tests.catalog_rows import count_observations, insert_file
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 _HASH_B = "b" * 32
+_KEY = FileKey(Network.ED2K, _HASH)
 _NODE = "11111111-2222-3333-4444-555555555555"
 _FROZEN_NOW = datetime(2026, 6, 11, 12, 0, 0, tzinfo=UTC)
 _FROZEN_ISO = "2026-06-11T12:00:00.000000+00:00"
@@ -246,7 +248,7 @@ def test_record_decision_round_trip(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     repository.record_observation(_observation())
-    repository.record_decision(_HASH, _decision())
+    repository.record_decision(_KEY, _decision())
     row = connection.execute(
         "SELECT ed2k_hash, target_id, rule_name, tier, decided_at, node_id FROM match_decisions"
     ).fetchone()
@@ -257,7 +259,7 @@ def test_explanation_is_never_persisted(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     repository.record_observation(_observation())
-    repository.record_decision(_HASH, _decision())
+    repository.record_decision(_KEY, _decision())
     columns = {
         row[1] for row in connection.execute("PRAGMA table_info(match_decisions)").fetchall()
     }
@@ -269,7 +271,7 @@ def test_record_decision_for_unknown_file_raises_persistence_error(
 ) -> None:
     # FK violated (file never observed): sqlite3.IntegrityError WRAPPED, never bare.
     with pytest.raises(PersistenceError, match="FOREIGN KEY"):
-        repository.record_decision("0" * 32, _decision())
+        repository.record_decision(FileKey(Network.ED2K, "0" * 32), _decision())
 
 
 def test_record_decision_rejects_non_canonical_hash(
@@ -278,7 +280,7 @@ def test_record_decision_rejects_non_canonical_hash(
     # Python validation BEFORE any transaction: an uppercase hash is rejected
     # with a clear message, no row is written.
     with pytest.raises(PersistenceError, match="non-canonical eD2k hash"):
-        repository.record_decision(_HASH.upper(), _decision())
+        repository.record_decision(FileKey(Network.ED2K, _HASH.upper()), _decision())
     assert connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 0
 
 
@@ -293,12 +295,12 @@ def test_record_retraction_round_trip(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     repository.record_observation(_observation())
-    repository.record_retraction(_HASH, "062A")
+    repository.record_retraction(_KEY, "062A")
     row = connection.execute(
         "SELECT ed2k_hash, target_id, rule_name, tier, decided_at, node_id FROM match_decisions"
     ).fetchone()
     assert row == (_HASH, "062A", "", RETRACTED_TIER, _FROZEN_ISO, _NODE)
-    assert repository.last_decisions(_HASH) == {
+    assert repository.last_decisions(_KEY) == {
         "062A": DecisionRecord(target_id="062A", rule_name="", tier=RETRACTED_TIER)
     }
 
@@ -307,7 +309,7 @@ def test_record_retraction_rejects_non_canonical_hash(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     with pytest.raises(PersistenceError, match="non-canonical eD2k hash"):
-        repository.record_retraction("NOTAHASH", "062A")
+        repository.record_retraction(FileKey(Network.ED2K, "NOTAHASH"), "062A")
     assert connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 0
 
 
@@ -316,20 +318,20 @@ def test_record_retraction_for_unknown_file_raises_persistence_error(
 ) -> None:
     # FK violated (file never observed): mirrors record_decision's own guard.
     with pytest.raises(PersistenceError, match="FOREIGN KEY"):
-        repository.record_retraction("0" * 32, "062A")
+        repository.record_retraction(FileKey(Network.ED2K, "0" * 32), "062A")
 
 
 def test_record_retraction_row_is_append_only(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     repository.record_observation(_observation())
-    repository.record_retraction(_HASH, "062A")
+    repository.record_retraction(_KEY, "062A")
     with pytest.raises(sqlite3.IntegrityError, match="match_decisions is append-only"):
         connection.execute("UPDATE match_decisions SET tier = 'catalog'")
     with pytest.raises(sqlite3.IntegrityError, match="match_decisions is append-only"):
         connection.execute("DELETE FROM match_decisions")
     # The retracted row SURVIVED both attempts, untouched.
-    assert repository.last_decisions(_HASH) == {
+    assert repository.last_decisions(_KEY) == {
         "062A": DecisionRecord(target_id="062A", rule_name="", tier=RETRACTED_TIER)
     }
 
@@ -353,14 +355,14 @@ def test_iter_reevaluation_rows_returns_the_latest_observation_per_hash(
     rows = list(repository.iter_reevaluation_rows())
     assert rows == [
         ReevalRow(
-            ed2k_hash=_HASH,
+            file=_KEY,
             filename="new.avi",
             size_bytes=200,
             media_length_sec=None,
             bitrate_kbps=None,
         ),
         ReevalRow(
-            ed2k_hash=_HASH_B,
+            file=FileKey(Network.ED2K, _HASH_B),
             filename="other.avi",
             size_bytes=300,
             media_length_sec=1234,
@@ -405,4 +407,4 @@ def test_last_observation_of_a_file_never_observed_is_none(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     insert_file(connection, _HASH, 1)
-    assert repository.last_observation(_HASH) is None
+    assert repository.last_observation(_KEY) is None

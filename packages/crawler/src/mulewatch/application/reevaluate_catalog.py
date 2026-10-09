@@ -64,7 +64,7 @@ async def reevaluate_catalog(
         )
         try:
             written += await record_decision_if_changed(
-                row.ed2k_hash,
+                row.file,
                 candidate,
                 catalog=catalog,
                 engine=engine,
@@ -73,8 +73,9 @@ async def reevaluate_catalog(
             )
         except RepositoryError as error:
             _logger.error(
-                "persistence failed on hash=%s (%s): re-evaluation skipped, sweep continues",
-                row.ed2k_hash,
+                "persistence failed on %s:%s (%s): re-evaluation skipped, sweep continues",
+                row.file.network,
+                row.file.native_id,
                 error,
             )
         if evaluated % _PROGRESS_EVERY == 0:

@@ -30,6 +30,7 @@ from catalog_matching.models import TargetSegment
 from mulewatch.application.edge_state import EdgeState
 from mulewatch.domain.download.policy import DownloadVerdict, download_policy
 from mulewatch.domain.download.states import DownloadState
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import (
     DiskSpaceLow,
     DownloadCompleted,
@@ -91,9 +92,9 @@ class CatalogReader(Protocol):
 
     def download_decisions(self) -> tuple[DownloadCandidate, ...]: ...
 
-    def last_observation(self, ed2k_hash: str) -> ObservedFile | None: ...
+    def last_observation(self, file: FileKey) -> ObservedFile | None: ...
 
-    def best_observation(self, ed2k_hash: str) -> ObservedFile | None: ...
+    def best_observation(self, file: FileKey) -> ObservedFile | None: ...
 
 
 @dataclass
@@ -173,7 +174,7 @@ async def _record_completion(
     decided = [c.target_id for c in deps.catalog.download_decisions() if c.ed2k_hash == ed2k_hash]
     target_ids = decided or [deps.downloads.get_target_id(ed2k_hash) or "unknown"]
     titles = {target.target_id: target.title for target in deps.targets}
-    best = deps.catalog.best_observation(ed2k_hash)
+    best = deps.catalog.best_observation(FileKey(Network.ED2K, ed2k_hash))
     await deps.telemetry.emit(
         DownloadCompleted(
             ed2k_hash,
@@ -245,7 +246,7 @@ async def _queue_new_candidates(deps: DownloadDeps, outstanding: int) -> None:
     for candidate in deps.catalog.download_decisions():
         if deps.downloads.is_downloaded(candidate.ed2k_hash):
             continue
-        observation = deps.catalog.last_observation(candidate.ed2k_hash)
+        observation = deps.catalog.last_observation(FileKey(Network.ED2K, candidate.ed2k_hash))
         if observation is None:
             _logger.warning(
                 "candidate hash=%s without observation: link impossible, skipped",
@@ -297,7 +298,7 @@ async def _add_links(deps: DownloadDeps) -> None:
     for ed2k_hash, state in states.items():
         if state is not DownloadState.QUEUED:
             continue
-        observation = deps.catalog.last_observation(ed2k_hash)
+        observation = deps.catalog.last_observation(FileKey(Network.ED2K, ed2k_hash))
         if observation is None:
             continue
         link = build_ed2k_link(observation.filename, observation.size_bytes, ed2k_hash)

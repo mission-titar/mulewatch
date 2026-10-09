@@ -6,8 +6,11 @@ from catalog_matching.engine import (
     Explanation,
     MatchDecision,
 )
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.catalog_repository import CatalogRepository, ObservedFile, ReevalRow
+
+_KEY = FileKey(Network.ED2K, "31d6cfe0d16ae931b73c59d7e0c089c0")
 
 
 class _StubRepository:
@@ -15,31 +18,31 @@ class _StubRepository:
 
     def __init__(self) -> None:
         self.observations: list[FileObservation] = []
-        self.decisions: list[tuple[str, MatchDecision]] = []
-        self.retractions: list[tuple[str, str]] = []
+        self.decisions: list[tuple[FileKey, MatchDecision]] = []
+        self.retractions: list[tuple[FileKey, str]] = []
 
     def record_observation(self, observation: FileObservation) -> None:
         self.observations.append(observation)
 
-    def record_decision(self, ed2k_hash: str, decision: MatchDecision) -> None:
-        self.decisions.append((ed2k_hash, decision))
+    def record_decision(self, file: FileKey, decision: MatchDecision) -> None:
+        self.decisions.append((file, decision))
 
-    def record_retraction(self, ed2k_hash: str, target_id: str) -> None:
-        self.retractions.append((ed2k_hash, target_id))
+    def record_retraction(self, file: FileKey, target_id: str) -> None:
+        self.retractions.append((file, target_id))
 
-    def last_decisions(self, ed2k_hash: str) -> dict[str, DecisionRecord]:
+    def last_decisions(self, file: FileKey) -> dict[str, DecisionRecord]:
         return {}
 
     def download_decisions(self) -> tuple[DownloadCandidate, ...]:
         return ()
 
-    def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
+    def last_observation(self, file: FileKey) -> ObservedFile | None:
         return None
 
-    def best_observation(self, ed2k_hash: str) -> ObservedFile | None:
+    def best_observation(self, file: FileKey) -> ObservedFile | None:
         return None
 
-    def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
+    def known_filenames(self, file: FileKey) -> tuple[str, ...]:
         return ()
 
     def count_files(self) -> int:
@@ -49,7 +52,7 @@ class _StubRepository:
         return iter(
             (
                 ReevalRow(
-                    ed2k_hash="31d6cfe0d16ae931b73c59d7e0c089c0",
+                    file=_KEY,
                     filename="Keroro 062A.avi",
                     size_bytes=100,
                     media_length_sec=None,
@@ -79,17 +82,17 @@ def test_protocol_is_satisfied_structurally() -> None:
         ),
     )
     repository.record_observation(observation)
-    repository.record_decision(observation.ed2k_hash, decision)
-    repository.record_retraction(observation.ed2k_hash, "062A")
-    assert repository.last_decisions(observation.ed2k_hash) == {}
+    repository.record_decision(_KEY, decision)
+    repository.record_retraction(_KEY, "062A")
+    assert repository.last_decisions(_KEY) == {}
     assert repository.download_decisions() == ()
-    assert repository.last_observation(observation.ed2k_hash) is None
-    assert repository.best_observation(observation.ed2k_hash) is None
-    assert repository.known_filenames(observation.ed2k_hash) == ()
+    assert repository.last_observation(_KEY) is None
+    assert repository.best_observation(_KEY) is None
+    assert repository.known_filenames(_KEY) == ()
     assert repository.count_files() == 1
     assert tuple(repository.iter_reevaluation_rows()) == (
         ReevalRow(
-            ed2k_hash=observation.ed2k_hash,
+            file=_KEY,
             filename=observation.filename,
             size_bytes=observation.size_bytes,
             media_length_sec=None,
@@ -97,5 +100,5 @@ def test_protocol_is_satisfied_structurally() -> None:
         ),
     )
     assert stub.observations == [observation]
-    assert stub.decisions == [(observation.ed2k_hash, decision)]
-    assert stub.retractions == [(observation.ed2k_hash, "062A")]
+    assert stub.decisions == [(_KEY, decision)]
+    assert stub.retractions == [(_KEY, "062A")]

@@ -8,6 +8,7 @@ from catalog_matching.engine import DownloadCandidate
 from catalog_matching.models import TargetSegment
 from mulewatch.application.run_download_cycle import DownloadDeps, run_download_cycle
 from mulewatch.domain.download.states import DownloadState
+from mulewatch.domain.file_key import FileKey
 from mulewatch.domain.observability.events import (
     DiskSpaceLow,
     DownloadCompleted,
@@ -194,11 +195,11 @@ class FakeCatalogReads:
     def download_decisions(self) -> tuple[DownloadCandidate, ...]:
         return self._candidates
 
-    def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
-        return self._observations.get(ed2k_hash)
+    def last_observation(self, file: FileKey) -> ObservedFile | None:
+        return self._observations.get(file.native_id)
 
-    def best_observation(self, ed2k_hash: str) -> ObservedFile | None:
-        return self._best.get(ed2k_hash)
+    def best_observation(self, file: FileKey) -> ObservedFile | None:
+        return self._best.get(file.native_id)
 
 
 class FakeDiskSpace:
