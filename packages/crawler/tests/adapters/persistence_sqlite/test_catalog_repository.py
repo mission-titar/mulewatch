@@ -9,8 +9,9 @@ import pytest
 
 from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.adapters.persistence_sqlite.connection import open_catalog, utc_iso
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
+from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import CatalogRepository, ReevalRow
@@ -83,35 +84,33 @@ def test_record_observation_round_trip(
     repository.record_observation(_observation())
     file_row = connection.execute("SELECT ed2k_hash, size_bytes, aich_hash FROM files").fetchone()
     assert file_row == (_HASH, 234567890, None)
-    row = connection.execute(
-        "SELECT ed2k_hash, filename, size_bytes, source_count, complete_source_count,"
-        " media_length_sec, bitrate_kbps, codec, file_type, raw_meta, keyword,"
-        " observed_at, node_id FROM file_observations"
-    ).fetchone()
-    assert row == (
+    variant = (
         _HASH,
         "Keroro 062A.avi",
         234567890,
-        5,
-        2,
         None,
         None,
-        None,
-        None,
-        '[["0x0308", "0"], ["0x0308", "0"], ["0x0999", "mystère"]]',
+        '[["0x0308", "0"], ["0x0308", "0"], ["0x0999", "mystère"], ["codec", null],'
+        ' ["file_type", null], ["complete_source_count", 2]]',
         "keroro",
-        _FROZEN_ISO,
         _NODE,
     )
+    row = connection.execute(
+        "SELECT ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta,"
+        " keyword, node_id, content_hash FROM observation_variants"
+    ).fetchone()
+    assert row == (*variant, content_hash(*variant))
+    observation = connection.execute("SELECT observed_at, source_count FROM observations")
+    assert observation.fetchall() == [(iso_to_micros(_FROZEN_ISO), 5)]
 
 
 def test_raw_meta_preserves_order_duplicates_and_non_ascii(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     repository.record_observation(_observation())
-    stored = connection.execute("SELECT raw_meta FROM file_observations").fetchone()[0]
+    stored = connection.execute("SELECT raw_meta FROM observation_variants").fetchone()[0]
     assert "mystère" in stored  # ensure_ascii=False: the accent is stored AS IS
-    assert json.loads(stored) == [["0x0308", "0"], ["0x0308", "0"], ["0x0999", "mystère"]]
+    assert json.loads(stored)[:3] == [["0x0308", "0"], ["0x0308", "0"], ["0x0999", "mystère"]]
 
 
 def test_record_observation_twice_first_seen_wins_in_files(
@@ -122,25 +121,45 @@ def test_record_observation_twice_first_seen_wins_in_files(
     repository.record_observation(_observation(filename="leurre.avi", size_bytes=999))
     assert connection.execute("SELECT size_bytes FROM files").fetchall() == [(234567890,)]
     observed_sizes = connection.execute(
-        "SELECT size_bytes FROM file_observations ORDER BY id"
+        "SELECT size_bytes FROM observation_variants ORDER BY variant_id"
     ).fetchall()
     assert observed_sizes == [(234567890,), (999,)]  # the anomaly stays VISIBLE
+
+
+def test_a_variant_seen_again_is_stored_once_with_both_timestamps(
+    connection: sqlite3.Connection,
+) -> None:
+    repository = SqliteCatalogRepository(connection, _NODE, clock=_AdvancingClock())
+    repository.record_observation(_observation())
+    repository.record_observation(_observation())
+    assert connection.execute("SELECT count(*) FROM observation_variants").fetchone()[0] == 1
+    assert count_observations(connection) == 2
+
+
+def test_an_observation_equal_in_every_column_is_stored_once(
+    repository: SqliteCatalogRepository, connection: sqlite3.Connection
+) -> None:
+    repository.record_observation(_observation())
+    repository.record_observation(_observation())
+    assert count_observations(connection) == 1
 
 
 def test_record_observation_with_media_metadata_and_default_clock(tmp_path: Path) -> None:
     connection = open_catalog(tmp_path / "catalog.db")
     try:
         repository = SqliteCatalogRepository(connection, _NODE)  # default clock (utc_now)
+        before = iso_to_micros(utc_iso(datetime.now(UTC)))
         repository.record_observation(
             _observation(media_length_sec=1474, bitrate_kbps=1200, codec="xvid", file_type="Video")
         )
+        after = iso_to_micros(utc_iso(datetime.now(UTC)))
         row = connection.execute(
-            "SELECT media_length_sec, bitrate_kbps, codec, file_type, observed_at"
-            " FROM file_observations"
+            "SELECT media_length_sec, bitrate_kbps, raw_meta, observed_at"
+            " FROM observation_variants JOIN observations USING (variant_id)"
         ).fetchone()
-        assert row[:4] == (1474, 1200, "xvid", "Video")
-        stamped = datetime.fromisoformat(row[4])
-        assert stamped.tzinfo == UTC  # the default clock does stamp aware UTC
+        assert row[:2] == (1474, 1200)
+        assert json.loads(row[2])[3:5] == [["codec", "xvid"], ["file_type", "Video"]]
+        assert before <= row[3] <= after  # the default clock stamps now
     finally:
         connection.close()
 
@@ -148,16 +167,17 @@ def test_record_observation_with_media_metadata_and_default_clock(tmp_path: Path
 def test_record_observation_is_one_transaction(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
-    # Failure injected BETWEEN the two INSERTs: a TEST trigger makes the second fail.
+    # Failure injected on the last INSERT: a TEST trigger makes the observation fail.
     connection.execute(
-        "CREATE TRIGGER boom BEFORE INSERT ON file_observations"
-        " WHEN NEW.filename = '__boom__'"
+        "CREATE TRIGGER boom BEFORE INSERT ON observations"
+        " WHEN NEW.source_count = 404"
         " BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
     )
     with pytest.raises(PersistenceError, match="injected failure"):
-        repository.record_observation(_observation(filename="__boom__"))
-    # ATOMICITY: the INSERT OR IGNORE into files was rolled back with the transaction.
+        repository.record_observation(dataclasses.replace(_observation(), source_count=404))
+    # ATOMICITY: the file and its variant were rolled back with the transaction.
     assert connection.execute("SELECT count(*) FROM files").fetchone()[0] == 0
+    assert connection.execute("SELECT count(*) FROM observation_variants").fetchone()[0] == 0
     # The repository stays USABLE: rollback done, connection out of transaction.
     assert not connection.in_transaction
     repository.record_observation(_observation())
@@ -355,10 +375,10 @@ def test_iter_reevaluation_rows_is_empty_with_an_empty_catalogue(
     assert list(repository.iter_reevaluation_rows()) == []
 
 
-def test_iter_reevaluation_rows_breaks_an_observed_at_tie_on_the_highest_id(
+def test_iter_reevaluation_rows_breaks_an_observed_at_tie_on_the_highest_variant(
     repository: SqliteCatalogRepository,
 ) -> None:
-    # Frozen clock: both rows share observed_at, so the later INSERT (higher id) wins.
+    # Frozen clock: both rows share observed_at, so the newer variant (higher variant_id) wins.
     repository.record_observation(_observation(filename="first.avi"))
     repository.record_observation(_observation(filename="second.avi"))
     assert [row.filename for row in repository.iter_reevaluation_rows()] == ["second.avi"]

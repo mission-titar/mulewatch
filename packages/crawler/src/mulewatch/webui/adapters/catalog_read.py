@@ -96,10 +96,10 @@ ORDER BY target_id, ed2k_hash
 # The "latest per group" CTEs shared by the explorer list + counter, each folding an
 # append-only table to its current rows (latest wins, tie-break on id).
 #
-# ``latest_sighting`` (from ``sightings``) seeks each file's newest observation through
-# ``idx_file_observations_hash_observed`` instead of numbering the whole raw table with a window
-# (10.9M rows on the node). It holds one row per catalogued file, all NULL for a file never
-# seen; every consumer LEFT JOINs it onto ``files``.
+# ``latest_sighting`` (from ``sightings``) seeks each file's newest observation by key instead of
+# numbering the whole table with a window (11.6M rows on the node). It holds one row per
+# catalogued file, all NULL for a file never seen; every consumer LEFT JOINs it onto ``files``,
+# the counters only for a name filter, since the default page needs no name.
 #
 # ``latest_dec`` keeps the latest decision per (hash, target_id), dropping the legacy
 # ``target_id == ''`` sentinel and any target whose latest row is a ``retracted`` marker;
@@ -135,13 +135,10 @@ dec_agg AS (
 {LATEST_SIGHTING_CTE}
 """
 
-# Shared source: files ⨝ latest observation ⨝ current decisions (aggregated), all pre-folded
-# by the CTEs above, so this is a plain star-join driven by ``files``.
-_SQL_FILES_SOURCE = """\
-FROM files AS f
-LEFT JOIN latest_sighting AS obs ON obs.ed2k_hash = f.ed2k_hash
-LEFT JOIN dec_agg AS dec ON dec.ed2k_hash = f.ed2k_hash
-"""
+# The shared source, files ⨝ latest observation ⨝ current decisions (aggregated), all pre-folded
+# by the CTEs above, so it is a plain star-join driven by ``files``.
+_JOIN_LATEST_SIGHTING = "LEFT JOIN latest_sighting AS obs ON obs.ed2k_hash = f.ed2k_hash\n"
+_JOIN_DECISIONS = "LEFT JOIN dec_agg AS dec ON dec.ed2k_hash = f.ed2k_hash\n"
 
 # Explorer: files + latest joins, driven by files. Optional filters added in list_files().
 _SQL_LIST_FILES_BASE = (
@@ -155,36 +152,36 @@ SELECT
     obs.last_seen AS last_seen,
     dec.target_ids,
     dec.tiers
+FROM files AS f
 """
-    + _SQL_FILES_SOURCE
+    + _JOIN_LATEST_SIGHTING
+    + _JOIN_DECISIONS
 )
 
 # Counter for the /files summary: file-based totals over the same source + filters (the
 # matched-only clause is deliberately absent). ``matched`` = files with at least one current
 # decision (``dec.target_ids`` is non-NULL). COUNT(DISTINCT …) keeps both counts file-based
-# and yields 0 (not NULL) on an empty catalogue.
+# and yields 0 (not NULL) on an empty catalogue. count_files() appends the joins.
 _SQL_COUNT_FILES_BASE = (
     _SQL_CTES
     + """\
 SELECT
     COUNT(DISTINCT f.ed2k_hash) AS total,
     COUNT(DISTINCT CASE WHEN dec.target_ids IS NOT NULL THEN f.ed2k_hash END) AS matched
+FROM files AS f
 """
-    + _SQL_FILES_SOURCE
 )
 
 # Tier facet counts (webui spec §3.3): one row per tier, ``COUNT(DISTINCT ed2k_hash)`` files that
 # have at least one CURRENT decision of that tier. Grouped over ``latest_dec`` (per-decision), so
-# a multi-tier file counts once under each of its tiers. The join to ``latest_obs`` is only there
-# for the ``query`` filter clause. The tier filter itself is NEVER applied here (a facet shows the
-# count you would get by choosing each option).
+# a multi-tier file counts once under each of its tiers. The tier filter itself is NEVER applied
+# here (a facet shows the count you would get by choosing each option).
 _SQL_TIER_COUNTS_BASE = (
     _SQL_CTES
     + """\
 SELECT ld.tier AS tier, COUNT(DISTINCT ld.ed2k_hash) AS n
 FROM latest_dec AS ld
 JOIN files AS f ON f.ed2k_hash = ld.ed2k_hash
-LEFT JOIN latest_sighting AS obs ON obs.ed2k_hash = ld.ed2k_hash
 """
 )
 
@@ -251,6 +248,11 @@ def _filter_clauses(
         clauses.append("obs.name LIKE ?")
         params.append(f"%{query}%")
     return clauses, params
+
+
+def _latest_sighting_join(query: str | None) -> str:
+    """The counters' join to the latest sighting, which only the name filter reads."""
+    return "" if query is None else _JOIN_LATEST_SIGHTING
 
 
 def _split_concat(concat: str | None) -> list[str]:
@@ -379,7 +381,7 @@ class CatalogReader:
         have a match decision. Feeds the /files summary line.
         """
         clauses, params = _filter_clauses(target, tier, query)
-        sql = _SQL_COUNT_FILES_BASE
+        sql = _SQL_COUNT_FILES_BASE + _latest_sighting_join(query) + _JOIN_DECISIONS
         if clauses:
             sql += "WHERE " + " AND ".join(clauses) + "\n"
         row = self._conn.execute(sql, params).fetchone()
@@ -399,7 +401,7 @@ class CatalogReader:
         in (a multi-tier file appears in two facets). ``{}`` on an empty/undecided catalogue.
         """
         clauses, params = _filter_clauses(target, None, query)
-        sql = _SQL_TIER_COUNTS_BASE
+        sql = _SQL_TIER_COUNTS_BASE + _latest_sighting_join(query)
         if clauses:
             sql += "WHERE " + " AND ".join(clauses) + "\n"
         sql += "GROUP BY ld.tier\n"

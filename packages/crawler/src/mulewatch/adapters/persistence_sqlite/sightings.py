@@ -6,23 +6,39 @@ from typing import Any
 
 from mulewatch.domain.observation import Sighting
 
-# Each file's latest observation, seeked through idx_file_observations_hash_observed, never a
-# scan. One row per catalogued file, all NULL for a file never seen.
-LATEST_SIGHTING_CTE = """latest_sighting AS (
+# Integer microseconds back to ``utc_iso``'s fixed-width text, in SQL for the read-only reader.
+_ISO = (
+    "strftime('%Y-%m-%dT%H:%M:%S', {0} / 1000000, 'unixepoch')"
+    " || printf('.%06d+00:00', {0} % 1000000)"
+)
+
+# Each file's latest observation: its variant with the newest observation, then that variant's
+# newest one, each a seek on observations' key. Ties go to the higher variant_id, then the higher
+# source_count (stage 1, D4). One row per catalogued file, all NULL for a file never seen.
+LATEST_SIGHTING_CTE = f"""latest_sighting AS (
     SELECT
         f.ed2k_hash AS ed2k_hash,
-        o.filename AS name,
-        o.observed_at AS last_seen,
+        v.filename AS name,
+        {_ISO.format("o.observed_at")} AS last_seen,
         o.source_count AS source_count_max,
-        o.size_bytes AS size_bytes,
-        o.media_length_sec AS media_length_sec,
-        o.bitrate_kbps AS bitrate_kbps,
-        o.keyword AS keyword
+        v.size_bytes AS size_bytes,
+        v.media_length_sec AS media_length_sec,
+        v.bitrate_kbps AS bitrate_kbps,
+        v.keyword AS keyword
     FROM files AS f
-    LEFT JOIN file_observations AS o ON o.id = (
-        SELECT o2.id FROM file_observations AS o2
-        WHERE o2.ed2k_hash = f.ed2k_hash
-        ORDER BY o2.observed_at DESC, o2.id DESC
+    LEFT JOIN observation_variants AS v ON v.variant_id = (
+        SELECT v2.variant_id FROM observation_variants AS v2
+        WHERE v2.ed2k_hash = f.ed2k_hash
+        ORDER BY (
+            SELECT max(o2.observed_at) FROM observations AS o2
+            WHERE o2.variant_id = v2.variant_id
+        ) DESC, v2.variant_id DESC
+        LIMIT 1
+    )
+    LEFT JOIN observations AS o ON (o.variant_id, o.observed_at, o.source_count) = (
+        SELECT o3.variant_id, o3.observed_at, o3.source_count FROM observations AS o3
+        WHERE o3.variant_id = v.variant_id
+        ORDER BY o3.observed_at DESC, o3.source_count DESC
         LIMIT 1
     )
 )"""
@@ -41,23 +57,29 @@ SELECT_LATEST_SIGHTINGS = f"""WITH {LATEST_SIGHTING_CTE}
 SELECT {_COLUMNS} FROM latest_sighting WHERE name IS NOT NULL ORDER BY ed2k_hash
 """
 
-# The file's timeline, oldest first; ``id`` only orders rows of the same instant.
-_SELECT_SIGHTINGS = """
-SELECT ed2k_hash, filename, observed_at, source_count, size_bytes, media_length_sec,
-    bitrate_kbps, keyword
-FROM file_observations WHERE ed2k_hash = :hash
-ORDER BY observed_at, id
+# The file's timeline, oldest first; an instant's observations by variant_id, then source_count.
+_SELECT_SIGHTINGS = f"""
+SELECT v.ed2k_hash, v.filename, {_ISO.format("o.observed_at")}, o.source_count, v.size_bytes,
+    v.media_length_sec, v.bitrate_kbps, v.keyword
+FROM observation_variants AS v
+JOIN observations AS o ON o.variant_id = v.variant_id
+WHERE v.ed2k_hash = ?
+ORDER BY o.observed_at, v.variant_id, o.source_count
 """
 
-# Every name a hash was ever seen under (a file-level veto judges them all).
+# Every name a hash was ever seen under (a file-level veto judges them all); a variant is only
+# ever written with an observation, so the variants alone hold every name.
 _SELECT_KNOWN_NAMES = """
-SELECT DISTINCT filename FROM file_observations WHERE ed2k_hash = :hash ORDER BY 1
+SELECT DISTINCT filename FROM observation_variants WHERE ed2k_hash = ? ORDER BY 1
 """
 
 # The name seen with the most sources, latest seen on a tie.
 _SELECT_BEST_NAME = """
-SELECT filename, size_bytes FROM file_observations WHERE ed2k_hash = :hash
-ORDER BY source_count DESC, observed_at DESC, filename
+SELECT v.filename, v.size_bytes
+FROM observation_variants AS v
+JOIN observations AS o ON o.variant_id = v.variant_id
+WHERE v.ed2k_hash = ?
+ORDER BY o.source_count DESC, o.observed_at DESC, v.filename
 LIMIT 1
 """
 
@@ -91,17 +113,17 @@ def iter_latest_sightings(connection: sqlite3.Connection) -> Iterator[Sighting]:
 
 def known_names(connection: sqlite3.Connection, ed2k_hash: str) -> tuple[str, ...]:
     """Every distinct name of the file, sorted."""
-    rows = connection.execute(_SELECT_KNOWN_NAMES, {"hash": ed2k_hash}).fetchall()
+    rows = connection.execute(_SELECT_KNOWN_NAMES, (ed2k_hash,)).fetchall()
     return tuple(row[0] for row in rows)
 
 
 def best_name(connection: sqlite3.Connection, ed2k_hash: str) -> tuple[str, int] | None:
     """The file's clean name (most sources, then latest) and its size; ``None`` if never seen."""
-    row = connection.execute(_SELECT_BEST_NAME, {"hash": ed2k_hash}).fetchone()
+    row = connection.execute(_SELECT_BEST_NAME, (ed2k_hash,)).fetchone()
     return None if row is None else (row[0], row[1])
 
 
 def sightings(connection: sqlite3.Connection, ed2k_hash: str) -> tuple[Sighting, ...]:
     """The file's timeline, oldest first."""
-    rows = connection.execute(_SELECT_SIGHTINGS, {"hash": ed2k_hash}).fetchall()
+    rows = connection.execute(_SELECT_SIGHTINGS, (ed2k_hash,)).fetchall()
     return tuple(map(_sighting, rows))

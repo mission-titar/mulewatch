@@ -13,23 +13,16 @@ from pathlib import Path
 import pytest
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from tests.catalog_rows import insert_decision, insert_file, insert_observation
 
 # Canonical 32-char lowercase hex hash (satisfies the CHECK constraint on files.ed2k_hash).
 _HASH = "a" * 32
 
-# One row per table (FKs respected: files first) + the UPDATE that MUST fail.
-_SEED = (
-    f"INSERT INTO files (ed2k_hash, size_bytes) VALUES ('{_HASH}', 1)",
-    f"INSERT INTO file_observations (ed2k_hash, filename, size_bytes, source_count,"
-    f" complete_source_count, raw_meta, keyword, observed_at, node_id)"
-    f" VALUES ('{_HASH}', 'f', 1, 0, 0, '[]', 'k', 't', 'n')",
-    f"INSERT INTO match_decisions (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-    f" VALUES ('{_HASH}', '062A', 'r', 'download', 't', 'n')",
-)
-
+# The UPDATE that MUST fail, per table.
 _UPDATES = {
     "files": "UPDATE files SET size_bytes = 2",
-    "file_observations": "UPDATE file_observations SET filename = 'autre'",
+    "observation_variants": "UPDATE observation_variants SET filename = 'autre'",
+    "observations": "UPDATE observations SET source_count = 2",
     "match_decisions": "UPDATE match_decisions SET tier = 'notify'",
 }
 
@@ -37,8 +30,9 @@ _UPDATES = {
 @pytest.fixture
 def seeded_catalog(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     connection = open_catalog(tmp_path / "catalog.db")
-    for statement in _SEED:
-        connection.execute(statement)
+    insert_file(connection, _HASH, 1)
+    insert_observation(connection, _HASH, "f")
+    insert_decision(connection, _HASH, "062A", "download")
     yield connection
     connection.close()
 

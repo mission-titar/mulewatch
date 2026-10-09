@@ -17,7 +17,7 @@ from mulewatch.adapters.persistence_sqlite.connection import (
 from mulewatch.adapters.persistence_sqlite.errors import MigrationError, PersistenceError
 from tests.catalog_rows import insert_decision, insert_file
 
-_CATALOG_TABLES = {"files", "file_observations", "match_decisions"}
+_CATALOG_TABLES = {"files", "observation_variants", "observations", "match_decisions"}
 _LOCAL_TABLES = {
     "node_runtime",
     "downloads",
@@ -41,11 +41,11 @@ def _table_names(connection: sqlite3.Connection) -> set[str]:
     return {row[0] for row in rows}
 
 
-def test_open_catalog_creates_the_three_tables_and_versions_the_schema(tmp_path: Path) -> None:
+def test_open_catalog_creates_the_tables_and_versions_the_schema(tmp_path: Path) -> None:
     connection = open_catalog(tmp_path / "catalog.db")
     try:
         assert _table_names(connection) == _CATALOG_TABLES
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
     finally:
         connection.close()
 
@@ -108,7 +108,7 @@ def test_reopen_is_idempotent_and_keeps_data(tmp_path: Path) -> None:
     first.close()
     second = open_catalog(path)  # versions already applied: NO script replays
     try:
-        assert second.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert second.execute("PRAGMA user_version").fetchone()[0] == 7
         assert second.execute("SELECT count(*) FROM files").fetchone()[0] == 1
     finally:
         second.close()

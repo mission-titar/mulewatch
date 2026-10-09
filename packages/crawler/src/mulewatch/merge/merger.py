@@ -10,7 +10,10 @@ safely.
 Idempotence (spec §4):
 - ``files`` (global content PK) → ``INSERT OR IGNORE`` (first sighting
   wins); NEVER ``OR REPLACE`` (= DELETE + INSERT → collides with the append-only trigger).
-- the journals (LOCAL ``id``, no global meaning) → explicit columns WITHOUT ``id`` (the
+- ``observation_variants`` → ``INSERT OR IGNORE`` on its ``content_hash`` (the output
+  numbers its own ``variant_id``), then ``observations`` mapped to the output's variant by
+  ``content_hash``, ``INSERT OR IGNORE`` on their full key (stage 1, D4).
+- ``match_decisions`` (LOCAL ``id``, no global meaning) → explicit columns WITHOUT ``id`` (the
   DB reassigns the ``id``) + dedup by **full natural key** via ``WHERE NOT EXISTS``,
   comparisons with the ``IS`` operator (not ``=``) because some columns are nullable
   (``NULL = NULL`` is false in SQL → re-insertion → not idempotent; ``NULL IS NULL`` is
@@ -68,24 +71,23 @@ def _copy_journal(table: str, columns: Sequence[str]) -> str:
     )
 
 
-_COPY_FILE_OBSERVATIONS = _copy_journal(
-    "file_observations",
-    (
-        "ed2k_hash",
-        "filename",
-        "size_bytes",
-        "source_count",
-        "complete_source_count",
-        "media_length_sec",
-        "bitrate_kbps",
-        "codec",
-        "file_type",
-        "raw_meta",
-        "keyword",
-        "observed_at",
-        "node_id",
-    ),
+_VARIANT_COLUMNS = (
+    "ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta, keyword, node_id,"
+    " content_hash"
 )
+
+_COPY_VARIANTS = (
+    f"INSERT OR IGNORE INTO main.observation_variants ({_VARIANT_COLUMNS}) "
+    f"SELECT {_VARIANT_COLUMNS} FROM {_SRC}.observation_variants ORDER BY variant_id"
+)
+
+_COPY_OBSERVATIONS = f"""
+INSERT OR IGNORE INTO main.observations (variant_id, observed_at, source_count)
+SELECT d.variant_id, o.observed_at, o.source_count
+FROM {_SRC}.observations AS o
+JOIN {_SRC}.observation_variants AS s ON s.variant_id = o.variant_id
+JOIN main.observation_variants AS d ON d.content_hash = s.content_hash
+"""
 
 _COPY_MATCH_DECISIONS = _copy_journal(
     "match_decisions",
@@ -93,7 +95,7 @@ _COPY_MATCH_DECISIONS = _copy_journal(
 )
 
 # MANDATORY FK order (spec §4.3): the identities (files) BEFORE the journals that reference them.
-_STATEMENTS = (_COPY_FILES, _COPY_FILE_OBSERVATIONS, _COPY_MATCH_DECISIONS)
+_STATEMENTS = (_COPY_FILES, _COPY_VARIANTS, _COPY_OBSERVATIONS, _COPY_MATCH_DECISIONS)
 
 
 def merge_catalogs(output: Path, sources: Sequence[Path], *, dest_is_source: bool = False) -> None:

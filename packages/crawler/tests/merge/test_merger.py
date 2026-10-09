@@ -14,36 +14,29 @@ from mulewatch.merge.errors import MergeError, SchemaVersionMismatchError
 from mulewatch.merge.merger import merge_catalogs
 
 from .helpers import (
-    FILE_OBSERVATION_COLUMNS,
     HASH_A,
     HASH_B,
     count,
     hash_for,
-    ids,
     make_catalog,
     rows_without_id,
     stamp_user_version,
+    variant_ids,
 )
 
-# The current catalog schema version = the count of catalog migrations (0001 through 0005).
+# The current catalog schema version = the last catalog migration's number.
 # open_catalog stamps the output to it; the guard rejects any source that is not at it.
-_CURRENT_SCHEMA_VERSION = 6
+_CURRENT_SCHEMA_VERSION = 7
+_T1 = "2026-06-11T12:00:00.000000+00:00"
+_T2 = "2026-06-11T13:00:00.000000+00:00"
 
 
 def _file_observation(ed2k_hash: str, *, node_id: str, observed_at: str) -> dict[str, object]:
-    """A complete observation (nullable columns deliberately left None)."""
+    """An observation with no media metadata (its nullable columns left NULL)."""
     return {
         "ed2k_hash": ed2k_hash,
         "filename": "keroro.avi",
-        "size_bytes": 100,
         "source_count": 3,
-        "complete_source_count": 1,
-        "media_length_sec": None,
-        "bitrate_kbps": None,
-        "codec": None,
-        "file_type": None,
-        "raw_meta": "[]",
-        "keyword": "keroro",
         "observed_at": observed_at,
         "node_id": node_id,
     }
@@ -54,7 +47,7 @@ def _full_catalog(letter: str, *, node_id: str) -> dict[str, list[dict[str, obje
     ed2k = hash_for(letter)
     return {
         "files": [{"ed2k_hash": ed2k, "size_bytes": 100}],
-        "file_observations": [_file_observation(ed2k, node_id=node_id, observed_at="t1")],
+        "observations": [_file_observation(ed2k, node_id=node_id, observed_at=_T1)],
         "match_decisions": [
             {
                 "ed2k_hash": ed2k,
@@ -68,7 +61,7 @@ def _full_catalog(letter: str, *, node_id: str) -> dict[str, list[dict[str, obje
     }
 
 
-_ALL_TABLES = ("files", "file_observations", "match_decisions")
+_ALL_TABLES = ("files", "observations", "match_decisions")
 
 
 def test_t1_merge_two_distinct_catalogs(tmp_path: Path) -> None:
@@ -120,22 +113,23 @@ def test_t3_re_merge_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_t4_journal_dedup_identical_rows_including_nulls(tmp_path: Path) -> None:
-    # BIT-FOR-BIT identical observation (same NULLs on media_length_sec/bitrate/codec/file_type).
-    obs = _file_observation(HASH_A, node_id="node", observed_at="t1")
+    # BIT-FOR-BIT identical observation (same NULLs on media_length_sec and bitrate_kbps).
+    obs = _file_observation(HASH_A, node_id="node", observed_at=_T1)
     src_a = make_catalog(
         tmp_path / "a.db",
-        {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100}], "file_observations": [obs]},
+        {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100}], "observations": [obs]},
     )
     src_b = make_catalog(
         tmp_path / "b.db",
-        {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100}], "file_observations": [obs]},
+        {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100}], "observations": [obs]},
     )
     out = tmp_path / "out.db"
 
     merge_catalogs(out, [src_a, src_b])
 
-    # Without the IS operator, NULL=NULL would be false → 2 rows. With IS → a single one.
-    assert count(out, "file_observations") == 1
+    # The variant is found by its content_hash, NULLs included, and the observation by its key.
+    assert count(out, "observation_variants") == 1
+    assert count(out, "observations") == 1
 
 
 def test_t4_journal_distinct_observed_at_keeps_both(tmp_path: Path) -> None:
@@ -145,47 +139,49 @@ def test_t4_journal_distinct_observed_at_keeps_both(tmp_path: Path) -> None:
         tmp_path / "a.db",
         {
             "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
-            "file_observations": [_file_observation(HASH_A, node_id="node", observed_at="t1")],
+            "observations": [_file_observation(HASH_A, node_id="node", observed_at=_T1)],
         },
     )
     src_b = make_catalog(
         tmp_path / "b.db",
         {
             "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
-            "file_observations": [_file_observation(HASH_A, node_id="node", observed_at="t2")],
+            "observations": [_file_observation(HASH_A, node_id="node", observed_at=_T2)],
         },
     )
     out = tmp_path / "out.db"
 
     merge_catalogs(out, [src_a, src_b])
 
-    assert count(out, "file_observations") == 2
+    assert count(out, "observation_variants") == 1
+    assert count(out, "observations") == 2
 
 
-def test_t5_journal_drops_local_id(tmp_path: Path) -> None:
-    # Each source has a DISTINCT observation that (by autoincrement) carries id=1.
+def test_t5_variant_ids_are_reassigned(tmp_path: Path) -> None:
+    # Each source has a DISTINCT variant that (by autoincrement) carries variant_id=1.
     src_a = make_catalog(
         tmp_path / "a.db",
         {
             "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
-            "file_observations": [_file_observation(HASH_A, node_id="node-a", observed_at="t1")],
+            "observations": [_file_observation(HASH_A, node_id="node-a", observed_at=_T1)],
         },
     )
     src_b = make_catalog(
         tmp_path / "b.db",
         {
             "files": [{"ed2k_hash": HASH_B, "size_bytes": 200}],
-            "file_observations": [_file_observation(HASH_B, node_id="node-b", observed_at="t2")],
+            "observations": [_file_observation(HASH_B, node_id="node-b", observed_at=_T2)],
         },
     )
-    assert ids(src_a, "file_observations") == [1]
-    assert ids(src_b, "file_observations") == [1]
+    assert variant_ids(src_a) == variant_ids(src_b) == [1]
     out = tmp_path / "out.db"
 
     merge_catalogs(out, [src_a, src_b])
 
-    # We do NOT copy id: the DB reassigns 1 and 2, not a collision.
-    assert ids(out, "file_observations") == [1, 2]
+    # The output numbers its own variants, and each observation follows its variant.
+    assert variant_ids(out) == [1, 2]
+    expected = rows_without_id(src_a, "observations") + rows_without_id(src_b, "observations")
+    assert rows_without_id(out, "observations") == sorted(expected)
 
 
 def test_t6_fk_order_inserts_identity_first(tmp_path: Path) -> None:
@@ -196,7 +192,7 @@ def test_t6_fk_order_inserts_identity_first(tmp_path: Path) -> None:
 
     merge_catalogs(out, [src])
 
-    assert count(out, "file_observations") == 1
+    assert count(out, "observations") == 1
     assert count(out, "match_decisions") == 1
 
 
@@ -267,7 +263,7 @@ def test_t16_merger_wraps_source_copy_in_a_transaction(tmp_path: Path) -> None:
     with pytest.raises(MergeError, match="copy of .* failed"):
         merge_catalogs(out, [broken], dest_is_source=False)
 
-    # files (1st table) may have been copied BEFORE the failure on file_observations (missing
+    # files (1st table) may have been copied BEFORE the failure on observation_variants (missing
     # table); the ROLLBACK must have undone it → the output still has ONLY the content of `good`.
     assert rows_without_id(out, "files") == [(HASH_A, 100, None)]
 
@@ -291,42 +287,6 @@ def test_t17_single_source_merge(tmp_path: Path) -> None:
 
     for table in _ALL_TABLES:
         assert rows_without_id(out, table) == rows_without_id(src, table)
-
-
-def test_t18_dedups_identical_rows_internal_to_one_source(tmp_path: Path) -> None:
-    # A SINGLE source containing TWO bit-for-bit identical journal rows (same natural
-    # key, different id by autoincrement, NULL COLUMNS included) PLUS a legitimately
-    # distinct row (a single field differs). The N=1 merge must NORMALIZE: collapse the
-    # internal duplicates (§1/§8 promise: at-least-once dedup of a single catalog) without
-    # ever losing the distinct row.
-    identical = _file_observation(HASH_A, node_id="node", observed_at="t1")
-    distinct = _file_observation(HASH_A, node_id="node", observed_at="t2")  # observed_at differs
-    src = make_catalog(
-        tmp_path / "a.db",
-        {
-            "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
-            "file_observations": [identical, dict(identical), distinct],
-        },
-    )
-    # The source indeed contains 3 rows (2 of them twins) BEFORE merge.
-    assert count(src, "file_observations") == 3
-    out = tmp_path / "out.db"
-
-    merge_catalogs(out, [src])
-
-    # Internal duplicate collapsed (2 twins → 1); distinct row preserved → 2 rows.
-    assert count(out, "file_observations") == 2
-    assert rows_without_id(out, "file_observations") == sorted(
-        [
-            tuple(identical[column] for column in FILE_OBSERVATION_COLUMNS),
-            tuple(distinct[column] for column in FILE_OBSERVATION_COLUMNS),
-        ],
-        key=lambda row: tuple(str(value) for value in row),
-    )
-
-    # Re-merge = no-op (idempotent even after normalization).
-    merge_catalogs(out, [src])
-    assert count(out, "file_observations") == 2
 
 
 def test_rejects_source_with_older_schema_version(tmp_path: Path) -> None:
