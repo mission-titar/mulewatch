@@ -14,6 +14,7 @@ import pytest
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.adapters.persistence_sqlite.reader import ReaderProvider, open_reader
+from tests.catalog_rows import insert_file
 
 _HASH_A = "a" * 32
 _HASH_B = "b" * 32
@@ -23,7 +24,7 @@ def _seed(path: Path) -> None:
     """Create + seed a real catalog.db via the writer (readers need a real file, mode=ro)."""
     writer = open_catalog(path)
     try:
-        writer.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (_HASH_A, 10))
+        insert_file(writer, _HASH_A, 10)
     finally:
         writer.close()
 
@@ -121,7 +122,7 @@ def test_reused_connection_sees_data_committed_after_first_handout(tmp_path: Pat
     try:
         reader = provider.connection()
         assert reader.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 1
-        writer.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (_HASH_B, 20))
+        insert_file(writer, _HASH_B, 20)
         reused = provider.connection()
         assert reused is reader
         assert reused.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 2

@@ -1,4 +1,4 @@
-"""Catalog rows for tests, written here only so that a schema change edits one module."""
+"""Catalog rows for tests, written and read here only so that a schema change edits one module."""
 
 import sqlite3
 
@@ -52,3 +52,18 @@ def insert_decision(
         " VALUES (?, ?, ?, ?, ?, 'n1')",
         (ed2k_hash, target_id, rule_name, tier, decided_at),
     )
+
+
+def count_observations(conn: sqlite3.Connection) -> int:
+    count: int = conn.execute("SELECT count(*) FROM file_observations").fetchone()[0]
+    return count
+
+
+def observation_node_ids(conn: sqlite3.Connection) -> set[str]:
+    return {row[0] for row in conn.execute("SELECT node_id FROM file_observations")}
+
+
+def decision_tiers(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    """``(ed2k_hash, tier)`` of every decision, oldest first."""
+    rows = conn.execute("SELECT ed2k_hash, tier FROM match_decisions ORDER BY id").fetchall()
+    return [(row[0], row[1]) for row in rows]

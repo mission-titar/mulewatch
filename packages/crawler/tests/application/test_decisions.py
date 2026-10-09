@@ -18,6 +18,7 @@ from mulewatch.domain.observability.events import DecisionChange, DecisionsRecor
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
+from tests.catalog_rows import insert_file
 
 _HASH_DL = "31d6cfe0d16ae931b73c59d7e0c089c0"
 _HASH_CAT = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -314,9 +315,7 @@ async def test_a_file_with_no_name_left_is_named_by_the_candidate(
     engine: MatchingEngine,
 ) -> None:
     # Only a retraction can be written then, and it is never notified: the size is unknown.
-    catalog_connection.execute(
-        "INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, 1)", (_HASH_CAT,)
-    )
+    insert_file(catalog_connection, _HASH_CAT, 1)
     _seed_decision(catalog, _HASH_CAT, "062A")
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     await record_decision_if_changed(
