@@ -7,9 +7,7 @@ virtual: whenever every task waits, the loop jumps to the next timer instead of 
 import asyncio
 import json
 import logging
-import selectors
-from collections.abc import Coroutine
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -17,8 +15,8 @@ import pytest
 from mulewatch.adapters.mule_api.client import AmuleApiClient
 from mulewatch.ports.client_errors import SearchFailedError
 from tests.adapters.mule_api.api_fakes import PASSWORD, FakeAmuleApi, error
+from tests.virtual_time import EPOCH, LoopClock, run_virtual
 
-_EPOCH = datetime(2026, 10, 9, tzinfo=UTC)
 _HOUR = 3600.0
 _BUDGET = 120.0
 _ALREADY_SEARCHING = (
@@ -27,50 +25,8 @@ _ALREADY_SEARCHING = (
 )
 
 
-class _VirtualSelector(selectors.DefaultSelector):
-    """Never blocks: the wait the loop asks for advances the virtual time instead."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.time = 0.0
-
-    def select(self, timeout: float | None = None) -> list[tuple[selectors.SelectorKey, int]]:
-        events = super().select(0)
-        if not events:
-            assert timeout is not None, "every task waits and no timer is set: a deadlock"
-            self.time += timeout
-        return events
-
-
-class _VirtualLoop(asyncio.SelectorEventLoop):
-    def __init__(self) -> None:
-        self._virtual = _VirtualSelector()
-        super().__init__(self._virtual)
-
-    def time(self) -> float:
-        return self._virtual.time
-
-
-class _LoopClock:
-    """The running loop's time as the ``Clock`` port."""
-
-    def now(self) -> datetime:
-        return _EPOCH + timedelta(seconds=asyncio.get_running_loop().time())
-
-    async def sleep(self, seconds: float) -> None:
-        await asyncio.sleep(seconds)
-
-
-def _run[T](main: Coroutine[Any, Any, T]) -> T:
-    loop = _VirtualLoop()
-    try:
-        return loop.run_until_complete(main)
-    finally:
-        loop.close()
-
-
 def _api(**kwargs: Any) -> FakeAmuleApi:
-    return FakeAmuleApi(clock=_LoopClock(), **kwargs)
+    return FakeAmuleApi(clock=LoopClock(), **kwargs)
 
 
 async def _connected(api: FakeAmuleApi) -> AmuleApiClient:
@@ -82,7 +38,7 @@ async def _connected(api: FakeAmuleApi) -> AmuleApiClient:
 
 
 def _elapsed(moment: datetime) -> float:
-    return (moment - _EPOCH).total_seconds()
+    return (moment - EPOCH).total_seconds()
 
 
 def _starts(api: FakeAmuleApi, search_type: str) -> list[tuple[float, str]]:
@@ -132,7 +88,7 @@ _TARGETS = {"keroro": "keroro", "keroro mission": "keroro", "titar": "titar"}
 
 def _hour_of_three_keywords() -> FakeAmuleApi:
     api = _api(search_seconds=dict(_DURATIONS))
-    _run(_search_for(api, list(_DURATIONS), ["ed2k", "kad"]))
+    run_virtual(_search_for(api, list(_DURATIONS), ["ed2k", "kad"]))
     return api
 
 
@@ -193,7 +149,7 @@ def test_an_ed2k_search_that_never_finishes_holds_the_next_start_one_budget() ->
             client.search("keroro", "ed2k", _BUDGET), client.search("titar", "ed2k", _BUDGET)
         )
 
-    _run(main())
+    run_virtual(main())
 
     assert [moment for moment, _ in _starts(api, "global")] == [0, _BUDGET]
 
@@ -209,7 +165,7 @@ def test_concurrent_callers_of_one_kad_target_each_get_their_own_slot() -> None:
             client.search("keroro 1", "kad", _BUDGET), client.search("keroro 2", "kad", _BUDGET)
         )
 
-    _run(main())
+    run_virtual(main())
 
     assert [moment for moment, _ in _starts(api, "kad")] == [0, 60, 120]
 
@@ -237,7 +193,7 @@ def test_kad_keys_a_keyword_on_its_first_word_of_three_bytes(
         await client.search(first, "kad", _BUDGET)
         await client.search(second, "kad", _BUDGET)
 
-    _run(main())
+    run_virtual(main())
 
     assert [moment for moment, _ in _starts(api, "kad")] == [0, 60 if shared else 0]
 
@@ -255,7 +211,7 @@ def test_a_keyword_without_a_kad_target_neither_spins_nor_searches(keyword: str)
             returned_at.append(loop.time())
             await asyncio.sleep(0)
 
-    _run(main())
+    run_virtual(main())
 
     assert len([moment for moment in returned_at if moment < _HOUR]) == 60
     assert _starts(api, "kad") == []
@@ -269,7 +225,7 @@ def test_a_keyword_without_a_kad_target_is_logged_once(caplog: pytest.LogCapture
         for keyword in ("62", "62", "ok", "62"):
             await client.search(keyword, "kad", _BUDGET)
 
-    _run(main())
+    run_virtual(main())
 
     assert [record.getMessage().count("no Kad target") for record in caplog.records] == [1, 1]
     assert ["'62'" in record.getMessage() for record in caplog.records] == [True, False]
@@ -286,7 +242,7 @@ def test_a_kad_target_held_elsewhere_is_retried_each_poll_until_it_frees() -> No
         client = await _connected(api)
         await client.search("keroro", "kad", _BUDGET)
 
-    _run(main())
+    run_virtual(main())
 
     assert [moment for moment, _ in _starts(api, "kad")] == [0, 5, 10]
     assert _polled_until(api, 42) >= 30  # its budget runs from the start at 10 s
@@ -305,7 +261,7 @@ def test_a_kad_target_held_past_one_budget_fails_the_channel_at_that_budget() ->
             await client.search("keroro", "kad", _BUDGET)
         failed_at.append(asyncio.get_running_loop().time())
 
-    _run(main())
+    run_virtual(main())
 
     assert failed_at == [_BUDGET]
     assert [moment for moment, _ in _starts(api, "kad")][-2:] == [_BUDGET - 5, _BUDGET]
@@ -322,6 +278,6 @@ def test_any_other_kad_refusal_fails_the_channel_at_once() -> None:
         with pytest.raises(SearchFailedError):
             await client.search("keroro", "kad", _BUDGET)
 
-    _run(main())
+    run_virtual(main())
 
     assert len(_starts(api, "kad")) == 1
