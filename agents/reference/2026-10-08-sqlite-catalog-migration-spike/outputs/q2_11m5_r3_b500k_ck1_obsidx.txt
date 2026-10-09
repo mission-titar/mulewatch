@@ -1,0 +1,28 @@
+sqlite 3.53.4 start: db=6.12GB batch=500000 checkpoint=True observed_at_index=True join=dict
+[preflight observed_at format scan] 18.5s peak db=6.12GB wal=0.00GB tmp=0.00GB db+wal+tmp=6.12GB rss=22MB page_count=1493458 freelist=0
+[txn A: DDL + files + match_decisions] 0.0s peak db=6.12GB wal=0.00GB tmp=0.00GB db+wal+tmp=6.12GB rss=22MB page_count=1493536 freelist=0
+variants: 12846
+[txn B: variants (dict)] 17.6s peak db=6.12GB wal=0.01GB tmp=0.00GB db+wal+tmp=6.13GB rss=35MB page_count=1494873 freelist=0
+  moved 1500000/11500000 58s 26047 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=175881 rss_now=48MB peak db=6.15GB wal=0.37GB tmp=0.00GB db+wal+tmp=6.52GB rss=59MB
+  moved 3000000/11500000 140s 21462 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=345599 rss_now=63MB peak db=6.15GB wal=0.40GB tmp=0.00GB db+wal+tmp=6.56GB rss=86MB
+  moved 4500000/11500000 188s 23980 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=516095 rss_now=82MB peak db=6.15GB wal=0.42GB tmp=0.00GB db+wal+tmp=6.57GB rss=103MB
+  moved 6000000/11500000 253s 23685 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=686887 rss_now=71MB peak db=6.15GB wal=0.42GB tmp=0.00GB db+wal+tmp=6.58GB rss=112MB
+  moved 7500000/11500000 324s 23175 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=857893 rss_now=98MB peak db=6.15GB wal=0.43GB tmp=0.00GB db+wal+tmp=6.58GB rss=116MB
+  moved 9000000/11500000 391s 22993 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=1029295 rss_now=69MB peak db=6.15GB wal=0.43GB tmp=0.00GB db+wal+tmp=6.59GB rss=117MB
+  moved 10500000/11500000 478s 21947 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=1201495 rss_now=83MB peak db=6.15GB wal=0.43GB tmp=0.00GB db+wal+tmp=6.59GB rss=117MB
+  moved 11500000/11500000 627s 18350 rows/s db=6.15GB wal=0.00GB page_count=1502499 freelist=1318901 rss_now=57MB peak db=6.15GB wal=0.43GB tmp=0.00GB db+wal+tmp=6.59GB rss=117MB
+[batched copy+delete (18350 rows/s)] 626.7s peak db=6.15GB wal=0.43GB tmp=0.00GB db+wal+tmp=6.59GB rss=117MB page_count=1502499 freelist=1318901
+[txn D: drop old tables (high-water file)] 0.2s peak db=6.15GB wal=0.00GB tmp=0.00GB db+wal+tmp=6.15GB rss=57MB page_count=1502499 freelist=1318960
+after drop: db file 6154235904 freelist pages 1318960 of 1502499
+foreign_key_check: []
+  dbstat idx_observations_variant_observed            266.2 MB   23.2 B/row
+  dbstat observations                                 251.9 MB   21.9 B/row
+  dbstat idx_observations_observed_at                 227.9 MB   19.8 B/row
+  dbstat observation_variants                           4.8 MB    0.4 B/row
+  dbstat sqlite_autoindex_observation_variants_1        0.3 MB    0.0 B/row
+  dbstat idx_observation_variants_file_id               0.3 MB    0.0 B/row
+  dbstat files                                          0.1 MB    0.0 B/row
+  dbstat sqlite_autoindex_files_2                       0.1 MB    0.0 B/row
+  dbstat sqlite_autoindex_files_1                       0.1 MB    0.0 B/row
+observations: 11500000
+final db file 6154235904 wal 0

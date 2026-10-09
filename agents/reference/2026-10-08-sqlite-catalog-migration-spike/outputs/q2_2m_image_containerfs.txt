@@ -1,0 +1,10 @@
+sqlite 3.46.1 start: db=1.06GB batch=50000 checkpoint=True observed_at_index=False join=dict
+[batched copy+delete (26188 rows/s)] 76.4s peak db=1.07GB wal=0.09GB tmp=0.00GB db+wal+tmp=1.15GB rss=71MB page_count=260548 freelist=237687
+  dbstat sqlite_autoindex_observation_variants_1        0.3 MB    0.2 B/row
+  dbstat sqlite_autoindex_files_2                       0.1 MB    0.1 B/row
+  dbstat sqlite_autoindex_files_1                       0.1 MB    0.0 B/row
+sqlite 3.46.1 start: db=1.06GB batch=50000 checkpoint=False observed_at_index=False join=dict
+[batched copy+delete (26800 rows/s)] 74.6s peak db=1.07GB wal=0.09GB tmp=0.00GB db+wal+tmp=1.15GB rss=71MB page_count=260548 freelist=237687
+  dbstat sqlite_autoindex_observation_variants_1        0.3 MB    0.2 B/row
+  dbstat sqlite_autoindex_files_2                       0.1 MB    0.1 B/row
+  dbstat sqlite_autoindex_files_1                       0.1 MB    0.0 B/row

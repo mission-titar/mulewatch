@@ -1,0 +1,21 @@
+== image, --memory=600m, container FS, Q7_PRAGMAS=[]
+sqlite 3.46.1 start: db=1.06GB
+[DDL + files + match_decisions] 0.0s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=19MB
+[INSERT OR IGNORE variants (no DISTINCT)] 34.4s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=22MB
+[INSERT observations JOIN on content_hash] 33.7s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.15GB rss=24MB
+Killed
+exit code: 137
+== image, --memory=600m, container FS, Q7_PRAGMAS=[secure_delete=OFF]
+extra pragma secure_delete=OFF [(0,)]
+sqlite 3.46.1 start: db=1.06GB
+[DDL + files + match_decisions] 0.0s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=19MB
+[INSERT OR IGNORE variants (no DISTINCT)] 31.2s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=22MB
+[INSERT observations JOIN on content_hash] 32.6s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.15GB rss=24MB
+[DROP old tables + new triggers] 1.6s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.15GB rss=27MB
+[COMMIT] 0.3s peak db-files=1.15GB wal=0.10GB tmp=0.00GB all=1.25GB rss=27MB
+[whole transaction] 65.7s peak db-files=1.15GB wal=0.10GB tmp=0.00GB all=1.25GB rss=27MB
+after COMMIT: db=1152856064 wal=95060792
+checkpoint(TRUNCATE): (0, 0, 0) 0.0s peak db-files=0.00GB wal=0.00GB tmp=0.00GB all=0.00GB rss=0MB
+after checkpoint: db=1152856064 wal=0 page_count=281459 freelist=258656
+variants: 12427 observations: 2000000 foreign_key_check: []
+exit code: 0

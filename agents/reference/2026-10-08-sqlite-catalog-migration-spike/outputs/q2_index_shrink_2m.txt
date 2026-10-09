@@ -1,0 +1,6 @@
+sqlite 3.53.4 (pages per b-tree)
+   0% rows left  2000000  freelist       0  file_observations=172016  idx_ed2k_hash=22906  idx_hash_observed=40675  idx_observed_at=23004
+  25% rows left  1500000  freelist   62889  file_observations=129027  idx_ed2k_hash=18005  idx_hash_observed=31416  idx_observed_at=17264
+  50% rows left  1000000  freelist  126903  file_observations=86020  idx_ed2k_hash=12536  idx_hash_observed=21632  idx_observed_at=11510
+  75% rows left   500000  freelist  191619  file_observations=43010  idx_ed2k_hash=6756  idx_hash_observed=11460  idx_observed_at=5756
+ 100% rows left        0  freelist  258597  file_observations=1  idx_ed2k_hash=1  idx_hash_observed=1  idx_observed_at=1

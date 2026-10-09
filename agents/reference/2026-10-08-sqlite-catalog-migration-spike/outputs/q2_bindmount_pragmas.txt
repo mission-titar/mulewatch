@@ -1,0 +1,18 @@
+== bind mount, pragmas: []
+[batched copy+delete (2656 rows/s)] 75.3s peak db=0.11GB wal=0.05GB tmp=0.00GB db+wal+tmp=0.16GB rss=35MB page_count=27591 freelist=24359
+== bind mount, pragmas: [synchronous=NORMAL]
+extra pragma synchronous=NORMAL []
+[batched copy+delete (2559 rows/s)] 78.2s peak db=0.11GB wal=0.05GB tmp=0.00GB db+wal+tmp=0.16GB rss=35MB page_count=27591 freelist=24359
+== bind mount, pragmas: [locking_mode=EXCLUSIVE]
+extra pragma locking_mode=EXCLUSIVE [('exclusive',)]
+[batched copy+delete (3128 rows/s)] 63.9s peak db=0.11GB wal=0.05GB tmp=0.00GB db+wal+tmp=0.16GB rss=35MB page_count=27591 freelist=24359
+== bind mount, pragmas: [locking_mode=EXCLUSIVE;synchronous=NORMAL]
+extra pragma locking_mode=EXCLUSIVE [('exclusive',)]
+extra pragma synchronous=NORMAL []
+[batched copy+delete (3658 rows/s)] 54.7s peak db=0.11GB wal=0.05GB tmp=0.00GB db+wal+tmp=0.16GB rss=35MB page_count=27591 freelist=24359
+== bind mount, pragmas: [cache_size=-262144]
+extra pragma cache_size=-262144 []
+[batched copy+delete (41538 rows/s)] 4.8s peak db=0.11GB wal=0.05GB tmp=0.00GB db+wal+tmp=0.16GB rss=154MB page_count=27591 freelist=24359
+== bind mount, pragmas: [mmap_size=1073741824]
+extra pragma mmap_size=1073741824 [(1073741824,)]
+[batched copy+delete (2531 rows/s)] 79.0s peak db=0.11GB wal=0.05GB tmp=0.00GB db+wal+tmp=0.16GB rss=139MB page_count=27591 freelist=24359

@@ -1,0 +1,6 @@
+OLD schema, 11500000 rows, sqlite 3.53.4
+    file_observations                             355.6 B/row
+    idx_file_observations_hash_observed            82.5 B/row
+    idx_file_observations_observed_at              47.4 B/row
+    idx_file_observations_ed2k_hash                46.4 B/row
+    TOTAL                                         531.9 B/row ->  6.12 GB at 11.5M

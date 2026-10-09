@@ -1,0 +1,6 @@
+sqlite 3.53.4 mode=index ['MEMORY'] baseline rss=13MB
+  CREATE INDEX (variant_id, observed_at) on 11500000 rows: 14.5s peak rss 716MB (+697MB, 61 B/row) -> +697MB at 11.5M
+  CREATE INDEX (observed_at) on 11500000 rows: 4.0s peak rss 544MB (+13MB, 1 B/row) -> +13MB at 11.5M
+sqlite 3.53.4 mode=index ['FILE'] baseline rss=13MB
+  CREATE INDEX (variant_id, observed_at) on 11500000 rows: 4.4s peak rss 21MB (+2MB, 0 B/row) -> +2MB at 11.5M
+  CREATE INDEX (observed_at) on 11500000 rows: 2.6s peak rss 21MB (+0MB, 0 B/row) -> +0MB at 11.5M

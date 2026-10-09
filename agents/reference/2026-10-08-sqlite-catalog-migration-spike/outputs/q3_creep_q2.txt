@@ -1,0 +1,11 @@
+== Q2_SAMPLE=0
+[txn B: variants (dict)] 3.5s peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB page_count=260031 freelist=0
+  moved 250000/2000000 3s 90797 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=28817 rss_now=201MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+  moved 500000/2000000 6s 84790 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=58138 rss_now=203MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+  moved 750000/2000000 9s 82455 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=87495 rss_now=205MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+  moved 1000000/2000000 12s 80695 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=116831 rss_now=204MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+  moved 1250000/2000000 16s 79528 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=146434 rss_now=222MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+  moved 1500000/2000000 19s 78495 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=176139 rss_now=220MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+  moved 1750000/2000000 22s 77957 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=206038 rss_now=209MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+  moved 2000000/2000000 25s 78564 rows/s db=1.07GB wal=0.00GB page_count=260548 freelist=237687 rss_now=228MB peak db=0.00GB wal=0.00GB tmp=0.00GB db+wal+tmp=0.00GB rss=0MB
+== Q2_FK=OFF Q2_SAMPLE=0

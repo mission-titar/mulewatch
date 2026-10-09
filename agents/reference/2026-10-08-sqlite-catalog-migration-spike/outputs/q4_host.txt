@@ -1,0 +1,86 @@
+sqlite 3.53.4 python 3.14.7
+
+(a) PRAGMA foreign_keys=OFF inside BEGIN
+  set OFF: OK 
+  read back: OK [(1,)]
+  insert orphan child: ERROR IntegrityError: FOREIGN KEY constraint failed
+  read back after txn: OK [(1,)]
+
+(b) PRAGMA defer_foreign_keys=ON inside BEGIN
+  set defer: OK 
+  read back: OK [(1,)]
+  insert orphan child: OK 
+  COMMIT with orphan: ERROR IntegrityError: FOREIGN KEY constraint failed
+  in_transaction after failed COMMIT: True
+  insert parent zz (resolves): OK 
+  COMMIT after resolve: OK 
+  defer flag after commit: OK [(0,)]
+  foreign_key_check: OK 
+
+(c) DROP TABLE of a parent with referencing rows (triggers present)
+  defer=False DROP TABLE files: ERROR IntegrityError: FOREIGN KEY constraint failed
+  defer=False COMMIT: OK 
+  defer=True DROP TABLE files: OK 
+  defer=True COMMIT: ERROR IntegrityError: FOREIGN KEY constraint failed
+  (c2) defer=ON, drop parent then drop the children too, then COMMIT
+  DROP files: OK 
+  DROP file_observations: OK 
+  DROP match_decisions: OK 
+  COMMIT: OK 
+  (c3) defer=OFF, drop children first then parent (no orphans at any point)
+  DROP file_observations: OK 
+  DROP match_decisions: OK 
+  DROP files: OK 
+  COMMIT: OK 
+  triggers/indexes left: OK 
+  (c4) parent with NO children rows referencing it, but child table exists (empty)
+  DROP files (children empty): OK 
+  COMMIT: OK 
+  insert into orphaned child table: ERROR OperationalError: no such table: main.files
+
+(d) ALTER TABLE files RENAME TO files_old: REFERENCES in other tables
+  legacy=False fk=True rename: OK 
+    match_decisions sql: 
+            ed2k_hash TEXT NOT NULL REFERENCES "files_old" (ed2k_hash)
+    trigger sql: ('files_old', 'CREATE TRIGGER files_no_delete BEFORE DELETE ON "files_old"\n        BEGIN SELECT RAISE(ABORT, \'files is append-only\'); END')
+  legacy=False fk=False rename: OK 
+    match_decisions sql: 
+            ed2k_hash TEXT NOT NULL REFERENCES "files_old" (ed2k_hash)
+    trigger sql: ('files_old', 'CREATE TRIGGER files_no_delete BEFORE DELETE ON "files_old"\n        BEGIN SELECT RAISE(ABORT, \'files is append-only\'); END')
+  legacy=True fk=True rename: OK 
+    match_decisions sql: 
+            ed2k_hash TEXT NOT NULL REFERENCES "files_old" (ed2k_hash)
+    trigger sql: ('files_old', 'CREATE TRIGGER files_no_delete BEFORE DELETE ON "files_old"\n        BEGIN SELECT RAISE(ABORT, \'files is append-only\'); END')
+  legacy=True fk=False rename: OK 
+    match_decisions sql: 
+            ed2k_hash TEXT NOT NULL REFERENCES files (ed2k_hash)
+    trigger sql: ('files_old', 'CREATE TRIGGER files_no_delete BEFORE DELETE ON "files_old"\n        BEGIN SELECT RAISE(ABORT, \'files is append-only\'); END')
+    last one (legacy ON, fk OFF) then fk ON: insert child: ERROR OperationalError: no such table: main.files
+    foreign_key_check: OK [('match_decisions', 1, 'files', 0), ('file_observations', 1, 'files', 0), ('file_observations', 2, 'files', 0)]
+
+(e) RECIPE: rename-old-away, create-new-clean, batched copy, drop old. FK ON throughout.
+  txn 1: COMMIT OK
+    state:
+    table   files_old                        CREATE TABLE "files_old" (ed2k_hash TEXT PRIMARY KEY, size_bytes INTEGER NOT NULL)
+    index   sqlite_autoindex_files_old_1     
+    table   file_observations                CREATE TABLE file_observations (id INTEGER PRIMARY KEY, ed2k_hash TEXT NOT NULL REFERENCES "files_old" (ed2k_hash), filename TEXT)
+    index   idx_fo_hash                      CREATE INDEX idx_fo_hash ON file_observations (ed2k_hash)
+    table   match_decisions_old              CREATE TABLE "match_decisions_old" (id INTEGER PRIMARY KEY, ed2k_hash TEXT NOT NULL REFERENCES "files_old" (ed2k_hash), target_id TEXT)
+    trigger fo_no_delete                     CREATE TRIGGER fo_no_delete BEFORE DELETE ON file_observations BEGIN SELECT RAISE(ABORT, 'fo is append-only'); END
+    table   files                            CREATE TABLE files (file_id BLOB PRIMARY KEY CHECK (length(file_id) = 16), network TEXT NOT NULL, native_id TEXT NOT NULL, size_bytes INTEGER NOT NULL, UNIQUE (network, native_id))
+    index   sqlite_autoindex_files_1         
+    index   sqlite_autoindex_files_2         
+    table   match_decisions                  CREATE TABLE match_decisions (id INTEGER PRIMARY KEY, file_id BLOB NOT NULL REFERENCES files (file_id), target_id TEXT)
+    index   idx_match_decisions_file_id      CREATE INDEX idx_match_decisions_file_id ON match_decisions (file_id)
+    trigger files_no_delete                  CREATE TRIGGER files_no_delete BEFORE DELETE ON files BEGIN SELECT RAISE(ABORT, 'files is append-only'); END
+  txn 2: COMMIT OK
+    state:
+    table   files                            CREATE TABLE files (file_id BLOB PRIMARY KEY CHECK (length(file_id) = 16), network TEXT NOT NULL, native_id TEXT NOT NULL, size_bytes INTEGER NOT NULL, UNIQUE (network, native_id))
+    index   sqlite_autoindex_files_1         
+    index   sqlite_autoindex_files_2         
+    table   match_decisions                  CREATE TABLE match_decisions (id INTEGER PRIMARY KEY, file_id BLOB NOT NULL REFERENCES files (file_id), target_id TEXT)
+    index   idx_match_decisions_file_id      CREATE INDEX idx_match_decisions_file_id ON match_decisions (file_id)
+    trigger files_no_delete                  CREATE TRIGGER files_no_delete BEFORE DELETE ON files BEGIN SELECT RAISE(ABORT, 'files is append-only'); END
+  foreign_key_check: OK 
+  orphan insert rejected?: ERROR IntegrityError: FOREIGN KEY constraint failed
+  integrity_check: OK [('ok',)]

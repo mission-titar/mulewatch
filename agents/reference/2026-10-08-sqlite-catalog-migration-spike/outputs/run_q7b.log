@@ -1,0 +1,77 @@
+extra pragma cache_size=-262144 []
+extra pragma secure_delete=OFF [(0,)]
+sqlite 3.53.4 layout=a start: db=6.12GB secure_delete=0 cache_size=-262144 SQLITE_TMPDIR=None
+[txn A: DDL + files + match_decisions (committed)] 0.0s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=20MB
+[variants, streamed dict (12846 variants, 12846 raw keys)] 15.8s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=311MB
+[INSERT observations (11500000 rows)] 30.2s peak db-files=6.12GB wal=0.29GB tmp=0.00GB all=6.41GB rss=312MB
+[DROP old tables + triggers] 32.0s peak db-files=6.12GB wal=0.30GB tmp=0.00GB all=6.42GB rss=324MB
+[COMMIT] 1.9s peak db-files=6.64GB wal=0.53GB tmp=0.00GB all=7.17GB rss=325MB
+[whole migration transaction] 79.9s peak db-files=6.64GB wal=0.53GB tmp=0.00GB all=7.17GB rss=325MB
+after COMMIT: db=6641082368 wal=533111552
+[checkpoint(TRUNCATE)] 0.1s peak db-files=6.64GB wal=0.00GB tmp=0.00GB all=6.64GB rss=325MB
+after checkpoint: db=6641082368 pages=1621358 freelist=1493454
+[VACUUM temp_store=FILE] 4.7s peak db-files=6.64GB wal=0.49GB tmp=0.49GB all=7.63GB rss=591MB
+after VACUUM + checkpoint: db=491597824 wal=0
+quick_check: ok foreign_key_check: [] observations: 11500000 variants: 12846
+  dbstat observations                                251.9 MB   21.9 B/row
+  dbstat idx_observations_variant_observed           234.0 MB   20.3 B/row
+  dbstat observation_variants                          4.8 MB    0.4 B/row
+  dbstat sqlite_autoindex_observation_variants_1       0.3 MB    0.0 B/row
+extra pragma cache_size=-262144 []
+extra pragma secure_delete=OFF [(0,)]
+sqlite 3.53.4 layout=b start: db=6.12GB secure_delete=0 cache_size=-262144 SQLITE_TMPDIR=None
+[txn A: DDL + files + match_decisions (committed)] 0.0s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=20MB
+[variants, streamed dict (12846 variants, 12846 raw keys)] 17.5s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=311MB
+[INSERT OR IGNORE observations (11500000 rows)] 29.1s peak db-files=6.12GB wal=0.01GB tmp=0.00GB all=6.13GB rss=312MB
+[DROP old tables + triggers] 35.8s peak db-files=6.12GB wal=0.01GB tmp=0.00GB all=6.13GB rss=323MB
+[COMMIT] 1.2s peak db-files=6.36GB wal=0.25GB tmp=0.00GB all=6.61GB rss=324MB
+[whole migration transaction] 83.6s peak db-files=6.36GB wal=0.25GB tmp=0.00GB all=6.61GB rss=324MB
+after COMMIT: db=6359089152 wal=249461912
+[checkpoint(TRUNCATE)] 0.0s peak db-files=6.36GB wal=0.00GB tmp=0.00GB all=6.36GB rss=324MB
+after checkpoint: db=6359089152 pages=1552512 freelist=1493454
+[VACUUM temp_store=FILE] 2.6s peak db-files=6.36GB wal=0.21GB tmp=0.00GB all=6.57GB rss=540MB
+after VACUUM + checkpoint: db=213037056 wal=0
+quick_check: ok foreign_key_check: [] observations: 11500000 variants: 12846
+  dbstat observations                                207.3 MB   18.0 B/row
+  dbstat observation_variants                          4.8 MB    0.4 B/row
+  dbstat sqlite_autoindex_observation_variants_1       0.3 MB    0.0 B/row
+  dbstat idx_observation_variants_file_id              0.3 MB    0.0 B/row
+extra pragma cache_size=-262144 []
+extra pragma secure_delete=OFF [(0,)]
+sqlite 3.46.1 layout=a start: db=6.12GB secure_delete=0 cache_size=-262144 SQLITE_TMPDIR=None
+[txn A: DDL + files + match_decisions (committed)] 0.0s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=20MB
+[variants, streamed dict (12846 variants, 12846 raw keys)] 32.7s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=311MB
+[INSERT observations (11500000 rows)] 73.0s peak db-files=6.12GB wal=0.29GB tmp=0.00GB all=6.41GB rss=312MB
+[DROP old tables + triggers] 23.4s peak db-files=6.12GB wal=0.30GB tmp=0.00GB all=6.42GB rss=326MB
+[COMMIT] 54.8s peak db-files=6.64GB wal=0.53GB tmp=0.00GB all=7.17GB rss=326MB
+[whole migration transaction] 183.9s peak db-files=6.64GB wal=0.53GB tmp=0.00GB all=7.17GB rss=326MB
+after COMMIT: db=6641082368 wal=533111552
+[checkpoint(TRUNCATE)] 0.1s peak db-files=6.64GB wal=0.53GB tmp=0.00GB all=7.17GB rss=326MB
+after checkpoint: db=6641082368 pages=1621358 freelist=1493454
+[VACUUM temp_store=FILE] 50.6s peak db-files=6.64GB wal=0.49GB tmp=0.49GB all=7.63GB rss=591MB
+after VACUUM + checkpoint: db=491597824 wal=0
+quick_check: ok foreign_key_check: [] observations: 11500000 variants: 12846
+  dbstat observations                                251.9 MB   21.9 B/row
+  dbstat idx_observations_variant_observed           234.0 MB   20.3 B/row
+  dbstat observation_variants                          4.8 MB    0.4 B/row
+  dbstat sqlite_autoindex_observation_variants_1       0.3 MB    0.0 B/row
+extra pragma cache_size=-262144 []
+extra pragma secure_delete=OFF [(0,)]
+sqlite 3.46.1 layout=b start: db=6.12GB secure_delete=0 cache_size=-262144 SQLITE_TMPDIR=None
+[txn A: DDL + files + match_decisions (committed)] 0.0s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=19MB
+[variants, streamed dict (12846 variants, 12846 raw keys)] 29.7s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=311MB
+[INSERT OR IGNORE observations (11500000 rows)] 39.3s peak db-files=6.12GB wal=0.01GB tmp=0.00GB all=6.13GB rss=312MB
+[DROP old tables + triggers] 31.3s peak db-files=6.12GB wal=0.01GB tmp=0.00GB all=6.13GB rss=325MB
+[COMMIT] 19.7s peak db-files=6.36GB wal=0.25GB tmp=0.00GB all=6.61GB rss=326MB
+[whole migration transaction] 120.0s peak db-files=6.36GB wal=0.25GB tmp=0.00GB all=6.61GB rss=326MB
+after COMMIT: db=6359089152 wal=249461912
+[checkpoint(TRUNCATE)] 0.1s peak db-files=6.36GB wal=0.25GB tmp=0.00GB all=6.61GB rss=326MB
+after checkpoint: db=6359089152 pages=1552512 freelist=1493454
+[VACUUM temp_store=FILE] 6.3s peak db-files=6.36GB wal=0.21GB tmp=0.00GB all=6.57GB rss=540MB
+after VACUUM + checkpoint: db=213037056 wal=0
+quick_check: ok foreign_key_check: [] observations: 11500000 variants: 12846
+  dbstat observations                                207.3 MB   18.0 B/row
+  dbstat observation_variants                          4.8 MB    0.4 B/row
+  dbstat sqlite_autoindex_observation_variants_1       0.3 MB    0.0 B/row
+  dbstat idx_observation_variants_file_id              0.3 MB    0.0 B/row
+ALL DONE

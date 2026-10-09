@@ -1,0 +1,45 @@
+NEW layouts, 11500000 rows, duplicate (variant_id, observed_at) in synthetic data: 0
+  a  rowid + (variant_id, observed_at): appended in time order
+    i_vo                                           23.2 B/row
+    observations                                   21.9 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          45.1 B/row ->  0.52 GB at 11.5M
+  a  rowid + (variant_id, observed_at): after VACUUM
+    observations                                   21.9 B/row
+    i_vo                                           20.3 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          42.3 B/row ->  0.49 GB at 11.5M
+    fill factor of the appended layout: 94%
+  b  WITHOUT ROWID PK (variant_id, observed_at, source_count): appended in time order
+    observations                                   20.5 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          20.5 B/row ->  0.24 GB at 11.5M
+  b  WITHOUT ROWID PK (variant_id, observed_at, source_count): after VACUUM
+    observations                                   18.0 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          18.0 B/row ->  0.21 GB at 11.5M
+    fill factor of the appended layout: 88%
+  c-a  (a) + (observed_at): appended in time order
+    i_vo                                           23.2 B/row
+    observations                                   21.9 B/row
+    i_o                                            19.8 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          64.9 B/row ->  0.75 GB at 11.5M
+  c-a  (a) + (observed_at): after VACUUM
+    observations                                   21.9 B/row
+    i_vo                                           20.3 B/row
+    i_o                                            17.3 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          59.6 B/row ->  0.69 GB at 11.5M
+    fill factor of the appended layout: 92%
+  c-b  (b) + (observed_at): appended in time order
+    i_o                                            20.5 B/row
+    observations                                   20.5 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          41.1 B/row ->  0.47 GB at 11.5M
+  c-b  (b) + (observed_at): after VACUUM
+    i_o                                            18.1 B/row
+    observations                                   18.0 B/row
+    sqlite_schema                                   0.0 B/row
+    TOTAL                                          36.1 B/row ->  0.41 GB at 11.5M
+    fill factor of the appended layout: 88%

@@ -1,0 +1,4 @@
+rows 11500000 in 113s
+obs per file max/min/files: (37952, 3, 1933)
+distinct variants: 7433
+file bytes: 6117203968
