@@ -90,9 +90,21 @@ def test_backoff_registry_grows_then_resets() -> None:
     clock = FakeClock()
     registry = _registry(clock)
     assert registry.record_failure("k") == 2.0  # 1st attempt = base
+    clock.advance(2.0)
     assert registry.record_failure("k") == 4.0  # × factor
     registry.reset("k")
     assert registry.record_failure("k") == 2.0  # back to base
+
+
+def test_a_failure_while_backed_off_does_not_count_again() -> None:
+    # Concurrent searches started before a backoff fail together: one round, one attempt.
+    clock = FakeClock()
+    registry = _registry(clock)
+    registry.record_failure("k")
+    clock.advance(0.5)
+    assert registry.record_failure("k") == 1.5  # what is left of the backoff already set
+    clock.advance(1.5)
+    assert registry.record_failure("k") == 4.0  # the second attempt
 
 
 def test_backoff_registry_keys_are_independent() -> None:
@@ -142,6 +154,41 @@ def test_backoff_registry_snapshot_and_load_round_trip() -> None:
     assert reborn.is_in_backoff("amule-1:kad") is False  # empty before load
     reborn.load_from(snapshot)
     assert reborn.is_in_backoff("amule-1:kad") is True
+
+
+@pytest.mark.parametrize(
+    ("failed", "ready_in"),
+    [((), 0.0), (("amule-1",), 2.0), (("amule-1:kad",), 2.0), (("amule-1:ed2k",), 0.0)],
+)
+def test_a_worker_is_ready_for_a_channel_when_neither_it_nor_the_channel_is_backed_off(
+    catalog: SqliteCatalogRepository,
+    engine: MatchingEngine,
+    failed: tuple[str, ...],
+    ready_in: float,
+) -> None:
+    clock = FakeClock()
+    registry = _registry(clock)
+    for key in failed:
+        registry.record_failure(key)
+    worker = SearchWorker("amule-1", FakeMuleClient(), _deps(catalog, engine, clock, registry))
+    assert worker.seconds_until_ready("kad") == ready_in
+    clock.advance(3.0)
+    assert worker.seconds_until_ready("kad") == 0.0  # a past backoff is no wait
+
+
+def test_a_worker_waits_for_the_later_of_its_two_backoffs(
+    catalog: SqliteCatalogRepository, engine: MatchingEngine
+) -> None:
+    clock = FakeClock()
+    registry = _registry(clock)
+    registry.record_failure("amule-1:kad")
+    clock.advance(1.0)
+    registry.record_failure("amule-1")
+    worker = SearchWorker("amule-1", FakeMuleClient(), _deps(catalog, engine, clock, registry))
+    assert worker.seconds_until_ready("kad") == 2.0
+    clock.advance(1.5)
+    registry.reset("amule-1")
+    assert worker.seconds_until_ready("kad") == 0.0  # the channel's own ended first
 
 
 # --- inter-keyword pause (anti-rate-limit, spec §5/§7) ---

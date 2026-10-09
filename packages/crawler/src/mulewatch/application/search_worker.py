@@ -56,7 +56,6 @@ SEARCH_BUDGET_SECONDS = 120.0
 def _iso(moment: datetime) -> str:
     """Fixed-width ISO-8601 UTC (microseconds ALWAYS written) - same rules as the adapter's
     ``utc_iso`` (which we cannot import: dependency rule §4) so that the
-    ``now < retry_after`` comparison is lexicographic == chronological, and the
     PERSISTED format is identical to the other timestamps'."""
     return moment.astimezone(UTC).isoformat(timespec="microseconds")
 
@@ -100,8 +99,8 @@ class BackoffRegistry:
 
     Holds a map ``key → ChannelBackoff(attempts, retry_after)`` (spec §3/§7). ``retry_after``
     is computed on failure: ``clock.now() + backoff_delay(attempts) + jitter`` (jitter drawn from
-    the ``Rng`` port, deterministic in test) → fixed-width ISO-8601 UTC (lexicographic ==
-    chronological comparison). ``is_in_backoff`` skips a key while
+    the ``Rng`` port, deterministic in test) → fixed-width ISO-8601 UTC. ``is_in_backoff`` skips
+    a key while
     ``now < retry_after``. ``snapshot``/``load_from`` bridge to ``scheduler_state``
     (the persistence survives a restart). Deterministic logic (injected clock/rng).
     """
@@ -122,16 +121,23 @@ class BackoffRegistry:
 
     def is_in_backoff(self, key: str) -> bool:
         """``True`` if ``key`` has a ``retry_after`` still in the FUTURE (to skip)."""
+        return self.remaining(key) > 0
+
+    def remaining(self, key: str) -> float:
+        """Seconds until ``key``'s ``retry_after``, 0 when it has none or it has passed."""
         state = self._states.get(key)
         if state is None:
-            return False
-        return _iso(self._clock.now()) < state.retry_after
+            return 0.0
+        left = datetime.fromisoformat(state.retry_after) - self._clock.now()
+        return max(0.0, left.total_seconds())
 
     def record_failure(self, key: str) -> float:
         """Increments ``attempts``, computes delay+jitter, sets ``retry_after``. Returns the delay.
 
         The delay is for the LOG; the operational decision is the ``retry_after`` (skip).
         """
+        if self.is_in_backoff(key):  # a concurrent search started before it: same round
+            return self.remaining(key)
         attempts = self._states[key].attempts + 1 if key in self._states else 1
         delay = backoff_delay(
             attempts,
@@ -187,6 +193,13 @@ class SearchWorker:
     def channels(self) -> tuple[str, ...]:
         """The channels its client declares."""
         return self._client.channels
+
+    def seconds_until_ready(self, channel: str) -> float:
+        """How long until neither the instance nor ``channel`` is backed off."""
+        backoff = self._deps.backoff
+        return max(
+            backoff.remaining(self._instance), backoff.remaining(f"{self._instance}:{channel}")
+        )
 
     def is_blocked_for(self, task: SearchTask) -> bool:
         """``True`` if the task's instance OR channel is backed off (skip+re-enqueue, §14)."""

@@ -316,6 +316,7 @@ async def test_worker_in_backoff_does_not_consume_peers_tasks(
     # 4 accumulated failures → base × factor^3 = 2×8 = 16 s, retry_after well beyond the
     # cycle's accumulated pauses (at most 9s with 10 items × 1.0s pause, excluding the last).
     for _ in range(4):
+        clock.advance(backoff.remaining("amule-1"))
         backoff.record_failure("amule-1")
     client_a = FakeMuleClient()
     client_b = FakeMuleClient()
@@ -356,6 +357,7 @@ async def test_all_workers_in_backoff_drop_tasks_with_telemetry(
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
     # 4 failures per instance → backoff beyond the cycle's duration (cf. previous test).
     for _ in range(4):
+        clock.advance(backoff.remaining("amule-1"))
         backoff.record_failure("amule-1")
         backoff.record_failure("amule-2")
     client_a = FakeMuleClient()
