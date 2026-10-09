@@ -29,7 +29,6 @@ from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
 from mulewatch.composition.app import CrawlerApp
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
-from mulewatch.ports.port_sync import NetworkStatus
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.orchestration_integration
@@ -77,9 +76,6 @@ class _ShutdownAfterFirstCycleClient:
 
     async def status(self) -> ClientStatus:
         return await self._inner.status()  # type: ignore[attr-defined,no-any-return]
-
-    async def network_status(self) -> NetworkStatus:
-        return await self._inner.network_status()  # type: ignore[attr-defined,no-any-return]
 
 
 @pytest.mark.asyncio

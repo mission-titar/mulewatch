@@ -15,7 +15,6 @@ from mulewatch.domain.observability.events import Event
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
-from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
 
 class FakeClock:
@@ -93,8 +92,7 @@ class FakeMuleClient:
     ``results``: list of observation tuples, one per ``search`` call (exhausted → empty
     tuple). ``connect_failures``: exceptions to raise on the first N ``connect`` calls (then
     success). ``search_failures``: exceptions to raise on the first N ``search`` calls (then
-    success). ``status``: the ``NetworkStatus`` returned; ``status()`` reads every channel on its
-    network and connectable.
+    success). Every channel reads on its network and connectable.
     """
 
     channels: tuple[str, ...] = ("ed2k", "kad")
@@ -105,14 +103,10 @@ class FakeMuleClient:
         results: list[tuple[FileObservation, ...]] | None = None,
         connect_failures: list[Exception] | None = None,
         search_failures: list[Exception] | None = None,
-        status: NetworkStatus | None = None,
     ) -> None:
         self._results = list(results or [])
         self._connect_failures = list(connect_failures or [])
         self._search_failures = list(search_failures or [])
-        self._status = status or NetworkStatus(
-            ed2k_id=1, ed2k_high=True, kad_status=KadStatus.CONNECTED
-        )
         self.connect_calls = 0
         self.close_calls = 0
         self.searches: list[tuple[str, str]] = []
@@ -139,9 +133,6 @@ class FakeMuleClient:
 
     async def status(self) -> ClientStatus:
         return ClientStatus("3.0.1", tuple(ChannelStatus(c, True, True) for c in self.channels))
-
-    async def network_status(self) -> NetworkStatus:
-        return self._status
 
 
 def make_unreachable(message: str = "down") -> ClientUnreachableError:

@@ -17,7 +17,6 @@ _COUNTERS: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
     (MetricName.SEARCH_FAILURES, "Failed searches", ("network",)),
     (MetricName.SEARCH_TASKS_DROPPED, "Tasks dropped (all in backoff)", ("network",)),
     (MetricName.MULE_UNREACHABLE, "amuled unreachable", ()),
-    (MetricName.SEARCH_BLIND_CYCLES, "Blind-coverage cycles", ()),
     (MetricName.DECISIONS, "Match decisions recorded", ("tier",)),
     (MetricName.DOWNLOADS_QUEUED, "Downloads queued", ()),
     (MetricName.DOWNLOADS_COMPLETED, "Downloads completed", ()),
@@ -26,8 +25,6 @@ _COUNTERS: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
     (MetricName.PORT_MISMATCH, "High-ID not restored (occurrences)", ()),
 )
 _GAUGES: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
-    (MetricName.CONNECTED_INSTANCES, "Search-capable instances", ("network",)),
-    (MetricName.SEARCH_CAPABLE, "Search-capable now (1)", ()),
     (MetricName.CRAWLER_UP, "Crawler running (1)", ()),
     (MetricName.DISK_FREE_BYTES, "Free bytes on the download filesystem", ()),
     (MetricName.CHANNEL_ON_NETWORK, "Channel joined its network (1)", ("client", "network")),

@@ -43,11 +43,6 @@ class SearchTaskDropped:
 
 
 @dataclass(frozen=True)
-class AllInstancesBlind:
-    first_occurrence: bool
-
-
-@dataclass(frozen=True)
 class ObservationRecorded:
     network: str
 
@@ -79,20 +74,6 @@ class DownloadCompleted:
     ed2k_hash: str
     filename: str  # the clean name, the most sourced
     targets: tuple[tuple[str, str], ...]  # (target_id, title), every download target of the hash
-
-
-@dataclass(frozen=True)
-class ConnectedInstancesSampled:
-    network: str
-    count: int
-
-
-@dataclass(frozen=True)
-class SearchCapabilitySampled:
-    # Current-state sample of "can we search RIGHT NOW?" (at least one instance capable),
-    # sampled every cycle → binary gauge. Complements the AllInstancesBlind counter (cumulative,
-    # edge-triggered): this one carries the live 0/1 signal Grafana alerts on.
-    capable: bool
 
 
 type ChannelField = Literal["on_network", "connectable"]
@@ -176,13 +157,10 @@ type Event = (
     | InstanceUnreachable
     | SearchFailed
     | SearchTaskDropped
-    | AllInstancesBlind
     | ObservationRecorded
     | DecisionsRecorded
     | DownloadQueued
     | DownloadCompleted
-    | ConnectedInstancesSampled
-    | SearchCapabilitySampled
     | ChannelStatusSampled
     | ChannelDegraded
     | ChannelRecovered
