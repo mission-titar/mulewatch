@@ -369,7 +369,6 @@ flowchart LR
     f["files"]
     fo["file_observations"]
     md["match_decisions"]
-    src["sources"]
   end
   subgraph loc["local.db · per node"]
     nr["node_runtime"]
@@ -378,7 +377,7 @@ flowchart LR
   end
 ```
 
-- **`catalog.db`** (version de schéma 5) : la connaissance accumulée, **append-only** (triggers
+- **`catalog.db`** (version de schéma 6) : la connaissance accumulée, **append-only** (triggers
   `BEFORE UPDATE/DELETE -> ABORT`), pour que N nœuds fusionnent en un seul catalogue (`python -m
   mulewatch.merge`). Les insertions sont **idempotentes** (`INSERT OR IGNORE` /
   `ON CONFLICT DO NOTHING`), donc sans danger en cas de redémarrage en pleine écriture.
@@ -390,7 +389,10 @@ La migration `catalog/0005` a supprimé `file_verifications` et `local/0004` a s
 `verification_tasks`, en réécrivant en `completed` toute ligne de téléchargement `quarantined`
 survivante (cette valeur a quitté `DownloadState`, et la relire lèverait une erreur). `local/0005` a
 ajouté `downloads.last_seen_at`, rempli avec `queued_at` pour qu'aucune ligne antérieure à la mise à
-niveau ne soit condamnée au premier démarrage.
+niveau ne soit condamnée au premier démarrage. `catalog/0006` a supprimé `sources`,
+`source_observations` et `file_observation_ranges`, que plus rien n'écrit ; un catalogue dont
+`file_observation_ranges` contient une ligne refuse de migrer, car un jour compacté ne redevient
+pas des observations.
 
 ### 8.1 Écrire une migration
 
