@@ -25,24 +25,18 @@ def test_counter_inc_no_label() -> None:
 def test_gauge_set_with_label() -> None:
     registry = CollectorRegistry()
     PrometheusSink(registry).apply(
-        MetricInstruction(MetricName.CONNECTED_INSTANCES, "set", (("network", "kad"),), 3.0)
+        MetricInstruction(
+            MetricName.CHANNEL_CONNECTABLE, "set", (("client", "amuled"), ("network", "kad")), 1.0
+        )
     )
-    assert registry.get_sample_value("emule_connected_instances", {"network": "kad"}) == 3.0
+    labels = {"client": "amuled", "network": "kad"}
+    assert registry.get_sample_value("p2pwatch_channel_connectable", labels) == 1.0
 
 
 def test_gauge_set_no_label() -> None:
     registry = CollectorRegistry()
     PrometheusSink(registry).apply(MetricInstruction(MetricName.CRAWLER_UP, "set", (), 1.0))
     assert registry.get_sample_value("emule_crawler_up") == 1.0
-
-
-def test_gauge_search_capable_sets_binary_value() -> None:
-    registry = CollectorRegistry()
-    sink = PrometheusSink(registry)
-    sink.apply(MetricInstruction(MetricName.SEARCH_CAPABLE, "set", (), 1.0))
-    assert registry.get_sample_value("emule_search_capable") == 1.0
-    sink.apply(MetricInstruction(MetricName.SEARCH_CAPABLE, "set", (), 0.0))
-    assert registry.get_sample_value("emule_search_capable") == 0.0
 
 
 def test_a_channel_series_is_removed_while_unknown_and_only_that_one() -> None:

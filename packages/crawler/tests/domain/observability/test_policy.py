@@ -58,23 +58,6 @@ CASES: list[tuple[ev.Event, Report]] = [
         ),
     ),
     (
-        ev.AllInstancesBlind(first_occurrence=True),
-        Report(
-            Severity.WARNING,
-            "blind coverage: no search-capable instance",
-            (MetricInstruction(MetricName.SEARCH_BLIND_CYCLES, "inc"),),
-            _OPERATIONS,
-        ),
-    ),
-    (
-        ev.AllInstancesBlind(first_occurrence=False),
-        Report(
-            Severity.WARNING,
-            "blind coverage: no search-capable instance",
-            (MetricInstruction(MetricName.SEARCH_BLIND_CYCLES, "inc"),),
-        ),
-    ),
-    (
         ev.ObservationRecorded(network="kad"),
         Report(
             Severity.DEBUG,
@@ -88,34 +71,6 @@ CASES: list[tuple[ev.Event, Report]] = [
             Severity.INFO,
             "download queued: 062A",
             (MetricInstruction(MetricName.DOWNLOADS_QUEUED, "inc"),),
-        ),
-    ),
-    (
-        ev.ConnectedInstancesSampled(network="ed2k", count=2),
-        Report(
-            Severity.DEBUG,
-            "connected instances (ed2k): 2",
-            (
-                MetricInstruction(
-                    MetricName.CONNECTED_INSTANCES, "set", (("network", "ed2k"),), 2.0
-                ),
-            ),
-        ),
-    ),
-    (
-        ev.SearchCapabilitySampled(capable=True),
-        Report(
-            Severity.DEBUG,
-            "search-capable: yes",
-            (MetricInstruction(MetricName.SEARCH_CAPABLE, "set", (), 1.0),),
-        ),
-    ),
-    (
-        ev.SearchCapabilitySampled(capable=False),
-        Report(
-            Severity.DEBUG,
-            "search-capable: no",
-            (MetricInstruction(MetricName.SEARCH_CAPABLE, "set", (), 0.0),),
         ),
     ),
     (

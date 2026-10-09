@@ -630,6 +630,9 @@ class FakeDownloadClient(FakeMuleClient):
     async def shared_files(self) -> tuple[SharedFileEntry, ...]:
         return ()
 
+    async def network_status(self) -> NetworkStatus:
+        return NetworkStatus(ed2k_id=1, ed2k_high=True, kad_status=KadStatus.CONNECTED)
+
 
 class _ShutdownOnQueueDownloadClient(FakeDownloadClient):
     """Download client that fires the shutdown on the FIRST ``download_queue`` (1 cycle, stop).
@@ -993,9 +996,7 @@ class _PortSyncCapableClient(FakeMuleClient):
     """Test port-sync EC client: satisfies get/set_listen_port + network_status (High-ID)."""
 
     def __init__(self) -> None:
-        super().__init__(
-            status=NetworkStatus(ed2k_id=0x02000001, ed2k_high=True, kad_status=KadStatus.CONNECTED)
-        )
+        super().__init__()
         self.listen_port = 4662
         self.set_ports: list[int] = []
 
@@ -1005,6 +1006,9 @@ class _PortSyncCapableClient(FakeMuleClient):
     async def set_listen_port(self, port: int) -> None:
         self.set_ports.append(port)
         self.listen_port = port
+
+    async def network_status(self) -> NetworkStatus:
+        return NetworkStatus(ed2k_id=0x02000001, ed2k_high=True, kad_status=KadStatus.CONNECTED)
 
 
 class _ShutdownOnPollReader:
