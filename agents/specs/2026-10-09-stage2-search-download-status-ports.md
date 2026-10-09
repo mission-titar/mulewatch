@@ -631,7 +631,8 @@ Paths under `packages/crawler/` unless noted. Sizes are estimates from `wc -l` o
 | 93 | `refactor/cycle-without-coverage` | The cycle stops sampling the status | `_aggregate_coverage` and `_is_search_capable` from `run_search_cycle.py` (its `clients` and `edge` parameters stay unused until block 120), `coverage.py` and its test, their tests, the integration loop test's shutdown trigger, `docs/troubleshooting-start.md` and `docs/contributing/architecture.md` | 481 / 11 |
 | 96 | `chore/remove-coverage-events` | Remove the coverage events | `AllInstancesBlind`, `ConnectedInstancesSampled`, `SearchCapabilitySampled` and their three metrics with their tests; `network_status` leaves `MuleClient` and the fakes | 151 / 10 |
 | 100 | `feat/channel-search-tasks` | The per (channel, keyword) tasks | `application/search_tasks.py` (D4): task loop over `SearchWorker.run_task`, pause gate, sleep until a backoff ends, the `sleep(0)` floor and its test, backoff saved at each change (D7); tests | 380 / 4 |
-| 110 | `refactor/search-tasks-wiring` | The composition runs the tasks | `composition/app.py` and `test_app.py` off the cycle; `CrawlerControl.force_cycle`, its webui button and route removed; `cycle_interval_seconds` removed and refused (D17); local 0006 and `test_local_migration_0006.py` (D19); `deploy/crawler.yml`, `tests/smoke/crawler.yml`; `docs/operate.md` and `docs/troubleshooting.md` cycle passages | 490 / 18 |
+| 105 | `refactor/remove-force-cycle` | Remove the force-cycle control | `CrawlerControl.force_cycle`, `LoopCrawlerControl`'s event, the webui button, route and banner, the composition's force race (D20); their tests; `docs/operate.md`, `docs/install.md` | 144 / 11 |
+| 110 | `refactor/search-tasks-wiring` | The composition runs the tasks | `composition/app.py` and `test_app.py` off the cycle; `CrawlerControl.force_cycle`, its webui button and route removed; `cycle_interval_seconds` removed and refused (D17); local 0006 and `test_local_migration_0006.py` (D19); `deploy/crawler.yml`, `tests/smoke/crawler.yml`; `docs/operate.md` and `docs/troubleshooting.md` cycle passages (Corrected: split at its file bound, the force-cycle control went to block 105) | 490 / 18 |
 | 120 | `chore/remove-search-cycle` | Remove the cycle | `run_search_cycle.py` and `test_run_search_cycle.py`, `domain/search/cycle.py` and its test, the `SearchCycleCompleted` event and its two metrics with their tests | **1070** / 8 |
 | 130 | `chore/remove-worker-cycle-parts` | Remove the worker's cycle parts | `SearchWorker`'s cycle-only parts (`SearchTask.skipped_by`, `is_blocked_for`, `report_dropped`, `pause_between_items`) and their tests (D4), the `SearchTaskDropped` event and its metric, `keyword_pause_*` removed and refused with `WorkerPolicy`'s fields (D17), `deploy/crawler.yml`, `tests/smoke/crawler.yml` | 260 / 9 |
 | 140 | `refactor/metrics-p2pwatch` | Metrics renamed | `MetricName` values (D16), `InstanceUnreachable`'s generic message (D15), `test_prometheus_sink.py`, `test_policy.py`, `docs/operate.md`, `docs/high-id.md` | 130 / 7 |
@@ -650,7 +651,7 @@ gate, a test without its module fails to import). What could leave on its own di
 **Order.**
 
 - 10 first: every later block raises or catches the generic errors.
-- 20 before 30 before 50 before 60, 70 before 80 before 90 before 93 before 96, 100 before 110 before 120 before 130, 170 before
+- 20 before 30 before 50 before 60, 70 before 80 before 90 before 93 before 96, 100 before 105 before 110 before 120 before 130, 170 before
   180 before 190: each adapter or module lands with its tests before the block that switches its caller, and the old
   path leaves after it.
 - 40 before 50: the port takes channel names.
