@@ -332,3 +332,13 @@ def test_guard_checks_every_source_not_just_the_first(tmp_path: Path) -> None:
     # The good source merged first (own transaction, committed); only its row is present.
     assert count(out, "files") == 1
     assert rows_without_id(out, "files") == [(hash_for("a"), 100)]
+
+
+def test_an_output_open_catalog_refuses_raises_a_merge_error(tmp_path: Path) -> None:
+    # The CLI catches only MergeError: a MigrationError from the output would be a bare traceback.
+    src = make_catalog(tmp_path / "a.db", _full_catalog("a", node_id="node-a"))
+    out = make_catalog(tmp_path / "out.db", {})
+    stamp_user_version(out, _CURRENT_SCHEMA_VERSION + 1)
+
+    with pytest.raises(MergeError, match=f"cannot open output {out}"):
+        merge_catalogs(out, [src])
