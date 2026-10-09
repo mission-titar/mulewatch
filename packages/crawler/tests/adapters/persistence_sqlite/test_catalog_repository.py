@@ -13,7 +13,7 @@ from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
-from mulewatch.ports.catalog_repository import CatalogRepository, ObservedFile, ReevalRow
+from mulewatch.ports.catalog_repository import CatalogRepository, ReevalRow
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 _HASH_B = "b" * 32
@@ -382,84 +382,14 @@ def _insert_file(connection: sqlite3.Connection, ed2k_hash: str, size_bytes: int
     )
 
 
-def _insert_range(
-    connection: sqlite3.Connection, ed2k_hash: str, day: str, filenames: list[str]
-) -> None:
-    # A compacted day bucket, as the compactor writes it (canonical sorted JSON names).
-    connection.execute(
-        "INSERT INTO file_observation_ranges (ed2k_hash, bucket, filenames, node_ids,"
-        " observation_count, first_observed_at, last_observed_at, source_count_min,"
-        " source_count_max, source_count_sum, complete_source_count_min,"
-        " complete_source_count_max, complete_source_count_sum)"
-        " VALUES (?, ?, ?, '[]', 1, ?, ?, 1, 1, 1, 0, 0, 0)",
-        (ed2k_hash, day, json.dumps(sorted(filenames)), f"{day}T00:00:00", f"{day}T23:00:00"),
-    )
-
-
-def test_known_filenames_include_the_names_of_compacted_ranges(
-    repository: SqliteCatalogRepository, connection: sqlite3.Connection
-) -> None:
-    # A file-level veto judges ALL names: an alias compacted away must not be forgotten.
-    repository.record_observation(_observation(filename="raw.avi"))
-    _insert_range(connection, _HASH, "2026-05-01", ["old [ES].avi", "raw.avi"])
-    _insert_range(connection, _HASH, "2026-05-02", ["older.avi"])
-    _insert_file(connection, _HASH_B, 1)
-    _insert_range(connection, _HASH_B, "2026-05-01", ["other.avi"])
-    assert repository.known_filenames(_HASH) == ("old [ES].avi", "older.avi", "raw.avi")
-
-
-def test_iter_reevaluation_rows_keeps_a_file_left_with_ranges_only(
-    repository: SqliteCatalogRepository, connection: sqlite3.Connection
-) -> None:
-    _insert_file(connection, _HASH, 4242)
-    _insert_range(connection, _HASH, "2026-05-02", ["z.avi", "m.avi"])
-    _insert_range(connection, _HASH, "2026-05-01", ["a.avi"])
-    assert list(repository.iter_reevaluation_rows()) == [
-        ReevalRow(
-            ed2k_hash=_HASH,
-            filename="m.avi",
-            size_bytes=4242,
-            media_length_sec=None,
-            bitrate_kbps=None,
-        )
-    ]
-
-
-def test_iter_reevaluation_rows_prefers_the_raw_observation_over_ranges(
-    repository: SqliteCatalogRepository, connection: sqlite3.Connection
-) -> None:
-    repository.record_observation(_observation(filename="raw.avi", media_length_sec=60))
-    _insert_range(connection, _HASH, "2026-05-01", ["a.avi"])
-    rows = list(repository.iter_reevaluation_rows())
-    assert [(row.filename, row.media_length_sec) for row in rows] == [("raw.avi", 60)]
-
-
-def test_iter_reevaluation_rows_skips_a_file_with_neither_observation_nor_range(
+def test_iter_reevaluation_rows_skips_a_file_never_observed(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     _insert_file(connection, _HASH, 1)
     assert list(repository.iter_reevaluation_rows()) == []
 
 
-def test_last_observation_of_a_file_left_with_ranges_only_falls_back_to_the_latest_range(
-    repository: SqliteCatalogRepository, connection: sqlite3.Connection
-) -> None:
-    # Same rule as the re-evaluation read: a compacted download candidate still gets a link.
-    _insert_file(connection, _HASH, 4242)
-    _insert_range(connection, _HASH, "2026-05-02", ["z.avi", "m.avi"])
-    _insert_range(connection, _HASH, "2026-05-01", ["a.avi"])
-    assert repository.last_observation(_HASH) == ObservedFile(filename="m.avi", size_bytes=4242)
-
-
-def test_last_observation_prefers_the_raw_observation_over_ranges(
-    repository: SqliteCatalogRepository, connection: sqlite3.Connection
-) -> None:
-    repository.record_observation(_observation(filename="raw.avi", size_bytes=7))
-    _insert_range(connection, _HASH, "2026-05-01", ["a.avi"])
-    assert repository.last_observation(_HASH) == ObservedFile(filename="raw.avi", size_bytes=7)
-
-
-def test_last_observation_of_a_file_with_neither_observation_nor_range_is_none(
+def test_last_observation_of_a_file_never_observed_is_none(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     _insert_file(connection, _HASH, 1)
