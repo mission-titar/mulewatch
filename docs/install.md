@@ -68,7 +68,7 @@ en place** : ce sont des mots de passe en clair, donc des portes ouvertes.
     `AMULE_API_PASSWORD` protège le port **4711 seulement**. Le catalogue mulewatch sur le port
     **8080** est servi **sans mot de passe, sans connexion, sans jeton CSRF**, et il expose le
     catalogue, les
-    contrôles de crawl (pause, passe forcée, redémarrage) **et une console SQL en lecture seule** à
+    contrôles de crawl (pause, redémarrage) **et une console SQL en lecture seule** à
     quiconque atteint ce port.
 
     C'est voulu : l'authentification est déléguée à ce que vous mettez devant. Sur une machine

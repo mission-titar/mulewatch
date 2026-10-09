@@ -51,9 +51,6 @@ class _RecordingControl:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def force_cycle(self) -> None:
-        self.calls.append("force_cycle")
-
     def pause(self) -> None:
         self.calls.append("pause")
 
@@ -1395,15 +1392,15 @@ def controls_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, _Recordin
 
 
 @pytest.mark.asyncio
-async def test_controls_get_renders_the_four_action_forms(
+async def test_controls_get_renders_the_three_action_forms(
     controls_app: tuple[Starlette, _RecordingControl],
 ) -> None:
-    """GET /controls -> 200 with a POST form for each of the four in-scope controls."""
+    """GET /controls -> 200 with a POST form for each of the three in-scope controls."""
     app, _ = controls_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get("/controls")
     assert resp.status_code == 200
-    assert 'action="/controls/force-cycle"' in resp.text
+    assert "force-cycle" not in resp.text
     assert 'action="/controls/pause"' in resp.text
     assert 'action="/controls/resume"' in resp.text
     assert 'action="/controls/restart"' in resp.text
@@ -1461,22 +1458,21 @@ async def test_controls_get_known_done_shows_banner_message(
     branch)."""
     app, _ = controls_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/controls?done=force-cycle")
+        resp = await client.get("/controls?done=resumed")
     assert resp.status_code == 200
     assert "control-banner" in resp.text
-    assert "Cycle forced. A new search cycle starts shortly." in resp.text
+    assert "Crawl resumed." in resp.text
 
 
 @pytest.mark.asyncio
-async def test_post_force_cycle_dispatches_and_redirects(
+async def test_there_is_no_force_cycle_control(
     controls_app: tuple[Starlette, _RecordingControl],
 ) -> None:
     app, control = controls_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.post("/controls/force-cycle")
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/controls?done=force-cycle"
-    assert control.calls == ["force_cycle"]
+    assert resp.status_code == 404
+    assert control.calls == []
 
 
 @pytest.mark.asyncio
@@ -1516,19 +1512,19 @@ async def test_post_restart_dispatches_and_redirects(
 
 
 @pytest.mark.asyncio
-async def test_post_force_cycle_followed_lands_on_banner(
+async def test_post_pause_followed_lands_on_banner(
     controls_app: tuple[Starlette, _RecordingControl],
 ) -> None:
-    """Following the redirect lands on the controls page with the force-cycle banner (end-to-end
+    """Following the redirect lands on the controls page with the pause banner (end-to-end
     PRG)."""
     app, control = controls_app
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test", follow_redirects=True
     ) as client:
-        resp = await client.post("/controls/force-cycle")
+        resp = await client.post("/controls/pause")
     assert resp.status_code == 200
-    assert "Cycle forced. A new search cycle starts shortly." in resp.text
-    assert control.calls == ["force_cycle"]
+    assert "Crawl paused. Searches in flight finish, then the crawler idles." in resp.text
+    assert control.calls == ["pause"]
 
 
 # ---------------------------------------------------------------------------

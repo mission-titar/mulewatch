@@ -1300,16 +1300,8 @@ def test_default_webui_server_factory_builds_a_uvicorn_server() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Runtime controls (phase P6a): the pause gate, the force-cycle race, restart-through-control.
+# Runtime controls (phase P6a): the pause gate, restart-through-control.
 # ---------------------------------------------------------------------------
-
-
-class _BlockingSleepClock(FakeClock):
-    """Clock whose ``sleep`` BLOCKS forever (models an inter-cycle sleep that would not wake on
-    its own) - so ``_sleep_or_forced`` can only return via the force-cycle event."""
-
-    async def sleep(self, seconds: float) -> None:
-        await asyncio.Event().wait()  # never resolves: exit only via cancellation
 
 
 @pytest.mark.asyncio
@@ -1344,39 +1336,9 @@ async def test_run_loop_exits_when_shutdown_already_set(
 
 
 @pytest.mark.asyncio
-async def test_app_starts_unpaused_with_force_event_clear(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # __init__ arms the run gate (``_resumed`` set = un-paused) and leaves ``_force_cycle`` clear.
+async def test_app_starts_unpaused(tmp_path: Path, matcher_config: MatcherConfig) -> None:
     app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient())
     assert app._resumed.is_set()
-    assert not app._force_cycle.is_set()
-
-
-@pytest.mark.asyncio
-async def test_sleep_or_forced_returns_via_force_and_clears_event(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # FORCED path: the clock sleep would block forever, but ``_force_cycle`` set short-circuits
-    # the race; afterwards the event is CLEARED (so one force = exactly one immediate cycle).
-    app = _make_app(
-        tmp_path, matcher_config, factory=lambda e: FakeMuleClient(), clock=_BlockingSleepClock()
-    )
-    app._force_cycle.set()
-    await asyncio.wait_for(app._sleep_or_forced(100.0), timeout=1.0)
-    assert not app._force_cycle.is_set()
-
-
-@pytest.mark.asyncio
-async def test_sleep_or_forced_normal_path_sleeps_and_leaves_event_clear(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # NORMAL path: no force set → the (instant FakeClock) sleep wins; the force event stays clear.
-    clock = FakeClock()
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient(), clock=clock)
-    await asyncio.wait_for(app._sleep_or_forced(0.0), timeout=1.0)
-    assert not app._force_cycle.is_set()
-    assert clock.sleeps == [0.0]  # the clock-sleep branch was taken
 
 
 @pytest.mark.asyncio
@@ -1445,7 +1407,6 @@ async def test_restart_control_triggers_graceful_shutdown(
         await asyncio.sleep(0)
     control = LoopCrawlerControl(
         loop=asyncio.get_running_loop(),
-        force_cycle=app._force_cycle,
         resumed=app._resumed,
         shutdown=app._shutdown,
     )

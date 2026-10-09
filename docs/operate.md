@@ -204,7 +204,7 @@ le crawl en gardant aMule vivant, c'est
 | `/files/{file_id}` | Détail d'un fichier, désigné par son `file_id` en 32 caractères hexadécimaux minuscules, tel que la console SQL l'affiche : réseau, identifiant natif, observations, décisions, explication du matching |
 | `/targets/{target_id}` | Fichiers d'une cible (alias de `/files?target=`) |
 | `/node` | État du crawler : `node_id` et entrées du `scheduler_state`. N'expose pas l'état réseau d'aMule. |
-| `/controls` | Forcer une passe de recherche, mettre en pause ou reprendre la surveillance, redémarrer le crawler seul (le conteneur reste debout, aMule garde ses sessions). |
+| `/controls` | Mettre en pause ou reprendre la surveillance, redémarrer le crawler seul (le conteneur reste debout, aMule garde ses sessions). |
 | `/console` | Console SQL en lecture seule : un unique `SELECT` sur `catalog.db` ou `local.db`, avec export CSV. Toujours active. |
 | `/health` | Healthcheck JSON : répond `{"status": "ok"}` si le service est opérationnel |
 

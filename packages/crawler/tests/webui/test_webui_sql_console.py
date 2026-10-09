@@ -29,10 +29,7 @@ _HASH_A = "a" * 32
 class _StubControl:
     """No-op ``CrawlerControl`` (the console routes never touch it)."""
 
-    def force_cycle(self) -> None:  # pragma: no cover - never called by console routes
-        pass
-
-    def pause(self) -> None:  # pragma: no cover
+    def pause(self) -> None:  # pragma: no cover - never called by console routes
         pass
 
     def resume(self) -> None:  # pragma: no cover

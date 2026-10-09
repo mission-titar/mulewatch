@@ -37,63 +37,48 @@ class _RecordingLoop:
         self.callbacks.append(callback)
 
 
-def _control_with(
-    loop: object,
-) -> tuple[LoopCrawlerControl, asyncio.Event, asyncio.Event, asyncio.Event]:
-    force = asyncio.Event()
+def _control_with(loop: object) -> tuple[LoopCrawlerControl, asyncio.Event, asyncio.Event]:
     resumed = asyncio.Event()
     shutdown = asyncio.Event()
     control = LoopCrawlerControl(
         loop=loop,  # type: ignore[arg-type]  # fake loop, only call_soon_threadsafe is used
-        force_cycle=force,
         resumed=resumed,
         shutdown=shutdown,
     )
-    return control, force, resumed, shutdown
-
-
-def test_force_cycle_sets_only_the_force_event() -> None:
-    control, force, resumed, shutdown = _control_with(_ImmediateLoop())
-    control.force_cycle()
-    assert force.is_set()
-    assert not resumed.is_set()
-    assert not shutdown.is_set()
+    return control, resumed, shutdown
 
 
 def test_pause_clears_the_resumed_event() -> None:
-    control, force, resumed, shutdown = _control_with(_ImmediateLoop())
+    control, resumed, shutdown = _control_with(_ImmediateLoop())
     resumed.set()  # running
     control.pause()
     assert not resumed.is_set()
-    assert not force.is_set()
     assert not shutdown.is_set()
 
 
 def test_resume_sets_the_resumed_event() -> None:
-    control, force, resumed, shutdown = _control_with(_ImmediateLoop())
+    control, resumed, shutdown = _control_with(_ImmediateLoop())
     resumed.clear()  # paused
     control.resume()
     assert resumed.is_set()
-    assert not force.is_set()
     assert not shutdown.is_set()
 
 
 def test_restart_sets_only_the_shutdown_event() -> None:
-    control, force, resumed, shutdown = _control_with(_ImmediateLoop())
+    control, resumed, shutdown = _control_with(_ImmediateLoop())
     control.restart()
     assert shutdown.is_set()
-    assert not force.is_set()
     assert not resumed.is_set()
 
 
 def test_control_holds_no_db_connection_and_only_events_plus_loop() -> None:
     """Structural read-only guarantee (spec §4): the control's only effect is scheduling event
     mutations on the loop. It holds NO DB connection / cannot write. We assert its instance
-    state is exactly the loop + the three events (nothing repo/connection/cursor-shaped)."""
+    state is exactly the loop + the two events (nothing repo/connection/cursor-shaped)."""
     loop = _ImmediateLoop()
-    control, force, resumed, shutdown = _control_with(loop)
+    control, resumed, shutdown = _control_with(loop)
     held = set(vars(control).values())
-    assert held == {loop, force, resumed, shutdown}
+    assert held == {loop, resumed, shutdown}
     for value in vars(control).values():
         assert isinstance(value, (asyncio.Event, _ImmediateLoop))
 
@@ -102,11 +87,11 @@ def test_mutation_is_deferred_to_the_loop_thread_via_call_soon_threadsafe() -> N
     """The hand-off goes through ``call_soon_threadsafe``: the event is NOT mutated inline on the
     caller thread; it is scheduled and only mutates once the loop runs the callback."""
     loop = _RecordingLoop()
-    control, force, _resumed, _shutdown = _control_with(loop)
-    control.force_cycle()
+    control, _resumed, shutdown = _control_with(loop)
+    control.restart()
     # Scheduled, but NOT yet applied (deferred to the crawler loop thread).
     assert len(loop.callbacks) == 1
-    assert not force.is_set()
+    assert not shutdown.is_set()
     # Running the scheduled callback (as the loop thread would) applies the mutation.
     loop.callbacks[0]()
-    assert force.is_set()
+    assert shutdown.is_set()
