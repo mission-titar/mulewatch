@@ -87,8 +87,6 @@ def _crawler_config(
 ) -> CrawlerConfig:
     return CrawlerConfig(
         cycle_interval_seconds=300.0,
-        search_poll_budget_seconds=10.0,
-        search_poll_interval_seconds=5.0,
         keyword_pause_min_seconds=1.0,
         keyword_pause_max_seconds=2.0,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=60.0, factor=2.0, jitter_ratio=0.0),
@@ -409,9 +407,11 @@ async def test_loop_exits_cleanly_when_shutdown_set_during_sleep(
 
 
 class _BlockingClient(FakeMuleClient):
-    """Client whose ``fetch_results`` BLOCKS: the loop stays in flight → cancellation hits it."""
+    """Client whose ``search`` BLOCKS: the loop stays in flight → cancellation hits it."""
 
-    async def fetch_results(self) -> tuple[FileObservation, ...]:
+    async def search(
+        self, keyword: str, channel: str, budget_seconds: float
+    ) -> tuple[FileObservation, ...]:
         await asyncio.Event().wait()  # never resolves: blocks until cancellation
         return ()
 
@@ -420,11 +420,11 @@ class _BlockingClient(FakeMuleClient):
 async def test_signal_cancels_an_in_flight_cycle(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
-    # A worker is BLOCKED in fetch_results; an external SIGINT cancels the TaskGroup →
+    # A worker is BLOCKED in search; an external SIGINT cancels the TaskGroup →
     # covers the cancellation path (clean unwind + "Workers stopped" line).
     app = _make_app(tmp_path, matcher_config, factory=lambda e: _BlockingClient())
     run_task = asyncio.create_task(app.run())
-    for _ in range(20):  # let the cycle start and block in fetch_results
+    for _ in range(20):  # let the cycle start and block in search
         await asyncio.sleep(0)
     app._on_signal()
     await asyncio.wait_for(run_task, timeout=5.0)
@@ -1465,7 +1465,7 @@ async def test_restart_control_triggers_graceful_shutdown(
     # cleanly, through the control path.
     app = _make_app(tmp_path, matcher_config, factory=lambda e: _BlockingClient())
     run_task = asyncio.create_task(app.run())
-    for _ in range(20):  # let the cycle start and block in fetch_results
+    for _ in range(20):  # let the cycle start and block in search
         await asyncio.sleep(0)
     control = LoopCrawlerControl(
         loop=asyncio.get_running_loop(),

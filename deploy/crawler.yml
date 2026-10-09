@@ -2,8 +2,6 @@
 # Set download.enabled to false for a crawl-only node (no download, catalog only).
 
 cycle_interval_seconds: 300.0
-search_poll_budget_seconds: 30.0
-search_poll_interval_seconds: 5.0
 keyword_pause_min_seconds: 1.0
 keyword_pause_max_seconds: 4.0
 decision_poll_interval_seconds: 5.0

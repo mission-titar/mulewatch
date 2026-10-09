@@ -44,8 +44,6 @@ _POLICY = WorkerPolicy(
     backoff_cap_seconds=60.0,
     backoff_factor=2.0,
     backoff_jitter_ratio=0.0,
-    poll_budget_seconds=10.0,
-    poll_interval_seconds=5.0,
     keyword_pause_min_seconds=1.0,
     keyword_pause_max_seconds=1.0,
 )
@@ -111,7 +109,7 @@ async def test_single_instance_cycle_records_and_advances(
 ) -> None:
     clock = FakeClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    client = FakeMuleClient(results=[(_obs(),)])  # the download appears on the 1st fetch
+    client = FakeMuleClient(results=[(_obs(),)])  # the download appears on the 1st search
     worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
     scheduler_state = SqliteSchedulerStateRepository(local_connection)
     await run_search_cycle(
@@ -129,6 +127,35 @@ async def test_single_instance_cycle_records_and_advances(
     )
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 1
     assert scheduler_state.read_cycle_index() == 1  # index = N+1, persisted at cycle end
+
+
+@pytest.mark.asyncio
+async def test_the_cycle_searches_the_channels_its_clients_declare(
+    catalog: SqliteCatalogRepository,
+    local_connection: sqlite3.Connection,
+    engine: MatchingEngine,
+) -> None:
+    class _OneChannel(FakeMuleClient):
+        channels: tuple[str, ...] = ("x",)
+
+    clock = FakeClock()
+    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
+    client = _OneChannel()
+    worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
+    await run_search_cycle(
+        workers=[worker],
+        clients=[client],
+        keywords=_KEYWORDS,
+        rng=_NoopRng(),
+        node_id="node-A",
+        cycle_index=0,
+        scheduler_state=SqliteSchedulerStateRepository(local_connection),
+        backoff=backoff,
+        clock=clock,
+        telemetry=RecordingTelemetry(),
+        edge=EdgeState(),
+    )
+    assert sorted(client.searches) == [("keroro", "x"), ("titar", "x")]
 
 
 @pytest.mark.asyncio
@@ -307,7 +334,9 @@ async def test_channel_backoff_is_persisted_at_cycle_end(
     class _AlwaysFails(FakeMuleClient):
         """Fails on EVERY search → the channels STAY in backoff (never reset)."""
 
-        async def start_search(self, keyword: str, channel: str) -> None:
+        async def search(
+            self, keyword: str, channel: str, budget_seconds: float
+        ) -> tuple[FileObservation, ...]:
             raise SearchFailedError("EC_OP_FAILED")
 
     clock = FakeClock()
@@ -340,15 +369,14 @@ async def test_one_worker_pauses_between_items_not_after_the_last(
     engine: MatchingEngine,
 ) -> None:
     # A SINGLE worker drains ALL items → the inter-keyword pause (fixed 1.0s, min==max;
-    # search_progress=100 → no polling sleep) falls BETWEEN two items and NEVER after the
+    # the fake search never sleeps) falls BETWEEN two items and NEVER after the
     # last: exactly (N_items - 1) pauses of 1.0s.
-    from mulewatch.application.run_search_cycle import _CHANNELS
     from mulewatch.domain.search.keywords import generate_keywords
 
-    n_items = len(generate_keywords(_KEYWORDS)) * len(_CHANNELS)
+    n_items = len(generate_keywords(_KEYWORDS)) * len(FakeMuleClient.channels)
     clock = FakeClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    client = FakeMuleClient()  # search_progress=100 → no polling sleep
+    client = FakeMuleClient()
     worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
     scheduler_state = SqliteSchedulerStateRepository(local_connection)
     await run_search_cycle(
@@ -376,10 +404,9 @@ async def test_drained_queue_skips_the_final_pause_with_two_workers(
     # Two workers SHARE the fake clock: the pause is only slept between two real items
     # (the "queue not empty" guard). The total of pauses is STRICTLY less than the number
     # of items (at least the last item of each drain does not trigger a pause).
-    from mulewatch.application.run_search_cycle import _CHANNELS
     from mulewatch.domain.search.keywords import generate_keywords
 
-    n_items = len(generate_keywords(_KEYWORDS)) * len(_CHANNELS)
+    n_items = len(generate_keywords(_KEYWORDS)) * len(FakeMuleClient.channels)
     clock = FakeClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
     client_a = FakeMuleClient()
@@ -415,10 +442,9 @@ async def test_worker_in_backoff_does_not_consume_peers_tasks(
     # Regression logic-search#0 (spec §14 "NO LOSS"): a worker whose instance is in backoff
     # must NOT drain/discard the remaining tasks. The queue is shared → if A is in backoff
     # and B healthy, B must process ALL tasks (not half).
-    from mulewatch.application.run_search_cycle import _CHANNELS
     from mulewatch.domain.search.keywords import generate_keywords
 
-    n_items = len(generate_keywords(_KEYWORDS)) * len(_CHANNELS)
+    n_items = len(generate_keywords(_KEYWORDS)) * len(FakeMuleClient.channels)
     clock = FakeClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
     # 4 accumulated failures → base × factor^3 = 2×8 = 16 s, retry_after well beyond the
@@ -456,11 +482,10 @@ async def test_all_workers_in_backoff_drop_tasks_with_telemetry(
     # Terminal case: if ALL instances are in backoff, no one can process anymore → the
     # tasks are DROPPED with a telemetry trace (visibility), and the cycle finishes anyway
     # (queue drained, index advances).
-    from mulewatch.application.run_search_cycle import _CHANNELS
     from mulewatch.domain.observability.events import SearchTaskDropped
     from mulewatch.domain.search.keywords import generate_keywords
 
-    n_items = len(generate_keywords(_KEYWORDS)) * len(_CHANNELS)
+    n_items = len(generate_keywords(_KEYWORDS)) * len(FakeMuleClient.channels)
     clock = FakeClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
     # 4 failures per instance → backoff beyond the cycle's duration (cf. previous test).

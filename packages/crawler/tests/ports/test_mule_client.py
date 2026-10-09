@@ -41,11 +41,18 @@ def test_network_status_server_fields_default_to_none() -> None:
 class _StubClient:
     """Minimal structural implementation: satisfies MuleClient WITHOUT importing it."""
 
+    channels: tuple[str, ...] = ("ed2k", "kad")
+
     async def connect(self) -> None:
         return None
 
     async def close(self) -> None:
         return None
+
+    async def search(
+        self, keyword: str, channel: str, budget_seconds: float
+    ) -> tuple[FileObservation, ...]:
+        return ()
 
     async def start_search(self, keyword: str, channel: str) -> None:
         return None
@@ -71,6 +78,8 @@ async def test_stub_client_satisfies_mule_client_protocol() -> None:
     # The `MuleClient` annotation forces mypy to check STRUCTURAL compatibility.
     client: MuleClient = _StubClient()
     await client.connect()
+    assert client.channels == ("ed2k", "kad")
+    assert await client.search("keroro", "ed2k", 120.0) == ()
     await client.start_search("keroro", "ed2k")
     assert await client.fetch_results() == ()
     assert await client.search_progress() is None

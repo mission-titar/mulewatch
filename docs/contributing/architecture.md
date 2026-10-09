@@ -210,14 +210,7 @@ sequenceDiagram
   participant E as MatchingEngine
   participant D as Download signal
 
-  W->>A: start_search(keyword, channel)
-  loop until 100% or budget exhausted
-    W->>A: search_progress()
-    opt Kad, until exhausted
-      W->>A: widen_search()
-    end
-  end
-  W->>A: fetch_results()
+  W->>A: search(keyword, channel, budget)
   A-->>W: FileObservation[]
   loop each observation
     W->>C: record_observation()
@@ -239,7 +232,9 @@ sequenceDiagram
   `null` sur la plupart des résultats globaux et Kad. Rien n'ouvre jamais le fichier pour en savoir
   plus. Un fichier annoncé sous plusieurs noms arrive **replié** en un seul résultat ; le mapper le
   redéplie en une observation par nom, comme l'EC en produisait une par entrée.
-- Une recherche **Kad** est élargie à chaque tour de sondage à partir du deuxième
+- `search()` rend la main quand amuled signale la fin de la recherche, au plus tard 120 s
+  (le budget, constante du cœur) après son départ réseau. Attendre est l'affaire de l'adaptateur.
+- Dans l'adaptateur, une recherche **Kad** est élargie à chaque tour de sondage à partir du deuxième
   (`POST /search/{id}/more`, le bouton « More » d'aMule) jusqu'à ce que Kad réponde
   `409 kad_more_exhausted`. Au premier tour, Kad n'a encore interrogé personne : relancer
   gaspillerait l'une de ses 4 relances. Un échec de cet appel n'arrête jamais la recherche : on

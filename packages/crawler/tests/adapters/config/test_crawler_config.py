@@ -22,8 +22,6 @@ def _minimal_raw() -> dict[str, Any]:
     """Valid policy + minimal wiring (EC password without ${}, base paths) — observer mode."""
     return {
         "cycle_interval_seconds": 300.0,
-        "search_poll_budget_seconds": 30.0,
-        "search_poll_interval_seconds": 5.0,
         "keyword_pause_min_seconds": 1.0,
         "keyword_pause_max_seconds": 4.0,
         "backoff": {
@@ -70,8 +68,6 @@ def test_parses_a_valid_config() -> None:
     config = parse_crawler_config(_minimal_raw(), _env())
     assert config == CrawlerConfig(
         cycle_interval_seconds=300.0,
-        search_poll_budget_seconds=30.0,
-        search_poll_interval_seconds=5.0,
         keyword_pause_min_seconds=1.0,
         keyword_pause_max_seconds=4.0,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=300.0, factor=2.0, jitter_ratio=0.3),
@@ -123,8 +119,15 @@ def test_bool_is_not_accepted_as_a_number() -> None:
 
 def test_non_positive_value_is_fatal() -> None:
     raw = _minimal_raw()
-    raw["search_poll_budget_seconds"] = 0
+    raw["cycle_interval_seconds"] = 0
     with pytest.raises(ConfigError, match="strictly positive"):
+        parse_crawler_config(raw, _env())
+
+
+@pytest.mark.parametrize("key", ["search_poll_budget_seconds", "search_poll_interval_seconds"])
+def test_a_removed_key_is_refused_by_name(key: str) -> None:
+    raw = _minimal_raw() | {key: 5.0}
+    with pytest.raises(ConfigError, match=key):
         parse_crawler_config(raw, _env())
 
 

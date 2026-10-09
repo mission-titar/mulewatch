@@ -109,6 +109,9 @@ _DEFAULT_WEBUI = WebuiConfig(enabled=True)
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
+# Keys no longer read: refused, so an operator never believes they still apply.
+_REMOVED_KEYS = ("search_poll_budget_seconds", "search_poll_interval_seconds")
+
 
 @dataclass(frozen=True)
 class MetricsConfig:
@@ -134,8 +137,7 @@ class CrawlerConfig:
     """Unified crawler config (policy + wiring). All durations in SECONDS.
 
     Policy (unchanged): ``cycle_interval_seconds`` (target cadence of a cycle),
-    ``search_poll_budget_seconds`` (max wait time for results), ``search_poll_interval_
-    seconds`` (polling step), ``keyword_pause_{min,max}_seconds`` (inter-keyword jitter),
+    ``keyword_pause_{min,max}_seconds`` (inter-keyword jitter),
     ``backoff``, ``decision_poll_interval_seconds`` (nudge safety net),
     ``shutdown_deadline_seconds`` (hard bound of the clean shutdown).
 
@@ -149,8 +151,6 @@ class CrawlerConfig:
     """
 
     cycle_interval_seconds: float
-    search_poll_budget_seconds: float
-    search_poll_interval_seconds: float
     keyword_pause_min_seconds: float
     keyword_pause_max_seconds: float
     backoff: BackoffConfig
@@ -389,6 +389,9 @@ def _parse_webui(raw: dict[str, Any], env: Mapping[str, str]) -> WebuiConfig:
 def parse_crawler_config(raw: dict[str, Any], env: Mapping[str, str]) -> CrawlerConfig:
     """Builds a validated ``CrawlerConfig`` from the parsed YAML dict + the ``env`` environment
     (interpolation of ``${NAME}``). Fail-fast §5/§14: any inconsistency → ``ConfigError``."""
+    for key in _REMOVED_KEYS:
+        if key in raw:
+            raise ConfigError(f"crawler: key '{key}' was removed, delete it from crawler.yml")
     backoff_raw = _require_mapping(raw.get("backoff", {}), "section 'backoff'")
     factor = _positive(backoff_raw, "factor", "backoff")
     if factor < 1:
@@ -420,8 +423,6 @@ def parse_crawler_config(raw: dict[str, Any], env: Mapping[str, str]) -> Crawler
         )
     return CrawlerConfig(
         cycle_interval_seconds=_positive(raw, "cycle_interval_seconds", "crawler"),
-        search_poll_budget_seconds=_positive(raw, "search_poll_budget_seconds", "crawler"),
-        search_poll_interval_seconds=_positive(raw, "search_poll_interval_seconds", "crawler"),
         keyword_pause_min_seconds=pause_min,
         keyword_pause_max_seconds=pause_max,
         backoff=backoff,

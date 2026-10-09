@@ -498,6 +498,10 @@ async def test_search_starts_the_keyword_on_the_channels_search_type(
     assert json.loads(start.content) == {"query": "keroro", "type": search_type}
 
 
+def test_the_client_declares_the_channels_it_searches() -> None:
+    assert _client(FakeAmuleApi()).channels == ("ed2k", "kad")
+
+
 @pytest.mark.asyncio
 async def test_search_returns_the_results_with_their_keyword_and_counts_what_it_drops() -> None:
     rows = [_result(f"Keroro.{index:04d}.avi") | {"hash": f"{index:032x}"} for index in range(501)]

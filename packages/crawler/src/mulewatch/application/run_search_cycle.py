@@ -49,9 +49,6 @@ from mulewatch.ports.telemetry import Telemetry
 
 _logger = logging.getLogger("mulewatch.application.run_search_cycle")
 
-# The two channels swept each cycle (MVP spec §6: eD2k servers + Kad).
-_CHANNELS = ("ed2k", "kad")
-
 
 def _is_search_capable(*, ed2k_high: bool, kad_status: KadStatus) -> bool:
     """Can an instance make a search SUCCEED? (HighID OR Kad CONNECTED).
@@ -167,19 +164,20 @@ async def run_search_cycle(
     generated = generate_keywords(keywords)
     texts = tuple(keyword.text for keyword in generated)
     ordered = shuffle_for_cycle(texts, rng, node_id, cycle_index)
+    channels = tuple(dict.fromkeys(channel for worker in workers for channel in worker.channels))
     # LIFO (logic-search#0): a task re-enqueued by a backed-off worker must be
     # immediately available to a PEER (not re-pulled by the same worker via FIFO →
     # infinite loop when all instances are backed off). With LIFO, the re-enqueue
     # is on top → the next worker takes it → or they all refused it and we DROP.
     queue: asyncio.LifoQueue[SearchTask | None] = asyncio.LifoQueue()
     for text in ordered:
-        for channel in _CHANNELS:
+        for channel in channels:
             queue.put_nowait(SearchTask(keyword=text, channel=channel))
     _logger.info(
         "cycle %d: %d keyword(s) × %d channels = %d task(s)",
         cycle_index,
         len(ordered),
-        len(_CHANNELS),
+        len(channels),
         queue.qsize(),
     )
     n_workers = len(workers)

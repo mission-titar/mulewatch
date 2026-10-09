@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from mulewatch.domain.observation import FileObservation
+from mulewatch.ports.search_client import SearchClient
 
 
 class KadStatus(StrEnum):
@@ -31,14 +32,9 @@ class NetworkStatus:
     server_addr: str | None = None
 
 
-class MuleClient(Protocol):
-    """UNIT actions only: no sleep, no retry, no loop. ``fetch_results`` returns the daemon's
-    CUMULATIVE snapshot, ``search_progress`` is ``None`` when it reports no percentage, and
+class MuleClient(SearchClient, Protocol):
+    """The four-call search (called by nothing, until it goes) and the network status.
     ``widen_search`` (Kad only) is ``True`` once the search can no longer be widened."""
-
-    async def connect(self) -> None: ...
-
-    async def close(self) -> None: ...
 
     async def start_search(self, keyword: str, channel: str) -> None: ...
 

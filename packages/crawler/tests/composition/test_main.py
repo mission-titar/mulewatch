@@ -14,8 +14,6 @@ _CONFIG = Path(__file__).resolve().parents[4] / "deploy"
 # actually load a config write their own fixture into tmp_path.
 _UNIFIED_CONFIG = """\
 cycle_interval_seconds: 300.0
-search_poll_budget_seconds: 30.0
-search_poll_interval_seconds: 5.0
 keyword_pause_min_seconds: 1.0
 keyword_pause_max_seconds: 4.0
 decision_poll_interval_seconds: 5.0

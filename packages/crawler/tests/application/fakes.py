@@ -1,7 +1,7 @@
 """Deterministic fakes for the application-layer tests (spec §8).
 
-``FakeMuleClient``: results SCRIPTED per ``fetch_results`` call, injectable failures
-(``ClientUnreachableError``/``SearchFailedError``) at ``connect``/``start_search``.
+``FakeMuleClient``: results SCRIPTED per ``search`` call, injectable failures
+(``ClientUnreachableError``/``SearchFailedError``) at ``connect``/``search``.
 ``FakeClock``: advanceable clock (``advance`` without I/O) + ``sleep`` that advances WITHOUT
 a real wait (determinism). ``FakeRng``: identity shuffle + FIXED jitter (determinism).
 ``RecordingSignal``: captures nudged subjects. The repos are the REAL SQLite repos
@@ -87,14 +87,15 @@ class RecordingSignal:
 
 
 class FakeMuleClient:
-    """Scripted EC client (satisfies MuleClient structurally, spec §8).
+    """Scripted client (satisfies MuleClient structurally, spec §8).
 
-    ``results``: list of observation tuples, one per ``fetch_results`` call
-    (exhausted → empty tuple). ``connect_failures``: exceptions to raise on the first N
-    ``connect`` calls (then success). ``search_failures``: exceptions to raise on the first N
-    ``start_search`` calls (then success). ``status``: the ``NetworkStatus`` returned.
-    ``widen_answers``: what the next ``widen_search`` calls return or raise (then ``False``).
+    ``results``: list of observation tuples, one per ``search`` call (exhausted → empty
+    tuple). ``connect_failures``: exceptions to raise on the first N ``connect`` calls (then
+    success). ``search_failures``: exceptions to raise on the first N ``search`` calls (then
+    success). ``status``: the ``NetworkStatus`` returned. The four-call search is inert.
     """
+
+    channels: tuple[str, ...] = ("ed2k", "kad")
 
     def __init__(
         self,
@@ -113,9 +114,7 @@ class FakeMuleClient:
         self.connect_calls = 0
         self.close_calls = 0
         self.searches: list[tuple[str, str]] = []
-        self.fetch_calls = 0
-        self.widen_answers: list[bool | Exception] = []
-        self.widen_calls = 0
+        self.budgets: list[float] = []
 
     async def connect(self) -> None:
         self.connect_calls += 1
@@ -125,29 +124,31 @@ class FakeMuleClient:
     async def close(self) -> None:
         self.close_calls += 1
 
-    async def start_search(self, keyword: str, channel: str) -> None:
+    async def search(
+        self, keyword: str, channel: str, budget_seconds: float
+    ) -> tuple[FileObservation, ...]:
         self.searches.append((keyword, channel))
+        self.budgets.append(budget_seconds)
         if self._search_failures:
             raise self._search_failures.pop(0)
-
-    async def fetch_results(self) -> tuple[FileObservation, ...]:
-        self.fetch_calls += 1
         if not self._results:
             return ()
         return self._results.pop(0)
+
+    async def start_search(self, keyword: str, channel: str) -> None:
+        return None
+
+    async def fetch_results(self) -> tuple[FileObservation, ...]:
+        return ()
 
     async def stop_search(self) -> None:
         return None
 
     async def search_progress(self) -> int | None:
-        return 100  # "done": polling stops immediately (determinism)
+        return None
 
     async def widen_search(self) -> bool:
-        self.widen_calls += 1
-        answer = self.widen_answers.pop(0) if self.widen_answers else False
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
+        return True
 
     async def network_status(self) -> NetworkStatus:
         return self._status
