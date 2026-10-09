@@ -547,6 +547,7 @@ async def test_file_detail_with_decision_returns_200(
     assert resp.status_code == 200
     assert "ed2k://" in resp.text
     assert "062A" in resp.text
+    assert "AICH" not in resp.text
 
 
 @pytest.fixture

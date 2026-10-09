@@ -112,7 +112,6 @@ class FileDetail:
 
     ed2k_hash: str
     size_bytes: int
-    aich_hash: str | None
     sightings: tuple[Sighting, ...]  # oldest first
     latest: Sighting | None  # the latest observation
     decisions: tuple[DecisionView, ...]  # current decisions, latest per target, 0..N
@@ -347,7 +346,6 @@ class FileDetailDisplay:
 
     ed2k_hash: str
     size_bytes: int
-    aich_hash_display: str  # aich_hash or "·"
     timeline: tuple[TimelineRow, ...]  # one row per sighting, oldest first
     decisions: tuple[DecisionView, ...]  # 0..N elements: for template iteration
     ed2k_link: str  # precomputed from the latest sighting

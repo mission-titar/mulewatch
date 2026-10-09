@@ -214,7 +214,7 @@ ORDER BY target_id
 
 # Basic lookup on files (for file_detail).
 _SQL_FILE = """\
-SELECT ed2k_hash, size_bytes, aich_hash
+SELECT ed2k_hash, size_bytes
 FROM files
 WHERE ed2k_hash = ?
 """
@@ -432,7 +432,6 @@ class CatalogReader:
         return FileDetail(
             ed2k_hash=file_row["ed2k_hash"],
             size_bytes=file_row["size_bytes"],
-            aich_hash=file_row["aich_hash"],
             sightings=sightings(self._conn, ed2k_hash),
             latest=latest_sighting(self._conn, ed2k_hash),
             decisions=decisions,
