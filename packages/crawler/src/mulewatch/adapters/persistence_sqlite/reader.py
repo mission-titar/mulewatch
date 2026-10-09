@@ -11,10 +11,9 @@ otherwise. It NEVER sets ``journal_mode=WAL``/``foreign_keys``/migrations: those
 writer's job (``connection.py``); the reader inherits WAL from the single writer, and an
 autocommit read holds no persistent read lock, so a long-lived reader does not block the
 writer's WAL checkpointing. ``row_factory = sqlite3.Row`` gives the read adapters access by
-column name. ``temp_store=MEMORY`` carries forward the shipped hotfix (fix 461b135): the
-hardened webui container mounts a tiny ``/tmp`` tmpfs, so the temp b-trees the reads
-materialize (window functions, ``group_concat``, sorts) must live in the process heap,
-bounded by the container ``mem_limit``, not spill to a scratch disk it does not have.
+column name. ``temp_store=FILE``, as the migration runner (stage 1, D8): the temp b-trees the
+reads materialize (sorts, ``group_concat``) spill to disk, since an in-memory sort is unbounded.
+The ``MEMORY`` hotfix (461b135) answered a tmpfs ``/tmp`` and ``read_only``, gone since 2026-09-16.
 
 ``check_same_thread=False`` is DELIBERATE: it lets a central ``quiesce()`` close a
 connection from a thread OTHER than the one that opened it (livrable 3's maintenance swap).
@@ -37,11 +36,11 @@ from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 
 def open_reader(path: Path | str) -> sqlite3.Connection:
     """Open ``path`` read-only: ``mode=ro`` + ``query_only`` (double guard), ``Row`` factory,
-    ``temp_store=MEMORY``. See the module docstring for the full rationale."""
+    ``temp_store=FILE``. See the module docstring for the full rationale."""
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA query_only=ON")
-    connection.execute("PRAGMA temp_store=MEMORY")
+    connection.execute("PRAGMA temp_store=FILE")
     return connection
 
 

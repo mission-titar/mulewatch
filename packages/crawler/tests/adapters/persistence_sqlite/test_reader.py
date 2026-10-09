@@ -1,7 +1,7 @@
 """Tests for the read-only connection provider (monolith-consolidation spec §7).
 
 Folds the assertions of the deleted webui ``test_webui_db.py`` (RO-refuses-writes,
-``temp_store=MEMORY``, ``row_factory`` dict access, reads rows) plus the provider's
+``temp_store``, ``row_factory`` dict access, reads rows) plus the provider's
 per-thread reuse, thread affinity, and ``quiesce()`` seam.
 """
 
@@ -59,14 +59,13 @@ def test_open_reader_refuses_writes(tmp_path: Path) -> None:
         reader.close()
 
 
-def test_open_reader_keeps_temp_store_in_memory(tmp_path: Path) -> None:
-    """``temp_store=MEMORY`` (2) for the same reason the writer sets it (connection.py): temp
-    b-trees live in the process heap, so nothing depends on how the temp directory was sized."""
+def test_open_reader_sorts_through_temporary_files(tmp_path: Path) -> None:
+    """``temp_store=FILE`` (1), as the runner's: an in-memory sort is unbounded (stage 1, D8)."""
     path = tmp_path / "catalog.db"
     _seed(path)
     reader = open_reader(path)
     try:
-        assert reader.execute("PRAGMA temp_store").fetchone()[0] == 2  # 2 == MEMORY
+        assert reader.execute("PRAGMA temp_store").fetchone()[0] == 1  # 1 == FILE
     finally:
         reader.close()
 
