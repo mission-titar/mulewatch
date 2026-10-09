@@ -6,6 +6,7 @@ import logging
 import pytest
 
 from mulewatch.adapters.observability.dispatcher import ObservabilityDispatcher
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability import events as ev
 from mulewatch.domain.observability.policy import Audience, MetricInstruction, Severity
 from mulewatch.ports.telemetry import MetricsSink, Notifier
@@ -82,7 +83,7 @@ async def test_logs_the_message_but_notifies_the_body(caplog: pytest.LogCaptureF
     change = ev.DecisionChange("062A", "Les demoiselles cambrioleuses", None, "download")
     with caplog.at_level(logging.INFO, logger="mulewatch.observability"):
         await _dispatcher(sink, notifier).emit(
-            ev.DecisionsRecorded("a" * 32, "Keroro 062.avi", 1024, (change,))
+            ev.DecisionsRecorded(FileKey(Network.ED2K, "a" * 32), "Keroro 062.avi", 1024, (change,))
         )
     assert caplog.records[-1].getMessage().startswith("decisions for Keroro 062.avi")
     assert [(a, t, b.splitlines()[0]) for a, t, b, _ in notifier.calls] == [

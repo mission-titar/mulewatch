@@ -73,6 +73,6 @@ async def record_decision_if_changed(
         # No name left means only retractions were written, which are never notified.
         best = catalog.best_observation(file) or ObservedFile(candidate.filename, 0)
         await telemetry.emit(
-            DecisionsRecorded(file.native_id, best.filename, best.size_bytes, tuple(changes))
+            DecisionsRecorded(file, best.filename, best.size_bytes, tuple(changes))
         )
     return len(changes)
