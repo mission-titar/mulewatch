@@ -279,6 +279,10 @@ the typed columns mulewatch reads; stage 1's spec, D3.)
 `MuleClient` is today's bounded-search port with eD2k specifics (`SearchChannel`, `widen_search`,
 `KadStatus`). Stage 2 splits the generic bounded-search contract from those specifics, which stay
 in the aMule adapter. The matching engine (`catalog_matching`) applies to every network unchanged.
+(Corrected: the persistent and passive search ports are declared with their first client in stage 5,
+not in stage 2. The bounded-search port is `search(keyword, channel, budget)`, with no stop: the client
+manages its searches' lifetime, against the table's "start, collect until done or a timeout, stop".
+Stage 2's spec, D1, D3, D6.)
 
 **Downloading is a capability of every client that can download**, not an eD2k feature: a lost
 episode is worth fetching from whichever network shares it. Today's download port
@@ -410,6 +414,11 @@ Every adapter reports one generic status, which feeds the webui and edge-trigger
 | `inbound` | `reachable`, `unreachable` or `unknown`: inbound connections possible |
 | `version` | what the client reports |
 
+(Corrected: no Low-ID edge alert exists, the edge keys are `coverage_blind`, `port_mismatch` and
+`disk_low`. The fields are per channel, `on_network` and `connectable: bool | None`, plus the client's
+`version`; API reachability is `status()` not raising, and alerts fire on a degraded state that lasts.
+Stage 2's spec, D14, D15.)
+
 | Client | `network_connected` | `inbound` |
 |---|---|---|
 | aMule | ed2k server or Kad connected (`GET /status`) | High-ID (`ed2k.high_id`), Kad firewalled state |
@@ -452,7 +461,7 @@ Domain changes come before topology changes, so that every stage ships on its ow
 | # | Stage | Contents |
 |---|---|---|
 | 1 | Generic identity | D8: catalog migration to `(network, native_id)`, network-agnostic `FileObservation`, in today's single container |
-| 2 | Search, download and status ports | D9, D13, D14: generic ports, aMule adapters on them; persistent and passive search ports declared |
+| 2 | Search, download and status ports | D9, D13, D14: generic ports, aMule adapters on them; persistent and passive search ports declared (Corrected: not declared in stage 2, they arrive with their first client in stage 5; stage 2's spec, D1) |
 | 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: rename to p2pwatch (D15), `p2pwatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` (Corrected: no `v5.0.0` here, the major release waits for the first new network; stage 1's spec, D16) |
 | 4 | Sources and events | D10, D11: source history, eD2k download sources, `docs/legal.md` |
 | 5 | New networks, one by one | search, download (D13) and status (D14) per client: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet + qBittorrent (opt-in) |
