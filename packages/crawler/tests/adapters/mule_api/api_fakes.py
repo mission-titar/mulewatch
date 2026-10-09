@@ -6,9 +6,12 @@ forgets to ask for more fail here instead of on a node with a hundred shared fil
 
 import json
 from collections.abc import Callable
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
+
+from tests.application.fakes import FakeClock
 
 PASSWORD = "s3cret"
 TOKEN = "eyJhbGciOi.fake.token"
@@ -37,6 +40,7 @@ class FakeAmuleApi:
         status: dict[str, Any] | None = None,
         preferences: dict[str, Any] | None = None,
         progress: dict[str, Any] | None = None,
+        search_seconds: float | None = None,
     ) -> None:
         self.password = password
         self.results = results if results is not None else []
@@ -47,7 +51,12 @@ class FakeAmuleApi:
             preferences if preferences is not None else {"connection": {"tcp_port": 4662}}
         )
         self.progress = progress if progress is not None else {"state": "finished", "percent": 100}
+        # When set, a search reports `running` for that long after its start, then `finished`.
+        self.search_seconds = search_seconds
+        self.search_started_at: datetime | None = None
+        self.clock = FakeClock()
         self.requests: list[httpx.Request] = []
+        self.calls: list[tuple[datetime, httpx.Request]] = []
         self.logins = 0
         self.logouts = 0
         self.added_links: list[str] = []
@@ -60,6 +69,7 @@ class FakeAmuleApi:
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        self.calls.append((self.clock.now(), request))
         route = (request.method, request.url.path)
         override = self.overrides.get(route)
         if override is not None:
@@ -90,14 +100,21 @@ class FakeAmuleApi:
 
     def _start_search(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
+        self.search_started_at = self.clock.now()
         return httpx.Response(202, json={"search_id": 42, "query": body.get("query")})
 
     def _search_results(self, request: httpx.Request) -> httpx.Response:
         window = _page(request, self.results)
         return httpx.Response(
             200,
-            json={"results": window, "search_id": 42, "progress": self.progress},
+            json={"results": window, "search_id": 42, "progress": self._progress()},
         )
+
+    def _progress(self) -> dict[str, Any]:
+        if self.search_seconds is None or self.search_started_at is None:
+            return self.progress
+        ends_at = self.search_started_at + timedelta(seconds=self.search_seconds)
+        return {"state": "running" if self.clock.now() < ends_at else "finished"}
 
     def _stop_search(self, request: httpx.Request) -> httpx.Response:
         return httpx.Response(204)
