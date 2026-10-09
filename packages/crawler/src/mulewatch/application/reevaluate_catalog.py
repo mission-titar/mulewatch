@@ -73,7 +73,7 @@ async def reevaluate_catalog(
             )
         except RepositoryError as error:
             _logger.error(
-                "persistence failed on %s:%s (%s): re-evaluation skipped, sweep continues",
+                "persistence failed on file=%s:%s (%s): re-evaluation skipped, sweep continues",
                 row.file.network,
                 row.file.native_id,
                 error,

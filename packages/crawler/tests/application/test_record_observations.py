@@ -156,6 +156,7 @@ async def test_persistence_error_is_absorbed_and_cycle_continues(
     catalog: SqliteCatalogRepository,
     catalog_connection: sqlite3.Connection,
     engine: MatchingEngine,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     # TEST trigger: makes the observation INSERT fail → RepositoryError absorbed.
     catalog_connection.execute(
@@ -174,6 +175,7 @@ async def test_persistence_error_is_absorbed_and_cycle_continues(
     )
     assert changed == 0  # absorbed, the cycle continues
     assert signal.signalled == []
+    assert f"file=ed2k:{_HASH_DL} " in caplog.text  # key=value, like the download side's hash=
 
 
 @pytest.mark.asyncio
