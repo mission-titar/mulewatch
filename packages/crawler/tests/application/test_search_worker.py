@@ -19,7 +19,6 @@ from mulewatch.domain.observability.events import (
     SearchFailed,
 )
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.mule_client import SearchChannel
 from mulewatch.ports.scheduler_state_repository import ChannelBackoff
 from tests.application.fakes import (
     FakeClock,
@@ -193,8 +192,8 @@ async def test_successful_task_records_observation(
     clock = FakeClock()
     client = FakeMuleClient(results=[(_obs(),)])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
-    assert client.searches == [("keroro", SearchChannel.GLOBAL)]
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
+    assert client.searches == [("keroro", "ed2k")]
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 1
 
 
@@ -216,7 +215,7 @@ async def test_multiple_observations_some_unchanged_are_all_processed(
     # changes a verdict. Covers the "if False → next observation" edge.
     client = FakeMuleClient(results=[(discarded, _obs())])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert count_observations(catalog_connection) == 2
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 1
 
@@ -229,7 +228,7 @@ async def test_connect_failure_arms_instance_backoff_and_skips_the_item(
     registry = _registry(clock)
     client = FakeMuleClient(connect_failures=[make_unreachable()])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, registry))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert client.searches == []  # item dropped, never searched
     assert registry.is_in_backoff("amule-1") is True  # instance in backoff (skip until retry)
     assert clock.sleeps == []  # no more backoff sleep: we SKIP, we don't wait
@@ -244,7 +243,7 @@ async def test_instance_in_backoff_skips_without_connecting(
     registry.record_failure("amule-1")  # instance already in backoff
     client = FakeMuleClient(results=[(_obs(),)])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, registry))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert client.connect_calls == 0  # neither connect nor search: skipped
     assert client.searches == []
 
@@ -258,10 +257,10 @@ async def test_channel_in_backoff_skips_that_item(
     registry.record_failure("amule-1:kad")  # kad channel in backoff
     client = FakeMuleClient(results=[(_obs(),), (_obs(),)])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, registry))
-    await worker.run_task(SearchTask(keyword="k", channel=SearchChannel.KAD))  # skipped
+    await worker.run_task(SearchTask(keyword="k", channel="kad"))  # skipped
     assert client.searches == []
-    await worker.run_task(SearchTask(keyword="k", channel=SearchChannel.GLOBAL))  # other channel OK
-    assert client.searches == [("k", SearchChannel.GLOBAL)]
+    await worker.run_task(SearchTask(keyword="k", channel="ed2k"))  # other channel OK
+    assert client.searches == [("k", "ed2k")]
 
 
 @pytest.mark.asyncio
@@ -274,8 +273,8 @@ async def test_backoff_expires_and_item_runs_again(
     client = FakeMuleClient(results=[(_obs(),)])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, registry))
     clock.advance(3.0)  # retry_after passed → the channel is no longer in backoff
-    await worker.run_task(SearchTask(keyword="k", channel=SearchChannel.KAD))
-    assert client.searches == [("k", SearchChannel.KAD)]
+    await worker.run_task(SearchTask(keyword="k", channel="kad"))
+    assert client.searches == [("k", "kad")]
 
 
 @pytest.mark.asyncio
@@ -285,8 +284,8 @@ async def test_already_connected_does_not_reconnect(
     clock = FakeClock()
     client = FakeMuleClient(results=[(), ()])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="k1", channel=SearchChannel.GLOBAL))
-    await worker.run_task(SearchTask(keyword="k2", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="k1", channel="ed2k"))
+    await worker.run_task(SearchTask(keyword="k2", channel="ed2k"))
     assert client.connect_calls == 1  # connected only once for two tasks
 
 
@@ -298,8 +297,8 @@ async def test_search_failure_arms_channel_backoff(
     registry = _registry(clock)
     client = FakeMuleClient(search_failures=[make_search_failed()])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, registry))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
-    assert registry.is_in_backoff("amule-1:global") is True  # channel in backoff
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
+    assert registry.is_in_backoff("amule-1:ed2k") is True  # channel in backoff
     assert registry.is_in_backoff("amule-1") is False  # but not the whole instance
     assert client.fetch_calls == 0  # no fetch after the start_search failure
 
@@ -313,11 +312,11 @@ async def test_transport_failure_marks_instance_down(
     # start_search raises a transport failure (dead stream) → instance down + instance backoff.
     client = FakeMuleClient(search_failures=[make_unreachable()], results=[(_obs(),)])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, registry))
-    await worker.run_task(SearchTask(keyword="k1", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="k1", channel="ed2k"))
     assert registry.is_in_backoff("amule-1") is True
     # After the backoff expires, the next task FORCES a reconnect (down marked).
     clock.advance(3.0)
-    await worker.run_task(SearchTask(keyword="k2", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="k2", channel="ed2k"))
     assert client.connect_calls == 2
 
 
@@ -333,7 +332,7 @@ async def test_poll_budget_is_respected_when_progress_never_completes(
 
     client = _NeverDone(results=[()])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     # budget 10 / step 5 → two polling steps, then fetch.
     assert clock.sleeps == [5.0, 5.0]
     assert client.fetch_calls == 1
@@ -356,7 +355,7 @@ async def test_poll_loops_once_then_completes(
 
     client = _ThenDone(results=[()])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert clock.sleeps == [5.0]  # one polling step, then break on the 2nd read
 
 
@@ -372,7 +371,7 @@ async def test_poll_stops_when_progress_is_none_but_budget_bounds_it(
 
     client = _NoProgress(results=[()])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert clock.sleeps == [5.0, 5.0]
 
 
@@ -406,20 +405,20 @@ async def test_a_kad_search_is_widened_from_the_second_tick_until_kad_refuses(
     client.widen_answers = [False, True]
     deps = _deps(catalog, engine, clock, _registry(clock), policy=_FIVE_TICKS)
     worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.KAD))
+    await worker.run_task(SearchTask(keyword="keroro", channel="kad"))
     assert len(clock.sleeps) == 5
     assert client.widened_on_ticks == [2, 3]  # exhausted on tick 3: never asked on 4 and 5
 
 
 @pytest.mark.asyncio
-async def test_a_global_search_is_never_widened(
+async def test_an_ed2k_search_is_never_widened(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
     clock = FakeClock()
     client = _NeverDone(clock, results=[()])
     deps = _deps(catalog, engine, clock, _registry(clock), policy=_FIVE_TICKS)
     worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert len(clock.sleeps) == 5
     assert client.widened_on_ticks == []
 
@@ -436,7 +435,7 @@ async def test_a_failed_widening_leaves_the_search_intact(
     client.widen_answers = [failure]
     deps = _deps(catalog, engine, clock, registry, policy=_FIVE_TICKS, telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.KAD))
+    await worker.run_task(SearchTask(keyword="keroro", channel="kad"))
     assert client.widened_on_ticks == [2]  # not asked again after the failure
     assert len(clock.sleeps) == 5
     assert client.fetch_calls == 1
@@ -451,14 +450,14 @@ async def test_a_failed_widening_leaves_the_search_intact(
 async def test_successful_search_emits_search_executed_with_network_and_count(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
-    # A successful GLOBAL search emits SearchExecuted(network="ed2k", n_results=1) FIRST,
+    # A successful ed2k search emits SearchExecuted(network="ed2k", n_results=1) FIRST,
     # before the per-observation events (ObservationRecorded/DecisionsRecorded).
     clock = FakeClock()
     telemetry = RecordingTelemetry()
     client = FakeMuleClient(results=[(_obs(),)])
     deps = _deps(catalog, engine, clock, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert telemetry.events[0] == SearchExecuted(network="ed2k", n_results=1)
     kinds = [type(e).__name__ for e in telemetry.events]
     assert kinds == ["SearchExecuted", "ObservationRecorded", "DecisionsRecorded"]
@@ -475,7 +474,7 @@ async def test_search_failure_emits_search_failed(
     client = FakeMuleClient(search_failures=[make_search_failed()])
     deps = _deps(catalog, engine, clock, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert telemetry.events == [SearchFailed(network="ed2k")]
 
 
@@ -489,7 +488,7 @@ async def test_connect_failure_emits_instance_unreachable(
     client = FakeMuleClient(connect_failures=[make_unreachable()])
     deps = _deps(catalog, engine, clock, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert telemetry.events == [InstanceUnreachable()]
 
 
@@ -503,5 +502,5 @@ async def test_transport_failure_during_search_emits_instance_unreachable(
     client = FakeMuleClient(search_failures=[make_unreachable()], results=[(_obs(),)])
     deps = _deps(catalog, engine, clock, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
+    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert telemetry.events == [InstanceUnreachable()]

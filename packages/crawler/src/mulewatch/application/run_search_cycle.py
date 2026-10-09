@@ -29,7 +29,6 @@ import asyncio
 import logging
 from collections.abc import Sequence
 
-from mulewatch.application.channels import ED2K, KAD
 from mulewatch.application.edge_state import EdgeState
 from mulewatch.application.search_worker import BackoffRegistry, SearchTask, SearchWorker
 from mulewatch.domain.observability.events import (
@@ -43,15 +42,15 @@ from mulewatch.domain.search.cycle import Rng, shuffle_for_cycle
 from mulewatch.domain.search.keywords import generate_keywords
 from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock
-from mulewatch.ports.mule_client import KadStatus, MuleClient, SearchChannel
+from mulewatch.ports.mule_client import KadStatus, MuleClient
 from mulewatch.ports.repository_errors import RepositoryError
 from mulewatch.ports.scheduler_state_repository import SchedulerStateRepository
 from mulewatch.ports.telemetry import Telemetry
 
 _logger = logging.getLogger("mulewatch.application.run_search_cycle")
 
-# The two channels swept each cycle (MVP spec §6: global servers + Kad).
-_CHANNELS = (SearchChannel.GLOBAL, SearchChannel.KAD)
+# The two channels swept each cycle (MVP spec §6: eD2k servers + Kad).
+_CHANNELS = ("ed2k", "kad")
 
 
 def _is_search_capable(*, ed2k_high: bool, kad_status: KadStatus) -> bool:
@@ -88,8 +87,8 @@ async def _aggregate_coverage(
         if status.kad_status == KadStatus.CONNECTED:
             kad_count += 1
         capable.append(_is_search_capable(ed2k_high=status.ed2k_high, kad_status=status.kad_status))
-    await telemetry.emit(ConnectedInstancesSampled(network=ED2K, count=ed2k_count))
-    await telemetry.emit(ConnectedInstancesSampled(network=KAD, count=kad_count))
+    await telemetry.emit(ConnectedInstancesSampled(network="ed2k", count=ed2k_count))
+    await telemetry.emit(ConnectedInstancesSampled(network="kad", count=kad_count))
     coverage = effective_coverage(capable)
     # Current-state binary gauge, sampled EVERY cycle (independent of the edge-triggered
     # AllInstancesBlind notification below): 1 when we can search now, 0 when all blind.

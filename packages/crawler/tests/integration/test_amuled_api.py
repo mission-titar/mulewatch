@@ -8,7 +8,7 @@ import pytest
 
 from mulewatch.adapters.mule_api.client import AmuleApiClient
 from mulewatch.adapters.mule_api.errors import ApiAuthError, ApiRejectedError
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus, SearchChannel
+from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.api_integration
@@ -46,7 +46,7 @@ async def test_real_search_cycle(amuled: ApiEndpoint) -> None:
     await client.connect()
     try:
         try:
-            await client.start_search("keroro", SearchChannel.GLOBAL)
+            await client.start_search("keroro", "ed2k")
         except ApiRejectedError as exc:
             # The daemon refused the search cleanly (no eD2k server reachable from the
             # container): the request/response cycle IS validated, with its own message.

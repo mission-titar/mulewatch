@@ -303,12 +303,11 @@ async def test_channel_backoff_is_persisted_at_cycle_end(
     # the cycle PERSISTS the snapshot at cycle end (spec §3/§7). A fresh repo instance
     # (simulating a restart) re-reads this backoff.
     from mulewatch.ports.client_errors import SearchFailedError
-    from mulewatch.ports.mule_client import SearchChannel
 
     class _AlwaysFails(FakeMuleClient):
         """Fails on EVERY search → the channels STAY in backoff (never reset)."""
 
-        async def start_search(self, keyword: str, channel: SearchChannel) -> None:
+        async def start_search(self, keyword: str, channel: str) -> None:
             raise SearchFailedError("EC_OP_FAILED")
 
     clock = FakeClock()
@@ -331,7 +330,7 @@ async def test_channel_backoff_is_persisted_at_cycle_end(
     )
     persisted = SqliteSchedulerStateRepository(local_connection).load_channel_backoff()
     # Both amule-1 channels are in persisted backoff (all searches fail).
-    assert any(key.startswith("amule-1:") for key in persisted)
+    assert set(persisted) == {"amule-1:ed2k", "amule-1:kad"}
 
 
 @pytest.mark.asyncio

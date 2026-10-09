@@ -32,7 +32,7 @@ from mulewatch.adapters.mule_api.mapping import (
 )
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.clock import Clock
-from mulewatch.ports.mule_client import NetworkStatus, SearchChannel
+from mulewatch.ports.mule_client import NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 
 # Rows asked for per list request. Every list route caps at 100 when `limit` is omitted, which
@@ -120,7 +120,7 @@ class AmuleApiClient:
         await http.aclose()
         self._search_id = None
 
-    async def start_search(self, keyword: str, channel: SearchChannel) -> None:
+    async def start_search(self, keyword: str, channel: str) -> None:
         """Stops the search in flight, then starts a new one and keeps its id.
 
         The stop is not optional: Kademlia refuses a keyword still on its search list, and only
@@ -130,7 +130,7 @@ class AmuleApiClient:
             with suppress(ApiError):
                 await self.stop_search()
             self._search_id = None
-        self._search_id = await self._post_search(keyword, channel.value)
+        self._search_id = await self._post_search(keyword, _SEARCH_TYPES[channel])
         self._current_keyword = keyword  # provenance, set AFTER success
 
     async def search(

@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from mulewatch.domain.observability.events import Event
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus, SearchChannel
+from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 
 
 class FakeClock:
@@ -112,7 +112,7 @@ class FakeMuleClient:
         )
         self.connect_calls = 0
         self.close_calls = 0
-        self.searches: list[tuple[str, SearchChannel]] = []
+        self.searches: list[tuple[str, str]] = []
         self.fetch_calls = 0
         self.widen_answers: list[bool | Exception] = []
         self.widen_calls = 0
@@ -125,7 +125,7 @@ class FakeMuleClient:
     async def close(self) -> None:
         self.close_calls += 1
 
-    async def start_search(self, keyword: str, channel: SearchChannel) -> None:
+    async def start_search(self, keyword: str, channel: str) -> None:
         self.searches.append((keyword, channel))
         if self._search_failures:
             raise self._search_failures.pop(0)

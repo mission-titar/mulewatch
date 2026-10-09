@@ -10,13 +10,6 @@ from typing import Protocol
 from mulewatch.domain.observation import FileObservation
 
 
-class SearchChannel(StrEnum):
-    """eD2k servers or Kad. The values are the tokens ``POST /search`` takes verbatim."""
-
-    GLOBAL = "global"
-    KAD = "kad"
-
-
 class KadStatus(StrEnum):
     """Kad state (closed enum), read from ``GET /status``'s ``kad`` object."""
 
@@ -47,7 +40,7 @@ class MuleClient(Protocol):
 
     async def close(self) -> None: ...
 
-    async def start_search(self, keyword: str, channel: SearchChannel) -> None: ...
+    async def start_search(self, keyword: str, channel: str) -> None: ...
 
     async def fetch_results(self) -> tuple[FileObservation, ...]: ...
 
