@@ -16,6 +16,7 @@ from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatal
 from mulewatch.application import reevaluate_catalog as reevaluate_module
 from mulewatch.application.reevaluate_catalog import ReevalSummary, reevaluate_catalog
 from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
@@ -69,7 +70,7 @@ async def test_two_changed_rows_are_all_evaluated_and_written(
     assert tiers == {_HASH_DL: "download", _HASH_CAT: "catalog"}
     assert len(telemetry.events) == 2
     # Iteration is ORDER BY ed2k_hash: "31d6..." sorts before "aaaa..." (ASCII '3' < 'a').
-    assert signal.signalled == [_HASH_DL, DOWNLOAD_NUDGE_SUBJECT, _HASH_CAT]
+    assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT]
 
 
 @pytest.mark.asyncio
@@ -82,7 +83,8 @@ async def test_unchanged_row_is_evaluated_but_not_written(
     candidate = _obs(_HASH_CAT, _CAT_NAME).to_candidate()
     decisions = engine.evaluate(candidate)
     assert decisions  # non-empty
-    catalog.record_decision(_HASH_CAT, decisions[0])  # pre-seed the "already correct" verdict
+    # pre-seed the "already correct" verdict
+    catalog.record_decision(FileKey(Network.ED2K, _HASH_CAT), decisions[0])
     telemetry = RecordingTelemetry()
     signal = RecordingSignal()
     summary = await reevaluate_catalog(
@@ -116,7 +118,7 @@ async def test_repository_error_on_one_row_is_absorbed_and_sweep_continues(
     )
     assert summary == ReevalSummary(evaluated=2, written=1)
     assert decision_tiers(catalog_connection) == [(_HASH_CAT, "catalog")]
-    assert catalog.last_decisions(_HASH_DL) == {}
+    assert catalog.last_decisions(FileKey(Network.ED2K, _HASH_DL)) == {}
 
 
 @pytest.mark.asyncio
@@ -142,13 +144,15 @@ async def test_backfill_retracts_a_legacy_arbitrary_target_row(
     # §10: an old "unidentified" row under an arbitrary target_id (001A/catalog) is retracted
     # by the set-diff when the file becomes identified (062A + 062B) on the backfill pass.
     catalog.record_observation(_obs(_HASH_MULTI, _MULTI_NAME))
-    catalog.record_decision(_HASH_MULTI, _legacy_row("001A", "keroro_large", "catalog"))
+    catalog.record_decision(
+        FileKey(Network.ED2K, _HASH_MULTI), _legacy_row("001A", "keroro_large", "catalog")
+    )
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     summary = await reevaluate_catalog(
         catalog=catalog, engine=engine, signal=signal, telemetry=telemetry
     )
     assert summary == ReevalSummary(evaluated=1, written=3)  # 062A + 062B + retract 001A
-    assert catalog.last_decisions(_HASH_MULTI) == {
+    assert catalog.last_decisions(FileKey(Network.ED2K, _HASH_MULTI)) == {
         "062A": DecisionRecord(target_id="062A", rule_name="numero_nu_confirmed", tier="download"),
         "062B": DecisionRecord(target_id="062B", rule_name="numero_nu_confirmed", tier="download"),
         "001A": DecisionRecord(target_id="001A", rule_name="", tier=RETRACTED_TIER),
@@ -163,13 +167,13 @@ async def test_backfill_ignores_the_legacy_empty_sentinel(
 ) -> None:
     # §10: the old whole-file retraction sentinel (target_id="") is invisible to the set-diff.
     catalog.record_observation(_obs(_HASH_MULTI, _MULTI_NAME))
-    catalog.record_decision(_HASH_MULTI, _legacy_row("", "", RETRACTED_TIER))
+    catalog.record_decision(FileKey(Network.ED2K, _HASH_MULTI), _legacy_row("", "", RETRACTED_TIER))
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     summary = await reevaluate_catalog(
         catalog=catalog, engine=engine, signal=signal, telemetry=telemetry
     )
     assert summary == ReevalSummary(evaluated=1, written=2)  # only 062A + 062B; "" untouched
-    assert set(catalog.last_decisions(_HASH_MULTI)) == {"062A", "062B"}
+    assert set(catalog.last_decisions(FileKey(Network.ED2K, _HASH_MULTI))) == {"062A", "062B"}
     assert (
         catalog_connection.execute(
             "SELECT count(*) FROM match_decisions WHERE target_id = ''"
@@ -188,7 +192,7 @@ async def test_backfill_judges_a_hash_on_all_its_names_not_only_the_latest(
         catalog=catalog, engine=engine, signal=RecordingSignal(), telemetry=RecordingTelemetry()
     )
     assert summary == ReevalSummary(evaluated=1, written=1)
-    assert catalog.last_decisions(_HASH_DL) == {
+    assert catalog.last_decisions(FileKey(Network.ED2K, _HASH_DL)) == {
         "062A": DecisionRecord(target_id="062A", rule_name="id_segment_exact", tier="download")
     }
 

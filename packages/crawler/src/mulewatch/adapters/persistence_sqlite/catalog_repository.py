@@ -35,6 +35,7 @@ from mulewatch.adapters.persistence_sqlite import sightings
 from mulewatch.adapters.persistence_sqlite.connection import Clock, utc_iso, utc_now
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError, wrap_sqlite_errors
 from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import ObservedFile, ReevalRow
@@ -143,19 +144,19 @@ class SqliteCatalogRepository:
                     self._connection.execute("ROLLBACK")
                 raise
 
-    def record_decision(self, ed2k_hash: str, decision: MatchDecision) -> None:
+    def record_decision(self, file: FileKey, decision: MatchDecision) -> None:
         """INSERT alone (autocommit); unknown file → FK violated → ``PersistenceError``.
 
         Only the 3 columns of ``MatchDecision`` are persisted (engine spec);
         ``explanation`` is runtime explainability, NEVER a column.
         """
-        if not _CANONICAL_HASH_RE.fullmatch(ed2k_hash):
-            raise PersistenceError(f"non-canonical eD2k hash: {ed2k_hash!r}")
+        if not _CANONICAL_HASH_RE.fullmatch(file.native_id):
+            raise PersistenceError(f"non-canonical eD2k hash: {file.native_id!r}")
         with wrap_sqlite_errors():
             self._connection.execute(
                 _INSERT_DECISION,
                 (
-                    ed2k_hash,
+                    file.native_id,
                     decision.target_id,
                     decision.rule_name,
                     decision.tier,
@@ -164,7 +165,7 @@ class SqliteCatalogRepository:
                 ),
             )
 
-    def record_retraction(self, ed2k_hash: str, target_id: str) -> None:
+    def record_retraction(self, file: FileKey, target_id: str) -> None:
         """Appends a per-target ``retracted`` decision (spec §7).
 
         Mirrors ``record_decision`` (same canonical-hash guard, same autocommit ``INSERT``): a
@@ -173,15 +174,22 @@ class SqliteCatalogRepository:
         append-only invariant. Retracting one target leaves the file's other targets intact.
         Unknown file → FK violated → ``PersistenceError``.
         """
-        if not _CANONICAL_HASH_RE.fullmatch(ed2k_hash):
-            raise PersistenceError(f"non-canonical eD2k hash: {ed2k_hash!r}")
+        if not _CANONICAL_HASH_RE.fullmatch(file.native_id):
+            raise PersistenceError(f"non-canonical eD2k hash: {file.native_id!r}")
         with wrap_sqlite_errors():
             self._connection.execute(
                 _INSERT_DECISION,
-                (ed2k_hash, target_id, "", RETRACTED_TIER, utc_iso(self._clock()), self._node_id),
+                (
+                    file.native_id,
+                    target_id,
+                    "",
+                    RETRACTED_TIER,
+                    utc_iso(self._clock()),
+                    self._node_id,
+                ),
             )
 
-    def last_decisions(self, ed2k_hash: str) -> dict[str, DecisionRecord]:
+    def last_decisions(self, file: FileKey) -> dict[str, DecisionRecord]:
         """Latest verdict per target for this hash (set-diff anti-redundancy, spec §7) — READ.
 
         Maps ``target_id`` → its latest :class:`DecisionRecord`. INCLUDES a target whose latest
@@ -190,7 +198,7 @@ class SqliteCatalogRepository:
         non-canonical hash matches nothing → ``{}``).
         """
         with wrap_sqlite_errors():
-            rows = self._connection.execute(_SELECT_LAST_DECISIONS, (ed2k_hash,)).fetchall()
+            rows = self._connection.execute(_SELECT_LAST_DECISIONS, (file.native_id,)).fetchall()
         return {
             row[0]: DecisionRecord(target_id=row[0], rule_name=row[1], tier=row[2]) for row in rows
         }
@@ -205,24 +213,24 @@ class SqliteCatalogRepository:
             rows = self._connection.execute(_SELECT_DOWNLOAD_DECISIONS).fetchall()
         return tuple(DownloadCandidate(ed2k_hash=row[0], target_id=row[1]) for row in rows)
 
-    def last_observation(self, ed2k_hash: str) -> ObservedFile | None:
+    def last_observation(self, file: FileKey) -> ObservedFile | None:
         """Name and size of the latest sighting (the ed2k link), or ``None`` (read)."""
         with wrap_sqlite_errors():
-            latest = sightings.latest_sighting(self._connection, ed2k_hash)
+            latest = sightings.latest_sighting(self._connection, file.native_id)
         if latest is None:
             return None
         return ObservedFile(filename=latest.names[0], size_bytes=latest.size_bytes)
 
-    def best_observation(self, ed2k_hash: str) -> ObservedFile | None:
+    def best_observation(self, file: FileKey) -> ObservedFile | None:
         """The clean name (most sources, then latest) and size, or ``None`` (read)."""
         with wrap_sqlite_errors():
-            best = sightings.best_name(self._connection, ed2k_hash)
+            best = sightings.best_name(self._connection, file.native_id)
         return None if best is None else ObservedFile(filename=best[0], size_bytes=best[1])
 
-    def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
+    def known_filenames(self, file: FileKey) -> tuple[str, ...]:
         """Every distinct name this hash was observed under, sorted (read)."""
         with wrap_sqlite_errors():
-            return sightings.known_names(self._connection, ed2k_hash)
+            return sightings.known_names(self._connection, file.native_id)
 
     def count_files(self) -> int:
         """Number of catalogued hashes, the re-evaluation progress total (read)."""
@@ -235,7 +243,7 @@ class SqliteCatalogRepository:
         with wrap_sqlite_errors():
             for latest in sightings.iter_latest_sightings(self._connection):
                 yield ReevalRow(
-                    ed2k_hash=latest.ed2k_hash,
+                    file=FileKey(Network.ED2K, latest.ed2k_hash),
                     filename=latest.names[0],
                     size_bytes=latest.size_bytes,
                     media_length_sec=latest.media_length_sec,

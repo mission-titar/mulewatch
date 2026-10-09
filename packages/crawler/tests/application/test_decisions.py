@@ -14,6 +14,7 @@ from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatal
 from mulewatch.application.decisions import record_decision_if_changed
 from mulewatch.application.record_observations import record_observation
 from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import DecisionChange, DecisionsRecorded
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
@@ -36,6 +37,10 @@ _TITLE_A, _TITLE_B = "Les demoiselles cambrioleuses", "Le grand combat sous-mari
 _SIZE = 234_000_000
 
 
+def _key(ed2k_hash: str) -> FileKey:
+    return FileKey(Network.ED2K, ed2k_hash)
+
+
 def _event(ed2k_hash: str, filename: str, *changes: DecisionChange) -> DecisionsRecorded:
     return DecisionsRecorded(ed2k_hash, filename, _SIZE, changes)
 
@@ -56,7 +61,7 @@ def _seed_decision(catalog: SqliteCatalogRepository, ed2k_hash: str, target_id: 
         target_id=target_id, rules_fired=(), tokens_matched=(), coverage_values=()
     )
     catalog.record_decision(
-        ed2k_hash, MatchDecision(target_id, "title_review", "notify", explanation)
+        _key(ed2k_hash), MatchDecision(target_id, "title_review", "notify", explanation)
     )
 
 
@@ -70,7 +75,7 @@ async def _record(
 ) -> int:
     catalog.record_observation(_obs(ed2k_hash, filename))
     return await record_decision_if_changed(
-        ed2k_hash,
+        _key(ed2k_hash),
         _obs(ed2k_hash, filename).to_candidate(),
         catalog=catalog,
         engine=engine,
@@ -80,7 +85,7 @@ async def _record(
 
 
 @pytest.mark.asyncio
-async def test_new_decision_is_recorded_emitted_signalled_and_nudged(
+async def test_new_decision_is_recorded_emitted_and_nudged(
     catalog: SqliteCatalogRepository,
     catalog_connection: sqlite3.Connection,
     engine: MatchingEngine,
@@ -95,7 +100,7 @@ async def test_new_decision_is_recorded_emitted_signalled_and_nudged(
     assert telemetry.events == [
         _event(_HASH_DL, _DL_NAME, DecisionChange("062A", _TITLE_A, None, "download"))
     ]
-    assert signal.signalled == [_HASH_DL, DOWNLOAD_NUDGE_SUBJECT]
+    assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT]
 
 
 @pytest.mark.asyncio
@@ -121,12 +126,7 @@ async def test_multi_segment_file_records_both_segments_then_is_idempotent(
             DecisionChange("062B", _TITLE_B, None, "download"),
         )
     ]
-    assert signal.signalled == [
-        _HASH_MULTI,
-        DOWNLOAD_NUDGE_SUBJECT,
-        _HASH_MULTI,
-        DOWNLOAD_NUDGE_SUBJECT,
-    ]
+    assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT, DOWNLOAD_NUDGE_SUBJECT]
     again = await _record(_HASH_MULTI, _MULTI_NAME, catalog, engine, signal, telemetry)
     assert again == 0
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 2
@@ -153,7 +153,7 @@ async def test_changed_decision_is_reappended_emitted_and_nudged(
         (DecisionChange("062A", _TITLE_A, None, "notify"),),
         (DecisionChange("062A", _TITLE_A, "notify", "download"),),
     ]
-    assert signal.signalled == [_HASH_DL, _HASH_DL, DOWNLOAD_NUDGE_SUBJECT]
+    assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT]
 
 
 @pytest.mark.asyncio
@@ -168,7 +168,7 @@ async def test_unchanged_decision_is_not_reappended_emitted_or_signalled(
     assert (first, second) == (1, 0)
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 1
     assert len(telemetry.events) == 1
-    assert signal.signalled == [_HASH_CAT]
+    assert signal.signalled == []
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_a_target_no_name_supports_is_retracted_without_nudge(
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     written = await _record(_HASH_CAT, _DISCARD_NAME, catalog, engine, signal, telemetry)
     assert written == 1
-    assert catalog.last_decisions(_HASH_CAT) == {
+    assert catalog.last_decisions(_key(_HASH_CAT)) == {
         "062A": DecisionRecord(target_id="062A", rule_name="", tier=RETRACTED_TIER)
     }
     assert telemetry.events == [
@@ -201,7 +201,7 @@ async def test_every_unsupported_target_is_retracted(
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     written = await _record(_HASH_MULTI, _DISCARD_NAME, catalog, engine, signal, telemetry)
     assert written == 2
-    assert catalog.last_decisions(_HASH_MULTI) == {
+    assert catalog.last_decisions(_key(_HASH_MULTI)) == {
         "062A": DecisionRecord(target_id="062A", rule_name="", tier=RETRACTED_TIER),
         "062B": DecisionRecord(target_id="062B", rule_name="", tier=RETRACTED_TIER),
     }
@@ -215,7 +215,7 @@ async def test_already_retracted_then_none_is_a_no_op(
 ) -> None:
     catalog.record_observation(_obs(_HASH_CAT, _DISCARD_NAME))
     _seed_decision(catalog, _HASH_CAT, "062A")
-    catalog.record_retraction(_HASH_CAT, "062A")
+    catalog.record_retraction(_key(_HASH_CAT), "062A")
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     written = await _record(_HASH_CAT, _DISCARD_NAME, catalog, engine, signal, telemetry)
     assert written == 0
@@ -243,8 +243,7 @@ async def test_non_download_tier_decision_does_not_nudge_the_download_subject(
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     written = await _record(_HASH_CAT, _CAT_NAME, catalog, engine, signal, telemetry)
     assert written == 1
-    assert signal.signalled == [_HASH_CAT]
-    assert DOWNLOAD_NUDGE_SUBJECT not in signal.signalled
+    assert signal.signalled == []
 
 
 @pytest.mark.asyncio
@@ -266,7 +265,7 @@ async def test_a_second_name_that_matches_nothing_does_not_retract_the_first(
         for name in (_DL_NAME, _DISCARD_NAME, _DL_NAME, _DISCARD_NAME)
     ]
     assert written == [1, 0, 0, 0]
-    assert catalog.last_decisions(_HASH_DL) == {
+    assert catalog.last_decisions(_key(_HASH_DL)) == {
         "062A": DecisionRecord(target_id="062A", rule_name="id_segment_exact", tier="download")
     }
 
@@ -282,7 +281,7 @@ async def test_a_weaker_name_seen_again_does_not_downgrade_the_verdict(
         for name in (_NOTIFY_NAME, _DL_NAME, _NOTIFY_NAME, _DL_NAME)
     ]
     assert written == [1, 1, 0, 0]
-    assert catalog.last_decisions(_HASH_DL)["062A"].tier == "download"
+    assert catalog.last_decisions(_key(_HASH_DL))["062A"].tier == "download"
 
 
 @pytest.mark.asyncio
@@ -319,7 +318,7 @@ async def test_a_file_with_no_name_left_is_named_by_the_candidate(
     _seed_decision(catalog, _HASH_CAT, "062A")
     telemetry, signal = RecordingTelemetry(), RecordingSignal()
     await record_decision_if_changed(
-        _HASH_CAT,
+        _key(_HASH_CAT),
         _obs(_HASH_CAT, _DISCARD_NAME).to_candidate(),
         catalog=catalog,
         engine=engine,

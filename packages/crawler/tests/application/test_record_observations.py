@@ -74,7 +74,7 @@ async def test_new_verdict_is_persisted_and_nudged(
     assert catalog_connection.execute("SELECT tier FROM match_decisions").fetchone() == (
         "download",
     )
-    assert signal.signalled == [_HASH_DL, DOWNLOAD_NUDGE_SUBJECT]
+    assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT]
 
 
 @pytest.mark.asyncio
@@ -112,7 +112,7 @@ async def test_unchanged_verdict_is_not_reappended_or_nudged(
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 1
     # But the observation itself is re-persisted (periodic re-observation = the goal).
     assert count_observations(catalog_connection) == 2
-    assert signal.signalled == [_HASH_CAT]  # only once
+    assert signal.signalled == []
 
 
 @pytest.mark.asyncio
@@ -148,7 +148,7 @@ async def test_changed_verdict_is_reappended_and_nudged_again(
         ).fetchall()
     ]
     assert tiers == ["notify", "download"]
-    assert signal.signalled == [_HASH_DL, _HASH_DL, DOWNLOAD_NUDGE_SUBJECT]
+    assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT]
 
 
 @pytest.mark.asyncio
@@ -184,7 +184,7 @@ async def test_signal_consumer_awaits_the_nudge(
     # on the subject and is woken by the post-commit nudge.
     telemetry = RecordingTelemetry()
     signal = RecordingSignal()
-    waiter = asyncio.create_task(signal.wait(_HASH_DL))
+    waiter = asyncio.create_task(signal.wait(DOWNLOAD_NUDGE_SUBJECT))
     await asyncio.sleep(0)
     assert not waiter.done()
     await record_observation(
@@ -217,7 +217,7 @@ async def test_download_tier_verdict_also_nudges_the_download_subject(
         network="ed2k",
     )
     assert changed == 1
-    assert signal.signalled == [_HASH_DL, DOWNLOAD_NUDGE_SUBJECT]
+    assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT]
 
 
 @pytest.mark.asyncio
@@ -237,8 +237,7 @@ async def test_non_download_tier_verdict_does_not_nudge_the_download_subject(
         network="ed2k",
     )
     assert changed == 1
-    assert signal.signalled == [_HASH_CAT]
-    assert DOWNLOAD_NUDGE_SUBJECT not in signal.signalled
+    assert signal.signalled == []
 
 
 @pytest.mark.asyncio
