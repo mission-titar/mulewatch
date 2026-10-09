@@ -33,9 +33,9 @@ Ce qui n'y entre jamais :
   d'un fichier : ni détection de type, ni sonde média, ni antivirus. Le fichier vit à part dans
   `downloads/incoming`.
 
-Sur votre disque : les bases SQLite, de quelques Mo à quelques Go selon l'usage et la compaction
-(voir [Planification disque](operate.md#planification-disque)), et les fichiers téléchargés, que
-rien ne purge — ils s'accumulent jusqu'à votre ménage.
+Sur votre disque : les bases SQLite, de quelques Mo à quelques Go selon l'usage (voir
+[Planification disque](operate.md#planification-disque)), et les fichiers téléchargés, que rien ne
+purge : ils s'accumulent jusqu'à votre ménage.
 
 Sur votre réseau : eD2k est un protocole ancien, **non chiffré**. Un pair voit quels fichiers vous
 demandez et quels hashes vous proposez. [Derrière un VPN](vpn.md), tout ce trafic passe par le
