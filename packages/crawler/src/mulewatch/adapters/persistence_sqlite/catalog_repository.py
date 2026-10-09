@@ -190,7 +190,7 @@ class SqliteCatalogRepository:
             )
 
     def last_decisions(self, file: FileKey) -> dict[str, DecisionRecord]:
-        """Latest verdict per target for this file (set-diff anti-redundancy, spec §7) — READ.
+        """Latest verdict per target for this file (set-diff anti-redundancy, spec §7), READ.
 
         Maps ``target_id`` → its latest :class:`DecisionRecord`. INCLUDES a target whose latest
         tier is ``retracted`` (the application's set-diff skips re-retracting it); EXCLUDES the
