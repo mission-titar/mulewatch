@@ -26,9 +26,9 @@ from mulewatch.domain.observability.events import (
 )
 from mulewatch.ports.client_errors import ClientError
 from mulewatch.ports.clock import Clock
-from mulewatch.ports.mule_client import NetworkStatus
 from mulewatch.ports.mule_restarter import MuleRestarter, RestarterError
 from mulewatch.ports.port_forwarding import PortForwardingReader
+from mulewatch.ports.port_sync import NetworkStatus
 from mulewatch.ports.telemetry import Telemetry
 
 _logger = logging.getLogger("mulewatch.application.port_sync_loop")

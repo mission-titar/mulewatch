@@ -17,8 +17,8 @@ from mulewatch.domain.observability.events import (
 )
 from mulewatch.ports.catalog_repository import ObservedFile
 from mulewatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from mulewatch.ports.repository_errors import RepositoryError
 from tests.application.fakes import RecordingTelemetry
 

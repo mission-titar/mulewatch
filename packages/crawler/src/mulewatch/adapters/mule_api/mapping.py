@@ -10,8 +10,8 @@ from typing import Any
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
 _HASH_LENGTH = 32
 
@@ -75,8 +75,6 @@ def map_network_status(payload: object) -> NetworkStatus:
         ed2k_id=user_id if has_id else None,
         ed2k_high=connected and ed2k.get("high_id") is True,
         kad_status=_kad_status(kad),
-        server_name=_string(ed2k.get("server_name")),
-        server_addr=_server_addr(ed2k),
     )
 
 
@@ -192,10 +190,3 @@ def _kad_status(kad: dict[str, Any]) -> KadStatus:
     if state is KadStatus.CONNECTED and kad.get("firewalled_tcp") is True:
         return KadStatus.FIREWALLED
     return state
-
-
-def _server_addr(ed2k: dict[str, Any]) -> str | None:
-    """``"a.b.c.d:port"``, the shape already in the catalog, or ``None`` if incomplete."""
-    ip = _string(ed2k.get("server_ip"))
-    port = _optional_int(ed2k.get("server_port"))
-    return None if ip is None or port is None else f"{ip}:{port}"

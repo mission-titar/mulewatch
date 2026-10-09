@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from mulewatch.domain.observability.events import Event
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
 
 class FakeClock:

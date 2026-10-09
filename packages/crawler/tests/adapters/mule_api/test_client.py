@@ -14,7 +14,7 @@ from mulewatch.adapters.mule_api.errors import (
 )
 from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
 from mulewatch.ports.client_status import ChannelStatus
-from mulewatch.ports.mule_client import KadStatus
+from mulewatch.ports.port_sync import KadStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, TOKEN, FakeAmuleApi, error
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"

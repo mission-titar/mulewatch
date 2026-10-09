@@ -1,41 +1,8 @@
-import dataclasses
-
 import pytest
 
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.mule_client import (
-    KadStatus,
-    MuleClient,
-    NetworkStatus,
-)
-
-
-def test_kad_status_is_the_closed_four_state_enum() -> None:
-    # Ref. §6: no 0x10 -> off; 0x10 alone -> running; |0x04 -> connected; |0x08 -> firewalled.
-    assert {status.value for status in KadStatus} == {"off", "running", "connected", "firewalled"}
-
-
-def test_network_status_is_frozen_and_holds_fields() -> None:
-    status = NetworkStatus(
-        ed2k_id=33554433,
-        ed2k_high=True,
-        kad_status=KadStatus.CONNECTED,
-        server_name="TestServer",
-        server_addr="1.2.3.4:4661",
-    )
-    assert status.ed2k_id == 33554433
-    assert status.ed2k_high is True
-    assert status.kad_status is KadStatus.CONNECTED
-    assert status.server_name == "TestServer"
-    assert status.server_addr == "1.2.3.4:4661"
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        status.ed2k_high = False  # type: ignore[misc]
-
-
-def test_network_status_server_fields_default_to_none() -> None:
-    status = NetworkStatus(ed2k_id=None, ed2k_high=False, kad_status=KadStatus.OFF)
-    assert status.server_name is None
-    assert status.server_addr is None
+from mulewatch.ports.mule_client import MuleClient
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
 
 class _StubClient:

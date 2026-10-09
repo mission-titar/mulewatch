@@ -12,7 +12,7 @@ from mulewatch.adapters.mule_api.mapping import (
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
-from mulewatch.ports.mule_client import KadStatus
+from mulewatch.ports.port_sync import KadStatus
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
 _KEY = FileKey(Network.ED2K, _HASH)
@@ -268,9 +268,6 @@ def test_maps_a_connected_high_id_status() -> None:
             "state": "connected",
             "high_id": True,
             "user_id": 1234567890,
-            "server_name": "eMule Server",
-            "server_ip": "203.0.113.5",
-            "server_port": 4242,
         },
         "kad": {"state": "connected", "firewalled_tcp": False},
     }
@@ -279,8 +276,6 @@ def test_maps_a_connected_high_id_status() -> None:
     assert status.ed2k_id == 1234567890
     assert status.ed2k_high is True
     assert status.kad_status is KadStatus.CONNECTED
-    assert status.server_name == "eMule Server"
-    assert status.server_addr == "203.0.113.5:4242"
 
 
 def test_a_low_id_is_only_low_once_connected() -> None:
@@ -319,14 +314,6 @@ def test_an_empty_status_degrades_instead_of_raising() -> None:
     assert status.ed2k_id is None
     assert status.ed2k_high is False
     assert status.kad_status is KadStatus.OFF
-    assert status.server_name is None
-    assert status.server_addr is None
-
-
-def test_a_partial_server_address_is_not_reported() -> None:
-    payload = {"ed2k": {"state": "connected", "server_ip": "203.0.113.5", "server_port": None}}
-
-    assert map_network_status(payload).server_addr is None
 
 
 def test_a_connected_high_id_and_open_kad_are_connectable() -> None:

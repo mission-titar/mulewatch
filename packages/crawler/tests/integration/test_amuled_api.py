@@ -8,7 +8,7 @@ import pytest
 
 from mulewatch.adapters.mule_api.client import AmuleApiClient
 from mulewatch.adapters.mule_api.errors import ApiAuthError, ApiRejectedError
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.api_integration

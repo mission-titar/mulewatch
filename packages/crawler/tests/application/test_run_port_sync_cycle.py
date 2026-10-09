@@ -24,8 +24,8 @@ from mulewatch.domain.observability.events import (
     PortMismatchUnresolved,
     PortSyncTriggered,
 )
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_restarter import RestarterError
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.application.fakes import RecordingTelemetry
 
 
