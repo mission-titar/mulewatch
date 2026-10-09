@@ -1,13 +1,16 @@
 """Drives ``amuled`` over amuleapi, satisfying ``MuleClient`` and ``MuleDownloadClient``.
 
-``search()`` waits for its own search; the four-call search keeps the one in flight. No retry
-beyond the single re-login a ``401`` mandates: the adapter signals, the caller decides.
+``search()`` waits for its own search and paces its starts by the networks' rules; the four-call
+search keeps the one in flight. Beyond pacing, no retry but the single re-login a ``401``
+mandates and Kad's "already on search list": the adapter signals, the caller decides.
 """
 
+import asyncio
 import json
 import logging
+import re
 from contextlib import suppress
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -43,6 +46,18 @@ _POLL_INTERVAL_SECONDS = 5.0
 
 _SEARCH_TYPES = {"ed2k": "global", "kad": "kad"}
 
+# Least time between two ed2k starts, and between two Kad starts on one target (spec stage 2, D5):
+# rules of the networks, not settings, since a key would invite lowering them until the ban.
+_START_SPACING = timedelta(seconds=60)
+
+# Kad's keyword separators (aMule `SearchManager.h:128`).
+_KAD_SEPARATORS = re.compile(r'[ ()\[\]{}<>,._\-!?:;\\/"]')
+
+# Kad refuses a target still on its search list: "not yet", someone else holds it.
+_KAD_TARGET_HELD = "already on search list"
+
+_LONG_AGO = datetime.min.replace(tzinfo=UTC)
+
 _logger = logging.getLogger("mulewatch.adapters.mule_api.client")
 
 
@@ -68,6 +83,11 @@ class AmuleApiClient:
         self._http: httpx.AsyncClient | None = None
         self._search_id: int | None = None
         self._current_keyword = ""
+        # Held from an ed2k start to its end: aMule's core keeps one ed2k search anchor.
+        self._ed2k_lock = asyncio.Lock()
+        self._ed2k_next_start = _LONG_AGO
+        self._kad_next_start: dict[str, datetime] = {}
+        self._targetless_logged: set[str] = set()
         self.skipped_entries_total = 0
 
     async def connect(self) -> None:
@@ -116,11 +136,60 @@ class AmuleApiClient:
     async def search(
         self, keyword: str, channel: str, budget_seconds: float
     ) -> tuple[FileObservation, ...]:
-        """Polls until amuled reports the search finished, or until ``budget_seconds`` after its
-        start, then returns what it holds. Never stops nor frees it: amuled expires both."""
-        search_id = await self._post_search(keyword, _SEARCH_TYPES[channel])
+        """Waits for the network's next allowed start, then polls until amuled reports the search
+        finished or ``budget_seconds`` after its start. Never stops nor frees it: amuled does."""
+        search_type = _SEARCH_TYPES[channel]
+        if search_type == "kad":
+            search_id = await self._start_kad(keyword, budget_seconds)
+            if search_id is None:
+                return ()
+            await self._await_end(search_id, budget_seconds, widen=True)
+        else:
+            async with self._ed2k_lock:
+                await self._sleep_until(self._ed2k_next_start)
+                self._ed2k_next_start = self._clock.now() + _START_SPACING
+                search_id = await self._post_search(keyword, search_type)
+                await self._await_end(search_id, budget_seconds, widen=False)
+        rows = await self._collect(f"/search/{search_id}/results", "results")
+        observations, skipped = map_search_results(rows, keyword)
+        self.skipped_entries_total += skipped
+        return observations
+
+    async def _start_kad(self, keyword: str, budget_seconds: float) -> int | None:
+        """Starts in the target's next free slot, reserved before sleeping; ``None`` without a
+        target. A held target is retried each poll, for one budget from the first attempt."""
+        target = _kad_target(keyword)
+        # A keyword without a target splits on a separator or is under 3 bytes: never a target.
+        slot_key = target or keyword
+        now = self._clock.now()
+        slot = max(now, self._kad_next_start.get(slot_key, now))
+        self._kad_next_start[slot_key] = slot + _START_SPACING
+        await self._sleep_until(slot)
+        if target is None:
+            if keyword not in self._targetless_logged:
+                self._targetless_logged.add(keyword)
+                _logger.info(
+                    "no Kad target in %r (no word of 3 bytes): not searched on Kad", keyword
+                )
+            return None
+        give_up_at = self._clock.now() + timedelta(seconds=budget_seconds)
+        while True:
+            try:
+                return await self._post_search(keyword, "kad")
+            except ApiRejectedError as refusal:
+                remaining = (give_up_at - self._clock.now()).total_seconds()
+                if _KAD_TARGET_HELD not in str(refusal) or remaining <= 0:
+                    raise
+                await self._clock.sleep(min(_POLL_INTERVAL_SECONDS, remaining))
+
+    async def _sleep_until(self, moment: datetime) -> None:
+        delay = (moment - self._clock.now()).total_seconds()
+        if delay > 0:
+            await self._clock.sleep(delay)
+
+    async def _await_end(self, search_id: int, budget_seconds: float, *, widen: bool) -> None:
+        """Polls until amuled reports the search finished, or ``budget_seconds`` after now."""
         deadline = self._clock.now() + timedelta(seconds=budget_seconds)
-        widen = channel == "kad"
         polls = 0
         while await self._search_state(search_id) != "finished":
             remaining = (deadline - self._clock.now()).total_seconds()
@@ -130,10 +199,6 @@ class AmuleApiClient:
                 widen = await self._widen(search_id)
             polls += 1
             await self._clock.sleep(min(_POLL_INTERVAL_SECONDS, remaining))
-        rows = await self._collect(f"/search/{search_id}/results", "results")
-        observations, skipped = map_search_results(rows, keyword)
-        self.skipped_entries_total += skipped
-        return observations
 
     async def fetch_results(self) -> tuple[FileObservation, ...]:
         """CUMULATIVE snapshot of what the daemon holds for the search in flight."""
@@ -335,6 +400,13 @@ def _decode(response: httpx.Response) -> dict[str, Any]:
     except ValueError as failure:  # JSONDecodeError is one
         raise ApiUnreachableError(f"{response.request.url.path}: unreadable body") from failure
     return payload if isinstance(payload, dict) else {}
+
+
+def _kad_target(keyword: str) -> str | None:
+    """Kad's key for a keyword search: its first word of 3 UTF-8 bytes or more, lowercased
+    (aMule ``SearchManager.cpp:283-292``)."""
+    words = _KAD_SEPARATORS.split(keyword)
+    return next((word.lower() for word in words if len(word.encode()) >= 3), None)
 
 
 def _outcome_reason(outcome: dict[str, Any] | None) -> str:
