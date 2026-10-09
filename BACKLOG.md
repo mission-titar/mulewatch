@@ -12,12 +12,10 @@ An agent adds an entry only after the operator has agreed to it.
 
 - **Multi network**: a generic core driving one container per P2P client, renamed p2pwatch.
   Umbrella spec: `agents/specs/2026-10-08-multi-network-architecture.md`.
-  - **Stage 1, generic identity**: catalog keyed by `(network, native_id)` instead of `ed2k_hash`,
-    network-agnostic `FileObservation`. Stage 1 of `agents/specs/2026-10-08-multi-network-architecture.md`.
   - **Stage 2, search, download and status ports**: generic ports, aMule adapters on them (D9,
-    D13, D14). Stage 2 of `agents/specs/2026-10-08-multi-network-architecture.md`.
+    D13, D14), the download side moved to `FileKey`. Stage 2 of `agents/specs/2026-10-08-multi-network-architecture.md`.
   - **Stage 3, aMule leaves the core**: `p2pwatch-amule` image, local port-sync, include-based
-    compose, rename to p2pwatch, `v5.0.0`. Stage 3 of `agents/specs/2026-10-08-multi-network-architecture.md`.
+    compose, rename to p2pwatch. Stage 3 of `agents/specs/2026-10-08-multi-network-architecture.md`.
   - **Stage 4, sources and events**: pseudonymous source history, eD2k download sources,
     `new-location` / `reappeared`, `docs/legal.md`. Stage 4 of `agents/specs/2026-10-08-multi-network-architecture.md`.
   - **Stage 5, new networks**: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella),
