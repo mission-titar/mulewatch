@@ -7,6 +7,7 @@ job). Recurring failure facts carry ``first_occurrence`` (computed by the applic
 """
 
 from dataclasses import dataclass
+from typing import Literal
 
 from mulewatch.domain.file_key import FileKey
 
@@ -94,6 +95,46 @@ class SearchCapabilitySampled:
     capable: bool
 
 
+type ChannelField = Literal["on_network", "connectable"]
+
+
+@dataclass(frozen=True)
+class ChannelStatusSampled:
+    # One status reading of a channel; None is unknown (the client's API did not answer).
+    client: str
+    channel: str
+    on_network: bool | None
+    connectable: bool | None
+
+
+@dataclass(frozen=True)
+class ChannelDegraded:
+    # A field of a channel has read False for ``seconds``: emitted once until it recovers.
+    client: str
+    channel: str
+    field: ChannelField
+    seconds: float
+
+
+@dataclass(frozen=True)
+class ChannelRecovered:
+    client: str
+    channel: str
+    field: ChannelField
+
+
+@dataclass(frozen=True)
+class ClientUnreachableLasting:
+    # The client's API has not answered for ``seconds``: emitted once until it answers.
+    client: str
+    seconds: float
+
+
+@dataclass(frozen=True)
+class ClientReachableAgain:
+    client: str
+
+
 @dataclass(frozen=True)
 class FreeSpaceSampled:
     free_bytes: int  # the download cycle's statvfs on the output directory
@@ -142,6 +183,11 @@ type Event = (
     | DownloadCompleted
     | ConnectedInstancesSampled
     | SearchCapabilitySampled
+    | ChannelStatusSampled
+    | ChannelDegraded
+    | ChannelRecovered
+    | ClientUnreachableLasting
+    | ClientReachableAgain
     | FreeSpaceSampled
     | DiskSpaceLow
     | CrawlerStarted

@@ -20,6 +20,12 @@ from catalog_matching.ed2k_link import build_ed2k_link
 from mulewatch.domain.file_key import Network
 from mulewatch.domain.observability.events import (
     AllInstancesBlind,
+    ChannelDegraded,
+    ChannelField,
+    ChannelRecovered,
+    ChannelStatusSampled,
+    ClientReachableAgain,
+    ClientUnreachableLasting,
     ConnectedInstancesSampled,
     CrawlerStarted,
     DecisionChange,
@@ -80,14 +86,16 @@ class MetricName(StrEnum):
     PORT_SYNC_TRIGGERED = "emule_port_sync_triggered"
     HIGH_ID_RECOVERED = "emule_high_id_recovered"
     PORT_MISMATCH = "emule_port_mismatch"
+    CHANNEL_ON_NETWORK = "p2pwatch_channel_on_network"
+    CHANNEL_CONNECTABLE = "p2pwatch_channel_connectable"
 
 
-MetricKind = Literal["inc", "set", "observe"]
+MetricKind = Literal["inc", "set", "observe", "remove"]
 
 
 @dataclass(frozen=True)
 class MetricInstruction:
-    """A metric operation: counter ``inc`` / gauge ``set`` / histogram ``observe``.
+    """A metric operation: counter ``inc`` / gauge ``set`` or ``remove`` / histogram ``observe``.
 
     ``labels`` = tuple of ordered (key, value) pairs (hashable → usable in a ``Report``
     equality test). ``value`` = quantity (default 1.0 for ``inc``).
@@ -137,6 +145,37 @@ def _targets_section(targets: Iterable[tuple[str, str]]) -> str:
 def _code_name(filename: str) -> str:
     # A backtick would close the span and let the rest of the name read as markup.
     return "`" + filename.replace("`", "'") + "`"
+
+
+_DEGRADED: dict[ChannelField, str] = {
+    "on_network": "off its network",
+    "connectable": "not connectable",
+}
+_RECOVERED: dict[ChannelField, str] = {
+    "on_network": "back on its network",
+    "connectable": "connectable again",
+}
+
+
+def _word(value: bool | None) -> str:
+    return "unknown" if value is None else "yes" if value else "no"
+
+
+def _channel_gauge(
+    name: MetricName, event: ChannelStatusSampled, value: bool | None
+) -> MetricInstruction:
+    labels = (("client", event.client), ("network", event.channel))
+    if value is None:  # an unknown state has no series, never a stale one
+        return MetricInstruction(name, "remove", labels)
+    return MetricInstruction(name, "set", labels, float(value))
+
+
+def _channel_alert(
+    severity: Severity, event: ChannelDegraded | ChannelRecovered, what: str
+) -> Report:
+    return Report(
+        severity, f"{event.client} {event.channel}: {what}", (), frozenset({Audience.OPERATIONS})
+    )
 
 
 def _describe_decisions(event: DecisionsRecorded) -> Report:
@@ -267,6 +306,38 @@ def describe(event: Event) -> Report:
                 Severity.DEBUG,
                 f"search-capable: {'yes' if event.capable else 'no'}",
                 (MetricInstruction(MetricName.SEARCH_CAPABLE, "set", (), float(event.capable)),),
+            )
+        case ChannelStatusSampled():
+            return Report(
+                Severity.DEBUG,
+                f"status {event.client} {event.channel}: on network {_word(event.on_network)}, "
+                f"connectable {_word(event.connectable)}",
+                (
+                    _channel_gauge(MetricName.CHANNEL_ON_NETWORK, event, event.on_network),
+                    _channel_gauge(MetricName.CHANNEL_CONNECTABLE, event, event.connectable),
+                ),
+            )
+        case ChannelDegraded():
+            return _channel_alert(
+                Severity.WARNING,
+                event,
+                f"{_DEGRADED[event.field]} for {event.seconds / 60:.0f} min",
+            )
+        case ChannelRecovered():
+            return _channel_alert(Severity.INFO, event, _RECOVERED[event.field])
+        case ClientUnreachableLasting():
+            return Report(
+                Severity.WARNING,
+                f"{event.client} unreachable for {event.seconds / 60:.0f} min",
+                (),
+                frozenset({Audience.OPERATIONS}),
+            )
+        case ClientReachableAgain():
+            return Report(
+                Severity.INFO,
+                f"{event.client} reachable again",
+                (),
+                frozenset({Audience.OPERATIONS}),
             )
         case FreeSpaceSampled():
             return Report(

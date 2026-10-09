@@ -30,6 +30,8 @@ _GAUGES: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
     (MetricName.SEARCH_CAPABLE, "Search-capable now (1)", ()),
     (MetricName.CRAWLER_UP, "Crawler running (1)", ()),
     (MetricName.DISK_FREE_BYTES, "Free bytes on the download filesystem", ()),
+    (MetricName.CHANNEL_ON_NETWORK, "Channel joined its network (1)", ("client", "network")),
+    (MetricName.CHANNEL_CONNECTABLE, "Peers can connect to the channel (1)", ("client", "network")),
 )
 _HISTOGRAMS: tuple[tuple[MetricName, str], ...] = (
     (MetricName.SEARCH_CYCLE_DURATION, "Search cycle duration (s)"),
@@ -59,5 +61,7 @@ class PrometheusSink:
         elif instruction.kind == "set":
             gauge = self._gauges[instruction.name]
             (gauge.labels(**labels) if labels else gauge).set(instruction.value)
+        elif instruction.kind == "remove":
+            self._gauges[instruction.name].remove_by_labels(labels)
         else:
             self._histograms[instruction.name].observe(instruction.value)
