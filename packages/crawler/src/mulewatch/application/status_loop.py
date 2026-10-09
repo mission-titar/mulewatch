@@ -74,6 +74,7 @@ async def status_loop(deps: StatusLoopDeps) -> None:
 
     while not deps.shutdown.is_set():
         try:
+            await deps.client.connect()  # nothing else may connect a shared session (a pause)
             status = await deps.client.status()
         except ClientUnreachableError:
             await deps.telemetry.emit(InstanceUnreachable())

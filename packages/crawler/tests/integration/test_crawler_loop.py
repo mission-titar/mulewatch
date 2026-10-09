@@ -28,6 +28,7 @@ from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
 )
 from mulewatch.composition.app import CrawlerApp
 from mulewatch.domain.observation import FileObservation
+from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.port_sync import NetworkStatus
 from tests.integration.conftest import ApiEndpoint
 
@@ -72,6 +73,9 @@ class _ShutdownAfterFirstCycleClient:
         self, keyword: str, channel: str, budget_seconds: float
     ) -> tuple[FileObservation, ...]:
         return await self._inner.search(keyword, channel, budget_seconds)  # type: ignore[attr-defined,no-any-return]
+
+    async def status(self) -> ClientStatus:
+        return await self._inner.status()  # type: ignore[attr-defined,no-any-return]
 
     async def network_status(self) -> NetworkStatus:
         status = await self._inner.network_status()  # type: ignore[attr-defined]
