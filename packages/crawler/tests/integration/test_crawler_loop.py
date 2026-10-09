@@ -42,16 +42,15 @@ _TARGETS = (
 
 
 class _ShutdownAfterFirstSearchClient:
-    """Wraps a real client and triggers shutdown on the third call to ``search``.
+    """Wraps a real client and shuts down when a channel's task comes back for its next search.
 
-    One keyword on two channels makes two tasks: the third call comes from a task whose first
-    search returned and was recorded, so a whole task iteration ran."""
+    A refused search does not count: a daemon off eD2k refuses every ed2k search at once, and
+    only a search that returned, then was recorded, proves a whole task iteration ran."""
 
     def __init__(self, inner: object, app_holder: dict[str, CrawlerApp]) -> None:
         self._inner = inner
         self._app_holder = app_holder
-        self._searches = 0
-        self.returned = 0
+        self.returned: set[str] = set()
 
     channels: tuple[str, ...] = ("ed2k", "kad")
 
@@ -64,11 +63,11 @@ class _ShutdownAfterFirstSearchClient:
     async def search(
         self, keyword: str, channel: str, budget_seconds: float
     ) -> tuple[FileObservation, ...]:
-        self._searches += 1
-        if self._searches == len(self.channels) + 1:
-            self._app_holder["app"]._on_signal()
+        app = self._app_holder["app"]
+        if channel in self.returned and not app._shutdown.is_set():
+            app._on_signal()
         results = await self._inner.search(keyword, channel, budget_seconds)  # type: ignore[attr-defined]
-        self.returned += 1
+        self.returned.add(channel)
         return results  # type: ignore[no-any-return]
 
     async def status(self) -> ClientStatus:
@@ -92,8 +91,7 @@ async def test_real_loop_runs_one_search_and_stops(amuled: ApiEndpoint, tmp_path
         catalog_db_path=str(tmp_path / "catalog.db"),
         local_db_path=str(tmp_path / "local.db"),
         node_id=None,
-        # One keyword: a Kad search lasts 45 s and ed2k starts are 60 s apart, so the third
-        # search starts about a minute in.
+        # One keyword: a Kad search lasts 45 s at most, so a task comes back within a minute.
         search_keywords=("titar",),
         # The webui binds a FIXED 0.0.0.0:8080; off here so the test never collides with
         # whatever already listens there on the developer's machine.
@@ -123,4 +121,4 @@ async def test_real_loop_runs_one_search_and_stops(amuled: ApiEndpoint, tmp_path
     assert (tmp_path / "catalog.db").exists()
     assert (tmp_path / "local.db").exists()
     # Without this, the test passed before any search even returned.
-    assert clients[0].returned >= 1
+    assert clients[0].returned

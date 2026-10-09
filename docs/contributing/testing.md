@@ -181,7 +181,9 @@ seul le cycle add_link, file, statut est validé.
 **Ce que ça prouve.** Une vraie `CrawlerApp` (vrai `AmuleApiClient` + vraies bases SQLite sur
 `tmp_path`) déroule **une recherche complète** face à l'`amuled` fourni puis **s'arrête
 proprement** dans un `wait_for` de 180 s. L'assertion clé : une recherche est revenue, et l'arrêt
-n'est demandé qu'au troisième appel, une fois cette recherche enregistrée.
+n'est demandé que quand sa tâche revient chercher, une fois cette recherche enregistrée. Un démon
+fraîchement lancé refuse les recherches eD2k (il n'est connecté à aucun serveur) mais accepte
+celles de Kad : c'est elle qui revient.
 
 **Prérequis exacts.** Les mêmes que `api_integration` (§3.0). Le test charge la config du matcher
 depuis la source de vérité unique, `deploy/matcher.yml`, et tourne avec la webui désactivée (son bind
