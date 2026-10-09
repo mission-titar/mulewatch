@@ -1,6 +1,6 @@
 """The network label derives from the SearchChannel by construction (E-D6)."""
 
-from mulewatch.application.networks import ED2K, KAD, network_label
+from mulewatch.application.channels import ED2K, KAD, network_label
 from mulewatch.ports.mule_client import SearchChannel
 
 

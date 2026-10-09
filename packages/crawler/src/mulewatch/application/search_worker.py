@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from catalog_matching.engine import MatchingEngine
-from mulewatch.application.networks import network_label
+from mulewatch.application.channels import network_label
 from mulewatch.application.record_observations import record_observation
 from mulewatch.domain.observability.events import (
     InstanceUnreachable,
