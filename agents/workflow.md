@@ -25,7 +25,7 @@ reasons this document leaves out.
 
 | Tier   | Trigger | What runs |
 |--------|---------|-----------|
-| Direct | One block: no design decision, no new dependency, no change to an operator-facing surface (config keys, either DB's schema, webui routes, metrics, notifications, the `merge`/`compact` CLIs, compose env) | Act, Verify (ending with the handoff), Integrate and Wrap, inline by the lead. No review unless the operator asks for one. One branch (`git switch -c`), one pull request, or the docs-only local merge (Integrate). |
+| Direct | One block: no design decision, no new dependency, no change to an operator-facing surface (config keys, either DB's schema, webui routes, metrics, notifications, the `merge` CLI, compose env) | Act, Verify (ending with the handoff), Integrate and Wrap, inline by the lead. No review unless the operator asks for one. One branch (`git switch -c`), one pull request, or the docs-only local merge (Integrate). |
 | Spec   | Anything else | Discuss, Spec, then per block Act, Verify and Integrate in a teammate, then Wrap with the holistic review. |
 
 ## Branches
