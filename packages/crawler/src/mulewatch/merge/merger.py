@@ -1,11 +1,10 @@
 """``merge_catalogs``: idempotent merge of N ``catalog.db`` into a single output.
 
-Mechanism (merge spec §3/§4): the output is created/opened via ``open_catalog`` (schema
-+ append-only triggers, migration ``0001``, NO duplicated DDL). For each source: we ``ATTACH`` it
-(outside a transaction), then INSIDE an explicit transaction (``BEGIN``…``COMMIT``,
-best-effort ``ROLLBACK`` on error) we copy its tables in **FK order** (identities first), then
-``COMMIT`` and ``DETACH``. A half-copied source is never committed; a failed merge is re-run
-safely.
+Mechanism (merge spec §3/§4): the output is created/opened via ``open_catalog`` (the catalog
+migrations, NO duplicated DDL). For each source: we ``ATTACH`` it (outside a transaction),
+then INSIDE an explicit transaction (``BEGIN``…``COMMIT``, best-effort ``ROLLBACK`` on error)
+we copy its tables in **FK order** (identities first), then ``COMMIT`` and ``DETACH``. A half-copied
+source is never committed; a failed merge is re-run safely.
 
 Idempotence (spec §4):
 - ``files`` (global content PK) → ``INSERT OR IGNORE`` (first sighting
@@ -29,6 +28,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.merge.errors import MergeError, SchemaVersionMismatchError
 
 # Attach alias of the current source (one at a time → we stay at 1 attached DB
@@ -101,23 +101,25 @@ _STATEMENTS = (_COPY_FILES, _COPY_VARIANTS, _COPY_OBSERVATIONS, _COPY_MATCH_DECI
 def merge_catalogs(output: Path, sources: Sequence[Path], *, dest_is_source: bool = False) -> None:
     """Merges ``sources`` into ``output``, idempotent.
 
-    ``output`` is opened via ``open_catalog``: if it's new, the ``0001`` migration lays
-    down the schema + the triggers; if it already exists as a valid ``catalog.db``, no
-    migration is replayed and the merge APPENDS into it (never a truncate).
+    ``output`` is opened via ``open_catalog``: a new file gets the schema + the triggers, an
+    existing older catalog is first migrated in place, and the merge APPENDS (never a truncate).
 
     ``dest_is_source`` (``--into`` mode): the output is itself one of the ``sources``;
     we do not re-attach to ourselves (idempotence guarantees we duplicate nothing there),
     so we skip the source whose path resolves to ``output``.
 
-    Any ``sqlite3.Error`` (corrupt source, incompatible schema, FK…) is wrapped in
-    ``MergeError`` (fail-fast, clear message). The ``ROLLBACK`` is best-effort.
+    Any ``sqlite3.Error`` (corrupt source, incompatible schema, FK…), and ``open_catalog``'s
+    ``PersistenceError`` on the output, is wrapped in ``MergeError``; ``ROLLBACK`` is best-effort.
 
     Before copying a source we check its ``PRAGMA user_version`` equals the current schema
     version (the one ``open_catalog`` just stamped on ``output``) and refuse any mismatch
     with a ``SchemaVersionMismatchError`` (a ``MergeError`` subtype). We never migrate a
     source in place, so an off-version schema could silently mis-copy.
     """
-    connection = open_catalog(output)
+    try:
+        connection = open_catalog(output)
+    except PersistenceError as error:
+        raise MergeError(f"cannot open output {output}: {error}") from error
     try:
         # The current schema version = whatever open_catalog stamped on the output; we read
         # it back rather than hardcode it, so this tracks the migration set automatically.
