@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from prometheus_client import CollectorRegistry
 from starlette.applications import Starlette
 
 from catalog_matching.config import MatcherConfig
@@ -34,6 +35,7 @@ from mulewatch.composition.app import CrawlerApp, WebuiServer, default_client_fa
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_errors import ClientUnreachableError
+from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from mulewatch.ports.telemetry import Telemetry
@@ -159,7 +161,7 @@ def _make_app(
 
 
 class _ShutdownOnStatusClient(FakeMuleClient):
-    """Client that triggers app shutdown on the FIRST status poll (1 cycle then stop)."""
+    """Client that triggers app shutdown on the status loop's FIRST reading."""
 
     def __init__(
         self,
@@ -170,11 +172,11 @@ class _ShutdownOnStatusClient(FakeMuleClient):
         self._app_holder = app_holder
         self._fired = False
 
-    async def network_status(self) -> NetworkStatus:
+    async def status(self) -> ClientStatus:
         if not self._fired:
             self._fired = True
-            self._app_holder["app"]._on_signal()  # simulate a SIGINT after the cycle starts
-        return await super().network_status()
+            self._app_holder["app"]._on_signal()  # simulate a SIGINT once the loops run
+        return await super().status()
 
 
 @pytest.mark.asyncio
@@ -225,6 +227,32 @@ async def test_run_logs_the_package_version_at_startup(
     assert any(
         r.getMessage() == f"mulewatch version {version('mulewatch')}" for r in caplog.records
     )
+
+
+@pytest.mark.asyncio
+async def test_the_status_loop_reads_the_search_client_under_its_endpoint_name(
+    tmp_path: Path, matcher_config: MatcherConfig
+) -> None:
+    registries: list[CollectorRegistry] = []
+    app_holder: dict[str, CrawlerApp] = {}
+    app = _make_app(
+        tmp_path,
+        matcher_config,
+        factory=lambda e: _ShutdownOnStatusClient(app_holder),
+        observability=ObservabilityConfig(
+            log_level="INFO",
+            metrics=MetricsConfig(enabled=True, port=9123),
+            notification_timeout_seconds=5.0,
+            notifications=(),
+        ),
+        metrics_server=lambda port, registry: registries.append(registry),
+    )
+    app_holder["app"] = app
+    await asyncio.wait_for(app.run(), timeout=5.0)
+    gauge = registries[0].get_sample_value(
+        "p2pwatch_channel_on_network", {"client": "amuled", "network": "kad"}
+    )
+    assert gauge == 1.0
 
 
 class _OrderRecordingClient(FakeMuleClient):
@@ -298,7 +326,7 @@ class _UnreachableAtStartupClient(_ShutdownOnStatusClient):
 
     Models a daemon down at startup: the composition root must CATCH, log, and
     CONTINUE (the worker's backoff will govern reconnections). Also triggers the shutdown on the
-    1st status poll to bound the run to one cycle."""
+    1st status read to bound the run."""
 
     def __init__(self, app_holder: dict[str, CrawlerApp]) -> None:
         super().__init__(app_holder, results=None)
@@ -318,8 +346,8 @@ async def test_unreachable_client_at_startup_does_not_crash_the_run(
     # A client unreachable at setup (connect raises ClientUnreachableError) must NOT bring down
     # run(): the composition root catches, warns, and CONTINUES. This matters MORE in one
     # container, not less: the crawler, amuled and amuleweb start simultaneously under s6, so
-    # reaching EC before amuled listens is the normal cold start (design §4). The cycle phase
-    # runs anyway (network_status reached → the shutdown fires).
+    # reaching EC before amuled listens is the normal cold start (design §4). The loops
+    # run anyway (the status read → the shutdown fires).
     created: list[_UnreachableAtStartupClient] = []
     app_holder: dict[str, CrawlerApp] = {}
 
@@ -342,7 +370,7 @@ async def test_unreachable_client_at_startup_does_not_crash_the_run(
     assert startup_warnings, "the composition root must log the startup tolerance"
     assert "amuled unreachable at startup" in startup_warnings[0].getMessage()
     assert created and created[0].connect_calls >= 1  # connect attempted at setup (then retried)
-    assert created[0]._fired  # network_status reached → the cycle phase did start
+    assert created[0]._fired  # the status loop read the client → the loops did start
 
 
 @pytest.mark.asyncio
@@ -393,6 +421,14 @@ class _ShutdownOnSleepClock(FakeClock):
             self._app_holder["app"]._shutdown.set()
 
 
+class _SilentStatusClient(FakeMuleClient):
+    """``status`` never answers: the status loop leaves the fake clock to the cycle loop."""
+
+    async def status(self) -> ClientStatus:
+        await asyncio.Event().wait()
+        return await super().status()
+
+
 @pytest.mark.asyncio
 async def test_loop_exits_cleanly_when_shutdown_set_during_sleep(
     tmp_path: Path, matcher_config: MatcherConfig
@@ -401,7 +437,7 @@ async def test_loop_exits_cleanly_when_shutdown_set_during_sleep(
     # EXITS on its own (without cancellation) → covers the normal exit of the `while`.
     app_holder: dict[str, CrawlerApp] = {}
     clock = _ShutdownOnSleepClock(app_holder)
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient(), clock=clock)
+    app = _make_app(tmp_path, matcher_config, factory=lambda e: _SilentStatusClient(), clock=clock)
     app_holder["app"] = app
     await asyncio.wait_for(app.run(), timeout=5.0)
 
@@ -431,16 +467,16 @@ async def test_signal_cancels_an_in_flight_cycle(
 
 
 class _RealPacedClient(FakeMuleClient):
-    """Client that paces each cycle with a SMALL REAL sleep (not the FakeClock).
+    """Client that paces each status reading with a SMALL REAL sleep (not the FakeClock).
 
-    Used to prove the timing invariant: ``network_status`` yields REAL time instead of
-    busy-spinning, so the cycle loop advances at a controlled real pace. The normal run
+    Used to prove the timing invariant: ``status`` yields REAL time instead of
+    busy-spinning, so the status loop advances at a controlled real pace. The normal run
     (without a signal) must OUTLIVE ``shutdown_deadline_seconds`` of real time without raising
     ``TimeoutError`` - the shutdown bound must NOT arm until a shutdown is requested."""
 
-    async def network_status(self) -> NetworkStatus:
+    async def status(self) -> ClientStatus:
         await asyncio.sleep(0.01)  # REAL time: the loop does not occupy the event loop 100%
-        return await super().network_status()
+        return await super().status()
 
 
 @pytest.mark.asyncio
@@ -1420,16 +1456,19 @@ async def test_resumed_gate_blocks_when_cleared_and_releases_when_set(
     assert gate.done()
 
 
-class _CountingStatusClient(_ShutdownOnStatusClient):
-    """Counts ``network_status`` polls (a cycle ran) and still fires the shutdown on the first."""
+class _ShutdownOnSearchClient(FakeMuleClient):
+    """Fires the shutdown on the first search (a cycle ran); its status never does."""
 
-    def __init__(self, app_holder: dict[str, CrawlerApp], polls: list[int]) -> None:
-        super().__init__(app_holder)
-        self._polls = polls
+    def __init__(self, app_holder: dict[str, CrawlerApp]) -> None:
+        super().__init__()
+        self._app_holder = app_holder
 
-    async def network_status(self) -> NetworkStatus:
-        self._polls.append(1)
-        return await super().network_status()
+    async def search(
+        self, keyword: str, channel: str, budget_seconds: float
+    ) -> tuple[FileObservation, ...]:
+        if not self.searches:
+            self._app_holder["app"]._on_signal()
+        return await super().search(keyword, channel, budget_seconds)
 
 
 @pytest.mark.asyncio
@@ -1437,23 +1476,22 @@ async def test_pause_gate_blocks_the_cycle_until_resumed(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
     # WIRING: a paused app (``_resumed`` cleared before run) blocks at the loop's gate BEFORE any
-    # cycle - the client's ``network_status`` is never polled and the run cannot self-shutdown.
-    # Resuming releases the gate → a cycle runs, polls the status, fires the shutdown, exits.
-    # Without the gate, the cycle would run immediately and the run would finish before resume.
+    # cycle - the client is never searched and the run cannot self-shutdown. Resuming releases
+    # the gate → a cycle runs, searches, fires the shutdown, exits. Without the gate, the cycle
+    # would run immediately and the run would finish before resume.
     holder: dict[str, CrawlerApp] = {}
-    polls: list[int] = []
-    client = _CountingStatusClient(holder, polls)
+    client = _ShutdownOnSearchClient(holder)
     app = _make_app(tmp_path, matcher_config, factory=lambda e: client)
     holder["app"] = app
     app._resumed.clear()  # start paused
     run_task = asyncio.create_task(app.run())
     for _ in range(100):  # ample ticks for the ungated cycle to have run + shut down
         await asyncio.sleep(0)
-    assert polls == []  # paused: no cycle ran
+    assert client.searches == []  # paused: no cycle ran
     assert not run_task.done()  # blocked at the gate, no self-shutdown
     app._resumed.set()  # resume → a cycle runs
     await asyncio.wait_for(run_task, timeout=5.0)
-    assert polls  # a cycle ran after resume
+    assert client.searches  # a cycle ran after resume
 
 
 @pytest.mark.asyncio

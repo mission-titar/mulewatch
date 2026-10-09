@@ -38,6 +38,9 @@ class _ScriptedClient:
         self._readings = readings
         self._shutdown = shutdown
 
+    async def connect(self) -> None:
+        return None
+
     async def status(self) -> ClientStatus:
         reading = self._readings.pop(0)
         if not self._readings:
@@ -158,4 +161,36 @@ async def test_each_reading_samples_every_channel_and_unreachable_makes_them_unk
         (60.0, ev.ChannelStatusSampled("amuled", "kad", False, None)),
         (120.0, ev.ChannelStatusSampled("amuled", "ed2k", None, None)),
         (120.0, ev.ChannelStatusSampled("amuled", "kad", None, None)),
+    ]
+
+
+class _DownAtBootClient:
+    """Like the adapter: unreachable until connected, and its first connect fails."""
+
+    def __init__(self, shutdown: asyncio.Event) -> None:
+        self._shutdown = shutdown
+        self._connect_failures = [make_unreachable()]
+        self._connected = False
+
+    async def connect(self) -> None:
+        if self._connect_failures:
+            raise self._connect_failures.pop(0)
+        self._connected = True
+
+    async def status(self) -> ClientStatus:
+        if not self._connected:
+            raise make_unreachable("not connected")
+        self._shutdown.set()
+        return _status(ed2k=_UP)
+
+
+@pytest.mark.asyncio
+async def test_the_loop_connects_its_client_itself_after_a_failed_boot_connect() -> None:
+    clock = FakeClock()
+    shutdown = asyncio.Event()
+    telemetry = _TimedTelemetry(clock)
+    deps = StatusLoopDeps("amuled", _DownAtBootClient(shutdown), clock, telemetry, shutdown)
+    await asyncio.wait_for(status_loop(deps), timeout=1.0)
+    assert [(at, e) for at, e in telemetry.events if isinstance(e, ev.ChannelStatusSampled)] == [
+        (60.0, ev.ChannelStatusSampled("amuled", "ed2k", True, True))
     ]

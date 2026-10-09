@@ -5,7 +5,8 @@ COMPOSITION layer (the only one allowed to import adapters AND application). Bui
   ``SqliteSchedulerStateRepository`` (single writer, invariant §11), connections opened
   via ``open_catalog``/``open_local`` (migrations checked at startup, fail-fast §14).
 - the ``MatchingEngine`` (once), the ``node_id`` (config override or the one from local.db),
-- ONE ``MuleClient`` + ``SearchWorker`` on the container's single amuled (design §6).
+- ONE ``MuleClient`` + ``SearchWorker`` on the container's single amuled (design §6), whose
+  session the status loop shares.
 
 Loop (``_run_loop``): per cycle, ``run_search_cycle`` then sleep (cadence − elapsed).
 OBSERVABLE & BOUNDED shutdown (spec §6): ``loop.add_signal_handler`` (NOT ``KeyboardInterrupt``,
@@ -73,6 +74,7 @@ from mulewatch.application.search_worker import (
     WorkerDeps,
     WorkerPolicy,
 )
+from mulewatch.application.status_loop import StatusLoopDeps, status_loop
 from mulewatch.domain.observability.events import CrawlerStarted
 from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock, Rng
@@ -405,6 +407,7 @@ class CrawlerApp:
         node_id: str,
         scheduler_state: SchedulerStateRepository,
         backoff: BackoffRegistry,
+        status_deps: StatusLoopDeps,
         download_deps: DownloadLoopDeps | None,
         port_sync_deps: PortSyncLoopDeps | None,
         telemetry: Telemetry,
@@ -445,7 +448,8 @@ class CrawlerApp:
                         telemetry=telemetry,
                         edge=edge,
                     )
-                )
+                ),
+                group.create_task(status_loop(status_deps)),
             ]
             if download_deps is not None:
                 tasks.append(group.create_task(download_loop(download_deps)))
@@ -607,6 +611,10 @@ class CrawlerApp:
                 )
             clients: list[MuleClient] = [client]
             workers = [SearchWorker(endpoint.name, client, deps)]
+            # The status loop shares the search session (one session per container's amuled).
+            status_deps = StatusLoopDeps(
+                endpoint.name, client, self._clock, telemetry, self._shutdown
+            )
 
             _logger.info("crawler started: node_id=%s", node_id)
 
@@ -671,6 +679,7 @@ class CrawlerApp:
                     node_id=node_id,
                     scheduler_state=scheduler_state,
                     backoff=backoff,
+                    status_deps=status_deps,
                     download_deps=download_deps,
                     port_sync_deps=port_sync_deps,
                     telemetry=telemetry,
