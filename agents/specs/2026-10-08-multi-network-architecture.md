@@ -4,7 +4,8 @@
 - Status: APPROVED (operator sign-off 2026-10-08, discussion phase)
 - Scope: turn mulewatch into p2pwatch, a generic watch core that drives several P2P networks, each client in
   its own container; this is an umbrella spec, every stage below gets its own detailed spec
-- Release: staged; stage 3 (aMule leaves the core image) is breaking and ships as `v5.0.0`
+- Release: staged; stage 3 (aMule leaves the core image) is breaking and ships as `v5.0.0` (Corrected: the
+  major release ships with the first new network, not with stage 3; stage 1's spec, D16)
 - Related: `agents/specs/2026-09-16-single-container-embedded-amule.md` (partly reversed here),
   `agents/specs/2026-09-13-scope-reduction-catalog-notify-download.md`,
   `application/port_sync_loop.py`, `adapters/persistence_sqlite/migrations/catalog/0001_initial.sql`,
@@ -264,7 +265,8 @@ identity becomes `(network, native_id)`:
 Identities never cross networks: the same TTH and ed2k hash never prove two rows are one file.
 `FileObservation` loses its eD2k-only fields to a per-network metadata bag, keeping the `raw_meta`
 rule (never lose a field). Stage 1 specifies the migration of every table that references
-`files`.
+`files`. (Corrected: the per-network metadata bag is `raw_meta` itself, and `FileObservation` keeps
+the typed columns mulewatch reads; stage 1's spec, D3.)
 
 ### D9. Three search modes, one download capability
 
@@ -426,6 +428,8 @@ The project now watches several networks, and is about to publish several new im
 published GHCR image is painful (a package is never renamed, it is abandoned for a new one), so
 the rename lands before the first new image, in stage 3, inside the same breaking `v5.0.0`
 release that already asks operators to migrate their compose layout. One migration, not two.
+(Corrected: the rename stays in stage 3, but no longer inside a release, which waits for the first
+new network; stage 1's spec, D16.)
 
 | What | Before | After |
 |---|---|---|
@@ -449,7 +453,7 @@ Domain changes come before topology changes, so that every stage ships on its ow
 |---|---|---|
 | 1 | Generic identity | D8: catalog migration to `(network, native_id)`, network-agnostic `FileObservation`, in today's single container |
 | 2 | Search, download and status ports | D9, D13, D14: generic ports, aMule adapters on them; persistent and passive search ports declared |
-| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: rename to p2pwatch (D15), `p2pwatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` |
+| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: rename to p2pwatch (D15), `p2pwatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` (Corrected: no `v5.0.0` here, the major release waits for the first new network; stage 1's spec, D16) |
 | 4 | Sources and events | D10, D11: source history, eD2k download sources, `docs/legal.md` |
 | 5 | New networks, one by one | search, download (D13) and status (D14) per client: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet + qBittorrent (opt-in) |
 
