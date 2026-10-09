@@ -201,7 +201,7 @@ le crawl en gardant aMule vivant, c'est
 |---|---|
 | `/` | Tableau de bord : couverture par cible (épisodes trouvés et manquants) |
 | `/files` | Liste paginée des fichiers ; filtres `?target=`, `?tier=`, `?q=` |
-| `/files/{file_id}` | Détail d'un fichier, désigné par son `file_id` en 32 caractères hexadécimaux minuscules (en SQL, `lower(hex(file_id))`) : réseau, identifiant natif, observations, décisions, explication du matching |
+| `/files/{file_id}` | Détail d'un fichier, désigné par son `file_id` en 32 caractères hexadécimaux minuscules, tel que la console SQL l'affiche : réseau, identifiant natif, observations, décisions, explication du matching |
 | `/targets/{target_id}` | Fichiers d'une cible (alias de `/files?target=`) |
 | `/node` | État du crawler : `node_id` et entrées du `scheduler_state`. N'expose pas l'état réseau d'aMule. |
 | `/controls` | Forcer une passe de recherche, mettre en pause ou reprendre la surveillance, redémarrer le crawler seul (le conteneur reste debout, aMule garde ses sessions). |
