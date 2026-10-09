@@ -17,6 +17,7 @@ from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.webui.adapters.sql_console import ConsoleOutcome, run_query
 from mulewatch.webui.composition.app import build_app
 from mulewatch.webui.domain.views import ConsoleResult, ConsoleRow, DbOption
@@ -82,6 +83,16 @@ def test_run_query_renders_none_cell_as_null_literal(tmp_path: Path) -> None:
     )
     assert outcome.error is None
     assert outcome.rows == (("NULL",),)
+
+
+def test_run_query_renders_a_blob_cell_as_lowercase_hex(tmp_path: Path) -> None:
+    """A ``file_id`` reads as the hex its detail page's URL takes, not as a Python repr."""
+    path = tmp_path / "catalog.db"
+    _seed_catalog(path)
+    outcome = run_query(
+        db_path=path, sql="SELECT file_id FROM files", row_cap=1000, timeout_seconds=5.0
+    )
+    assert outcome.rows == ((FileKey(Network.ED2K, _HASH_A).file_id.hex(),),)
 
 
 def test_run_query_write_is_rejected_read_only(tmp_path: Path) -> None:

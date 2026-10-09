@@ -66,8 +66,10 @@ class ConsoleOutcome:
 
 def _stringify(value: object) -> str:
     """Render a cell for display: ``None`` becomes the literal ``NULL`` (an empty cell would be
-    ambiguous), everything else its ``str``."""
-    return "NULL" if value is None else str(value)
+    ambiguous), a BLOB its lowercase hex, everything else its ``str``."""
+    if value is None:
+        return "NULL"
+    return value.hex() if isinstance(value, bytes) else str(value)
 
 
 def run_query(*, db_path: Path, sql: str, row_cap: int, timeout_seconds: float) -> ConsoleOutcome:
