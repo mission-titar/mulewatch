@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Protocol
 
-from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.search_client import SearchClient
 
 
@@ -33,17 +32,6 @@ class NetworkStatus:
 
 
 class MuleClient(SearchClient, Protocol):
-    """The four-call search (called by nothing, until it goes) and the network status.
-    ``widen_search`` (Kad only) is ``True`` once the search can no longer be widened."""
-
-    async def start_search(self, keyword: str, channel: str) -> None: ...
-
-    async def fetch_results(self) -> tuple[FileObservation, ...]: ...
-
-    async def stop_search(self) -> None: ...
-
-    async def search_progress(self) -> int | None: ...
-
-    async def widen_search(self) -> bool: ...
+    """The search, and the network status."""
 
     async def network_status(self) -> NetworkStatus: ...

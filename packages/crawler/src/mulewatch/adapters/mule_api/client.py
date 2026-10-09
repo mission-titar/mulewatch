@@ -1,8 +1,8 @@
 """Drives ``amuled`` over amuleapi, satisfying ``MuleClient`` and ``MuleDownloadClient``.
 
-``search()`` waits for its own search and paces its starts by the networks' rules; the four-call
-search keeps the one in flight. Beyond pacing, no retry but the single re-login a ``401``
-mandates and Kad's "already on search list": the adapter signals, the caller decides.
+``search()`` waits for its own search and paces its starts by the networks' rules. Beyond pacing,
+no retry but the single re-login a ``401`` mandates and Kad's "already on search list": the
+adapter signals, the caller decides.
 """
 
 import asyncio
@@ -18,7 +18,6 @@ import httpx
 from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.errors import (
     ApiAuthError,
-    ApiError,
     ApiKadExhaustedError,
     ApiRejectedError,
     ApiUnreachableError,
@@ -38,8 +37,6 @@ from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 # Rows asked for per list request. Every list route caps at 100 when `limit` is omitted, which
 # would silently truncate the shared-file sweep completion detection depends on (§7.5).
 _PAGE_SIZE = 500
-
-_MAX_PROGRESS_PERCENT = 100
 
 # How often search() reads a search's progress: local traffic with our own daemon.
 _POLL_INTERVAL_SECONDS = 5.0
@@ -83,8 +80,6 @@ class AmuleApiClient:
         self._transport = transport
         self._clock = clock or AsyncioClock()
         self._http: httpx.AsyncClient | None = None
-        self._search_id: int | None = None
-        self._current_keyword = ""
         # Held from an ed2k start to its end: aMule's core keeps one ed2k search anchor.
         self._ed2k_lock = asyncio.Lock()
         self._ed2k_next_start = _LONG_AGO
@@ -120,20 +115,6 @@ class AmuleApiClient:
         with suppress(ApiUnreachableError):
             await _send(http, "POST", "/auth/logout")
         await http.aclose()
-        self._search_id = None
-
-    async def start_search(self, keyword: str, channel: str) -> None:
-        """Stops the search in flight, then starts a new one and keeps its id.
-
-        The stop is not optional: Kademlia refuses a keyword still on its search list, and only
-        ``POST /search/{id}/stop`` takes it off (freeing the search does not, measured 2026-09-22).
-        """
-        if self._search_id is not None:
-            with suppress(ApiError):
-                await self.stop_search()
-            self._search_id = None
-        self._search_id = await self._post_search(keyword, _SEARCH_TYPES[channel])
-        self._current_keyword = keyword  # provenance, set AFTER success
 
     async def search(
         self, keyword: str, channel: str, budget_seconds: float
@@ -202,38 +183,6 @@ class AmuleApiClient:
             polls += 1
             await self._clock.sleep(min(_POLL_INTERVAL_SECONDS, remaining))
 
-    async def fetch_results(self) -> tuple[FileObservation, ...]:
-        """CUMULATIVE snapshot of what the daemon holds for the search in flight."""
-        rows = await self._collect(f"/search/{self._require_search()}/results", "results")
-        observations, skipped = map_search_results(rows, self._current_keyword)
-        self.skipped_entries_total += skipped
-        return observations
-
-    async def stop_search(self) -> None:
-        """Stops the search. Its results stay readable, unlike after a DELETE."""
-        await self._call("POST", f"/search/{self._require_search()}/stop")
-
-    async def widen_search(self) -> bool:
-        """Asks Kad for more results; ``True`` once it refuses for good. A ``202`` only means
-        "not exhausted": a daemon predating the feature answers it every time."""
-        try:
-            await self._call("POST", f"/search/{self._require_search()}/more")
-        except ApiKadExhaustedError:
-            return True
-        return False
-
-    async def search_progress(self) -> int | None:
-        """Percentage, or ``None`` when the daemon reports none. Asks for zero rows: the
-        progress envelope travels with the results, and this is polled while they pile up."""
-        if self._search_id is None:
-            return None
-        payload = await self._call("GET", f"/search/{self._search_id}/results", params={"limit": 0})
-        progress = payload.get("progress")
-        percent = progress.get("percent") if isinstance(progress, dict) else None
-        if not isinstance(percent, int) or isinstance(percent, bool):
-            return None
-        return min(percent, _MAX_PROGRESS_PERCENT)
-
     async def network_status(self) -> NetworkStatus:
         """Network status: the one GET that carries both networks and our own eD2k id."""
         return map_network_status(await self._call("GET", "/status"))
@@ -300,12 +249,6 @@ class AmuleApiClient:
         return True
 
     # --- transport --------------------------------------------------------------------------
-
-    def _require_search(self) -> int:
-        """The id of the search in flight, or a clean refusal (the caller starts one first)."""
-        if self._search_id is None:
-            raise ApiRejectedError("no search in flight (call start_search first)")
-        return self._search_id
 
     async def _call(
         self,

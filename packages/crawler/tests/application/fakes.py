@@ -135,21 +135,6 @@ class FakeMuleClient:
             return ()
         return self._results.pop(0)
 
-    async def start_search(self, keyword: str, channel: str) -> None:
-        return None
-
-    async def fetch_results(self) -> tuple[FileObservation, ...]:
-        return ()
-
-    async def stop_search(self) -> None:
-        return None
-
-    async def search_progress(self) -> int | None:
-        return None
-
-    async def widen_search(self) -> bool:
-        return True
-
     async def network_status(self) -> NetworkStatus:
         return self._status
 

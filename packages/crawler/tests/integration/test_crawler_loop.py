@@ -73,21 +73,6 @@ class _ShutdownAfterFirstCycleClient:
     ) -> tuple[FileObservation, ...]:
         return await self._inner.search(keyword, channel, budget_seconds)  # type: ignore[attr-defined,no-any-return]
 
-    async def start_search(self, keyword: str, channel: object) -> None:
-        await self._inner.start_search(keyword, channel)  # type: ignore[attr-defined]
-
-    async def fetch_results(self) -> tuple:  # type: ignore[type-arg]
-        return await self._inner.fetch_results()  # type: ignore[attr-defined,no-any-return]
-
-    async def stop_search(self) -> None:
-        await self._inner.stop_search()  # type: ignore[attr-defined]
-
-    async def search_progress(self) -> int | None:
-        return await self._inner.search_progress()  # type: ignore[attr-defined,no-any-return]
-
-    async def widen_search(self) -> bool:
-        return await self._inner.widen_search()  # type: ignore[attr-defined,no-any-return]
-
     async def network_status(self) -> NetworkStatus:
         status = await self._inner.network_status()  # type: ignore[attr-defined]
         self._status_calls += 1

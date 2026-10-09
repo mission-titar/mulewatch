@@ -54,21 +54,6 @@ class _StubClient:
     ) -> tuple[FileObservation, ...]:
         return ()
 
-    async def start_search(self, keyword: str, channel: str) -> None:
-        return None
-
-    async def fetch_results(self) -> tuple[FileObservation, ...]:
-        return ()
-
-    async def stop_search(self) -> None:
-        return None
-
-    async def search_progress(self) -> int | None:
-        return None
-
-    async def widen_search(self) -> bool:
-        return False
-
     async def network_status(self) -> NetworkStatus:
         return NetworkStatus(ed2k_id=None, ed2k_high=False, kad_status=KadStatus.OFF)
 
@@ -80,10 +65,5 @@ async def test_stub_client_satisfies_mule_client_protocol() -> None:
     await client.connect()
     assert client.channels == ("ed2k", "kad")
     assert await client.search("keroro", "ed2k", 120.0) == ()
-    await client.start_search("keroro", "ed2k")
-    assert await client.fetch_results() == ()
-    assert await client.search_progress() is None
-    assert await client.widen_search() is False
     assert (await client.network_status()).kad_status is KadStatus.OFF
-    await client.stop_search()
     await client.close()
