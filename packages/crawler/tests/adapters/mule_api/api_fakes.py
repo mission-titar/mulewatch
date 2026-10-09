@@ -42,6 +42,7 @@ class FakeAmuleApi:
         downloads: list[dict[str, Any]] | None = None,
         shared: list[dict[str, Any]] | None = None,
         status: dict[str, Any] | None = None,
+        version: dict[str, Any] | None = None,
         preferences: dict[str, Any] | None = None,
         progress: dict[str, Any] | None = None,
         search_seconds: dict[str, float] | None = None,
@@ -52,6 +53,7 @@ class FakeAmuleApi:
         self.downloads = downloads if downloads is not None else []
         self.shared = shared if shared is not None else []
         self.status = status if status is not None else {"ed2k": {}, "kad": {}}
+        self.version = version if version is not None else {"daemon_version": "3.0.1"}
         self.preferences = (
             preferences if preferences is not None else {"connection": {"tcp_port": 4662}}
         )
@@ -134,6 +136,9 @@ class FakeAmuleApi:
     def _get_status(self, request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=self.status)
 
+    def _get_version(self, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=self.version)
+
     def _get_preferences(self, request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=self.preferences)
 
@@ -179,6 +184,7 @@ _ROUTES: dict[tuple[str, str], Callable[[FakeAmuleApi, httpx.Request], httpx.Res
     ("GET", "/api/v1/search/{id}/results"): FakeAmuleApi._search_results,
     ("POST", "/api/v1/search/{id}/more"): FakeAmuleApi._more_search,
     ("GET", "/api/v1/status"): FakeAmuleApi._get_status,
+    ("GET", "/api/v1/version"): FakeAmuleApi._get_version,
     ("GET", "/api/v1/preferences"): FakeAmuleApi._get_preferences,
     ("PATCH", "/api/v1/preferences"): FakeAmuleApi._patch_preferences,
     ("POST", "/api/v1/downloads"): FakeAmuleApi._add_links,

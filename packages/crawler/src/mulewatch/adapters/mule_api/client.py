@@ -24,12 +24,14 @@ from mulewatch.adapters.mule_api.errors import (
     error_from_response,
 )
 from mulewatch.adapters.mule_api.mapping import (
+    map_client_status,
     map_download_entry,
     map_network_status,
     map_search_results,
     map_shared_entry,
 )
 from mulewatch.domain.observation import FileObservation
+from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.mule_client import NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
@@ -182,6 +184,14 @@ class AmuleApiClient:
                 widen = await self._widen(search_id)
             polls += 1
             await self._clock.sleep(min(_POLL_INTERVAL_SECONDS, remaining))
+
+    async def status(self) -> ClientStatus:
+        """Raises unreachable unless amuleapi reaches amuled: otherwise it answers from its cache,
+        and a dead amuled would read as connected."""
+        status = await self._call("GET", "/status")
+        if status.get("ec_connected") is not True:
+            raise ApiUnreachableError("GET /status: amuleapi does not reach amuled")
+        return map_client_status(status, await self._call("GET", "/version"))
 
     async def network_status(self) -> NetworkStatus:
         """Network status: the one GET that carries both networks and our own eD2k id."""

@@ -12,7 +12,8 @@ from mulewatch.adapters.mule_api.errors import (
     ApiRejectedError,
     ApiUnreachableError,
 )
-from mulewatch.ports.client_errors import SearchFailedError
+from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
+from mulewatch.ports.client_status import ChannelStatus
 from mulewatch.ports.mule_client import KadStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, TOKEN, FakeAmuleApi, error
 
@@ -424,6 +425,45 @@ async def test_network_status_maps_the_daemon_state() -> None:
     assert status.ed2k_id == 42
     assert status.ed2k_high is True
     assert status.kad_status is KadStatus.CONNECTED
+
+
+@pytest.mark.asyncio
+async def test_status_reads_the_channels_and_the_daemon_version() -> None:
+    api = FakeAmuleApi(
+        status={
+            "ec_connected": True,
+            "ed2k": {"state": "connected", "high_id": False},
+            "kad": {"state": "connecting"},
+        },
+        version={"daemon_version": "GIT rev. 3.0.1-773-g500293ba3"},
+    )
+    client = await _connected(api)
+
+    status = await client.status()
+    await client.close()
+
+    assert status.version == "GIT rev. 3.0.1-773-g500293ba3"
+    assert status.channels == (
+        ChannelStatus(channel="ed2k", on_network=True, connectable=False),
+        ChannelStatus(channel="kad", on_network=False, connectable=None),
+    )
+
+
+@pytest.mark.parametrize("ec_connected", [{"ec_connected": False}, {}])
+@pytest.mark.asyncio
+async def test_status_without_amuled_behind_amuleapi_is_unreachable(
+    ec_connected: dict[str, bool],
+) -> None:
+    # amuleapi answers from its cache with the last states: a dead amuled reads "connected".
+    stale = {
+        "ed2k": {"state": "connected", "high_id": True},
+        "kad": {"state": "connected", "firewalled_tcp": False},
+    }
+    client = await _connected(FakeAmuleApi(status={**ec_connected, **stale}))
+
+    with pytest.raises(ClientUnreachableError):
+        await client.status()
+    await client.close()
 
 
 @pytest.mark.asyncio
