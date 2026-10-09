@@ -237,7 +237,7 @@ def test_file_detail_carries_observations_and_decisions(catalog_db: Path) -> Non
     assert detail.size_bytes == 100
     assert len(detail.decisions) == 1
     assert detail.decisions[0].target_id == "062A"
-    assert [s.names for s in detail.sightings] == [("keroro_062.avi",)]
+    assert [s.name for s in detail.sightings] == ["keroro_062.avi"]
     assert detail.latest == detail.sightings[0]
     assert detail.known_filenames == ("keroro_062.avi",)
 

@@ -60,7 +60,7 @@ def register_functions(connection: sqlite3.Connection) -> None:
             fold_raw_meta(json.loads(raw_meta), codec, file_type, complete), ensure_ascii=False
         )
 
-    # Memoized for the connection's life: one entry per distinct key, ~11k on the node.
+    # Memoized for the connection's life, the crawler's included: one entry per variant 0007 wrote.
     connection.create_function("content_hash", 8, cache(content_hash), deterministic=True)
     connection.create_function("fold_raw_meta", 4, cache(fold_stored), deterministic=True)
     connection.create_function("file_id", 2, file_id, deterministic=True)
