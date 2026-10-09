@@ -27,7 +27,7 @@ from .helpers import (
 
 # The current catalog schema version = the last catalog migration's number.
 # open_catalog stamps the output to it; the guard rejects any source that is not at it.
-_CURRENT_SCHEMA_VERSION = 8
+_CURRENT_SCHEMA_VERSION = 9
 _T1 = "2026-06-11T12:00:00.000000+00:00"
 _T2 = "2026-06-11T13:00:00.000000+00:00"
 

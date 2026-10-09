@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.variants import content_hash
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
@@ -57,7 +56,7 @@ def _catalog_at_7(path: Path) -> None:
 @pytest.fixture
 def migrated(tmp_path: Path) -> Iterator[sqlite3.Connection]:
     _catalog_at_7(tmp_path / "catalog.db")
-    connection = open_catalog(tmp_path / "catalog.db")
+    connection = open_catalog_at(tmp_path / "catalog.db", 8)
     yield connection
     connection.close()
 
@@ -133,7 +132,7 @@ def test_the_runner_restores_the_pragmas_0008_sets(
 ) -> None:
     _catalog_at_7(tmp_path / "catalog.db")
     forcing_secure_delete(monkeypatch)
-    connection = open_catalog(tmp_path / "catalog.db")
+    connection = open_catalog_at(tmp_path / "catalog.db", 8)
     try:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
         assert connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
