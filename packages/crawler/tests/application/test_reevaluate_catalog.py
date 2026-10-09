@@ -100,6 +100,7 @@ async def test_repository_error_on_one_row_is_absorbed_and_sweep_continues(
     catalog: SqliteCatalogRepository,
     catalog_connection: sqlite3.Connection,
     engine: MatchingEngine,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     catalog.record_observation(_obs(_HASH_DL, _DL_NAME))
     catalog.record_observation(_obs(_HASH_CAT, _CAT_NAME))
@@ -118,6 +119,7 @@ async def test_repository_error_on_one_row_is_absorbed_and_sweep_continues(
     assert summary == ReevalSummary(evaluated=2, written=1)
     assert decision_tiers(catalog_connection) == [(_HASH_CAT, "catalog")]
     assert catalog.last_decisions(FileKey(Network.ED2K, _HASH_DL)) == {}
+    assert f"file=ed2k:{_HASH_DL} " in caplog.text
 
 
 @pytest.mark.asyncio

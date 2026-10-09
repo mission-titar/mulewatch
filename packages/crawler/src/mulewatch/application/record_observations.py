@@ -57,7 +57,7 @@ async def record_observation(
         )
     except RepositoryError as error:
         _logger.error(
-            "persistence failed on %s:%s (%s): observation skipped, cycle continues",
+            "persistence failed on file=%s:%s (%s): observation skipped, cycle continues",
             observation.file.network,
             observation.file.native_id,
             error,
