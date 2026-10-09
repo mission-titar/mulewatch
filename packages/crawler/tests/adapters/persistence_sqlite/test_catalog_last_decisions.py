@@ -28,11 +28,10 @@ class _AdvancingClock:
 
 def _obs(file: FileKey) -> FileObservation:
     return FileObservation(
-        ed2k_hash=file.native_id,
+        file=file,
         filename="Keroro.avi",
         size_bytes=100,
         source_count=1,
-        complete_source_count=0,
         keyword="keroro",
     )
 

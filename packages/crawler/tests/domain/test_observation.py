@@ -3,51 +3,47 @@ import dataclasses
 import pytest
 
 from catalog_matching.models import FileCandidate
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation, candidate_from_fields, fold_raw_meta
+
+_KEY = FileKey(Network.ED2K, "31d6cfe0d16ae931b73c59d7e0c089c0")
 
 
 def _full_observation() -> FileObservation:
     return FileObservation(
-        ed2k_hash="31d6cfe0d16ae931b73c59d7e0c089c0",
+        file=_KEY,
         filename="Keroro 062A.avi",
         size_bytes=3 * 1024 * 1024,
         source_count=5,
-        complete_source_count=2,
         keyword="keroro",
         media_length_sec=1234,
         bitrate_kbps=1500,
-        codec="xvid",
-        file_type="Video",
-        raw_meta=(("0x0308", "0"),),
+        raw_meta=(("0x0308", "0"), ("codec", None), ("complete_source_count", 2)),
     )
 
 
 def test_file_observation_is_frozen_and_holds_fields() -> None:
     observation = _full_observation()
-    assert observation.ed2k_hash == "31d6cfe0d16ae931b73c59d7e0c089c0"
+    assert observation.file == _KEY
     assert observation.filename == "Keroro 062A.avi"
     assert observation.size_bytes == 3 * 1024 * 1024
     assert observation.source_count == 5
-    assert observation.complete_source_count == 2
     assert observation.keyword == "keroro"
-    assert observation.raw_meta == (("0x0308", "0"),)
+    assert observation.raw_meta == (("0x0308", "0"), ("codec", None), ("complete_source_count", 2))
     with pytest.raises(dataclasses.FrozenInstanceError):
         observation.filename = "autre"  # type: ignore[misc]
 
 
 def test_media_fields_and_raw_meta_default_to_absent() -> None:
     observation = FileObservation(
-        ed2k_hash="31d6cfe0d16ae931b73c59d7e0c089c0",
+        file=_KEY,
         filename="Keroro 062A.avi",
         size_bytes=100,
         source_count=0,
-        complete_source_count=0,
         keyword="keroro",
     )
     assert observation.media_length_sec is None
     assert observation.bitrate_kbps is None
-    assert observation.codec is None
-    assert observation.file_type is None
     assert observation.raw_meta == ()
 
 
@@ -64,11 +60,10 @@ def test_to_candidate_converts_units_with_media_metadata() -> None:
 
 def test_to_candidate_maps_absent_media_metadata_to_none() -> None:
     observation = FileObservation(
-        ed2k_hash="31d6cfe0d16ae931b73c59d7e0c089c0",
+        file=_KEY,
         filename="Keroro 062A.avi",
         size_bytes=524288,  # 0.5 MiB
         source_count=1,
-        complete_source_count=0,
         keyword="keroro",
     )
     candidate = observation.to_candidate()

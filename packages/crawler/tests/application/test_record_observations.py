@@ -7,6 +7,7 @@ from catalog_matching.engine import MatchingEngine
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
 from mulewatch.application.record_observations import record_observation
 from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import ObservationRecorded
 from mulewatch.domain.observation import FileObservation
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
@@ -23,11 +24,10 @@ _NOTIFY_NAME = "Keroro Les demoiselles cambrioleuses.avi"
 
 def _obs(ed2k_hash: str, filename: str) -> FileObservation:
     return FileObservation(
-        ed2k_hash=ed2k_hash,
+        file=FileKey(Network.ED2K, ed2k_hash),
         filename=filename,
         size_bytes=234_000_000,
         source_count=3,
-        complete_source_count=1,
         keyword="keroro",
     )
 

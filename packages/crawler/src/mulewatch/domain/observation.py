@@ -1,14 +1,14 @@
-"""Observation of a file seen on the network (cf. spec EC-adapter §4; spec MVP §11).
+"""Observation of a file seen on the network. PURE domain.
 
-PURE domain. ``FileObservation`` is aligned on the ``file_observations`` table (§11):
-plan A will persist this object as-is; the DB adapter will add ``observed_at``/``node_id``
-(same principle as ``MatchDecision``). ``raw_meta`` is the catch-all (JSON-friendly
-``(name, value)`` pairs): we NEVER lose a metadata field, even an unknown one.
+``raw_meta`` is the per-network catch-all of ``(name, value)`` pairs: no metadata field is lost.
 """
 
 from dataclasses import dataclass
 
 from catalog_matching.models import FileCandidate
+from mulewatch.domain.file_key import FileKey
+
+RawMeta = tuple[tuple[str, str | int | None], ...]
 
 # DECISION 8: the "MB" shown by eMule clients are binary (MiB).
 _BYTES_PER_MIB = 1024 * 1024
@@ -41,7 +41,7 @@ def fold_raw_meta(
     codec: str | None,
     file_type: str | None,
     complete_source_count: int,
-) -> tuple[tuple[str, str | int | None], ...]:
+) -> RawMeta:
     """``raw_meta`` with the three eD2k-only fields appended, absent ones as ``None``. The
     amuleapi mapper and the catalog migration share it, so both store the same pairs."""
     return (
@@ -54,24 +54,17 @@ def fold_raw_meta(
 
 @dataclass(frozen=True)
 class FileObservation:
-    """A file observed during a search (content key = eD2k hash, never the person).
+    """A file observed during a search (the file, never the person); ``keyword`` is its provenance.
+    Media fields are ``None`` when the network did not report them (self-declared, unreliable)."""
 
-    Media fields are ``None`` if the network did not provide them (self-declared,
-    unreliable metadata — spec MVP §10.1). ``keyword`` is the provenance (the search
-    keyword that produced the observation).
-    """
-
-    ed2k_hash: str
+    file: FileKey
     filename: str
     size_bytes: int
     source_count: int
-    complete_source_count: int
     keyword: str
     media_length_sec: int | None = None
     bitrate_kbps: int | None = None
-    codec: str | None = None
-    file_type: str | None = None
-    raw_meta: tuple[tuple[str, str], ...] = ()
+    raw_meta: RawMeta = ()
 
     def to_candidate(self) -> FileCandidate:
         """Bridge to the matching engine (delegates to ``candidate_from_fields``)."""

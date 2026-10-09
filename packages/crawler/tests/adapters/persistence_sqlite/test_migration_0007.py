@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from mulewatch.adapters.mule_api.mapping import map_search_results
 from mulewatch.adapters.persistence_sqlite import connection as connection_module
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.variants import iso_to_micros
-from mulewatch.domain.observation import FileObservation
 from tests.adapters.persistence_sqlite.older_catalog import open_catalog_at
 
 _A, _B = "a" * 32, "b" * 32
@@ -116,27 +116,28 @@ def test_the_old_table_and_its_indexes_are_gone(tmp_path: Path) -> None:
         connection.close()
 
 
-def test_a_file_recorded_after_the_upgrade_reuses_its_migrated_variant(tmp_path: Path) -> None:
+def test_a_mapped_result_reuses_the_variant_0007_migrated_from_its_old_row(
+    tmp_path: Path,
+) -> None:
+    """D11: the mapper's fold and 0007's agree, or every file gets a second variant."""
+    result = {
+        "hash": _A,
+        "name": _NAME,
+        "size_bytes": 100,
+        "sources": {"total": 9, "complete": 2},
+        "rating": 0,
+        "file_type": "Video",
+        "media": {"duration_seconds": 1474, "bitrate_kilobits_per_second": 1200, "codec": "xvid"},
+        "status": "mystère",
+    }
+    # The same values as the pre-0007 mapper and repository stored them.
+    old_meta = '[["rating", "0"], ["status", "mystère"]]'
     path = tmp_path / "catalog.db"
-    _old_catalog(path, _FULL)
+    _old_catalog(path, _with(_FULL, raw_meta=old_meta))
+    (observation,), _ = map_search_results([result], "keroro")
     connection = open_catalog(path)
     try:
-        repository = SqliteCatalogRepository(connection, "n1")
-        repository.record_observation(
-            FileObservation(
-                ed2k_hash=_A,
-                filename=_NAME,
-                size_bytes=100,
-                source_count=9,
-                complete_source_count=2,
-                keyword="keroro",
-                media_length_sec=1474,
-                bitrate_kbps=1200,
-                codec="xvid",
-                file_type="Video",
-                raw_meta=(("0x0308", "0"), ("0x0999", "mystère")),
-            )
-        )
+        SqliteCatalogRepository(connection, "n1").record_observation(observation)
         assert connection.execute("SELECT count(*) FROM observation_variants").fetchone()[0] == 1
         assert connection.execute("SELECT count(*) FROM observations").fetchone()[0] == 2
     finally:

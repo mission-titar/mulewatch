@@ -32,11 +32,10 @@ _MULTI_NAME = "Keroro 062 teletoon.avi"  # → 062A + 062B download (post-fan-ou
 
 def _obs(ed2k_hash: str, filename: str) -> FileObservation:
     return FileObservation(
-        ed2k_hash=ed2k_hash,
+        file=FileKey(Network.ED2K, ed2k_hash),
         filename=filename,
         size_bytes=234_000_000,
         source_count=3,
-        complete_source_count=1,
         keyword="keroro",
     )
 

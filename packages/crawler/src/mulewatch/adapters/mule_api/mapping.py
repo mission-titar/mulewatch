@@ -7,7 +7,8 @@ field consumes lands in ``raw_meta`` - except ``ecid``, a session-local id we ne
 import json
 from typing import Any
 
-from mulewatch.domain.observation import FileObservation
+from mulewatch.domain.file_key import FileKey, Network
+from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 
@@ -88,6 +89,7 @@ def _map_result(result: object, keyword: str) -> tuple[list[FileObservation], in
         return [], 1
     media = _object(result.get("media"))
     raw_meta = _raw_meta(result, media)
+    codec, file_type = _string(media.get("codec")), _string(result.get("file_type"))
     alternates = result.get("alternate_names")
     entries: list[object] = [result, *(alternates if isinstance(alternates, list) else [])]
     observations: list[FileObservation] = []
@@ -101,17 +103,14 @@ def _map_result(result: object, keyword: str) -> tuple[list[FileObservation], in
         total, complete = _sources(fields.get("sources"))
         observations.append(
             FileObservation(
-                ed2k_hash=ed2k_hash,
+                file=FileKey(Network.ED2K, ed2k_hash),
                 filename=name,
                 size_bytes=size_bytes,
                 source_count=total,
-                complete_source_count=complete,
                 keyword=keyword,
                 media_length_sec=_optional_int(media.get("duration_seconds")),
                 bitrate_kbps=_optional_int(media.get("bitrate_kilobits_per_second")),
-                codec=_string(media.get("codec")),
-                file_type=_string(result.get("file_type")),
-                raw_meta=raw_meta,
+                raw_meta=fold_raw_meta(raw_meta, codec, file_type, complete),
             )
         )
     return observations, skipped

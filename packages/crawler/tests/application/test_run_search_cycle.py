@@ -19,6 +19,7 @@ from mulewatch.application.search_worker import (
     WorkerDeps,
     WorkerPolicy,
 )
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import AllInstancesBlind, SearchCapabilitySampled
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.mule_client import KadStatus, NetworkStatus
@@ -62,11 +63,10 @@ class _NoopRng:
 
 def _obs() -> FileObservation:
     return FileObservation(
-        ed2k_hash=_HASH,
+        file=FileKey(Network.ED2K, _HASH),
         filename=_DL_NAME,
         size_bytes=234_000_000,
         source_count=3,
-        complete_source_count=1,
         keyword="keroro",
     )
 

@@ -47,11 +47,10 @@ def _event(ed2k_hash: str, filename: str, *changes: DecisionChange) -> Decisions
 
 def _obs(ed2k_hash: str, filename: str, sources: int = 3) -> FileObservation:
     return FileObservation(
-        ed2k_hash=ed2k_hash,
+        file=FileKey(Network.ED2K, ed2k_hash),
         filename=filename,
         size_bytes=_SIZE,
         source_count=sources,
-        complete_source_count=1,
         keyword="keroro",
     )
 
