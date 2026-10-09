@@ -5,9 +5,10 @@ The adapter stamps what the domain ignores (data-model spec §3): ``observed_at`
 constructor — plan C will read it from ``LocalStateRepository``). ``raw_meta`` is serialized
 as a JSON LIST of pairs (``[["0x0308", "0"], …]``), wire order and duplicates preserved,
 ``ensure_ascii=False``, no sorting (spec §3). ``record_observation`` makes ONE transaction
-(spec §4): ``INSERT OR IGNORE`` into ``files`` (first sight wins) then ``INSERT`` into
-``file_observations`` — the OBSERVED size is ALWAYS written into the observation
-(deviation 1, spec §5: a size anomaly must not become invisible).
+(spec §4): ``INSERT OR IGNORE`` into ``files`` (first sight wins), into
+``observation_variants`` (found by its ``content_hash``) and into ``observations`` — the
+OBSERVED size is ALWAYS written into the variant (deviation 1, spec §5: a size anomaly must
+not become invisible).
 
 The hash canon (32 lowercase hex, v0.5.0 canon) is validated IN PYTHON before the
 transaction: ``INSERT OR IGNORE`` silently swallows a CHECK violation (documented
@@ -33,7 +34,8 @@ from catalog_matching.engine import (
 from mulewatch.adapters.persistence_sqlite import sightings
 from mulewatch.adapters.persistence_sqlite.connection import Clock, utc_iso, utc_now
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError, wrap_sqlite_errors
-from mulewatch.domain.observation import FileObservation
+from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
+from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import ObservedFile, ReevalRow
 
@@ -41,12 +43,16 @@ _CANONICAL_HASH_RE = re.compile(r"[0-9a-f]{32}\Z")
 
 _INSERT_FILE = "INSERT OR IGNORE INTO files (ed2k_hash, size_bytes, aich_hash) VALUES (?, ?, NULL)"
 
+_INSERT_VARIANT = """
+INSERT OR IGNORE INTO observation_variants (
+    ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta, keyword, node_id,
+    content_hash
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
 _INSERT_OBSERVATION = """
-INSERT INTO file_observations (
-    ed2k_hash, filename, size_bytes, source_count, complete_source_count,
-    media_length_sec, bitrate_kbps, codec, file_type, raw_meta,
-    keyword, observed_at, node_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT OR IGNORE INTO observations (variant_id, observed_at, source_count)
+SELECT variant_id, ?, ? FROM observation_variants WHERE content_hash = ?
 """
 
 _INSERT_DECISION = """
@@ -100,34 +106,36 @@ class SqliteCatalogRepository:
         self._clock = clock
 
     def record_observation(self, observation: FileObservation) -> None:
-        """ONE transaction: file (first sight wins) + stamped observation."""
+        """ONE transaction: file (first sight wins), its variant, the stamped observation."""
         if not _CANONICAL_HASH_RE.fullmatch(observation.ed2k_hash):
             raise PersistenceError(f"non-canonical eD2k hash: {observation.ed2k_hash!r}")
-        raw_meta = json.dumps(observation.raw_meta, ensure_ascii=False)
-        observed_at = utc_iso(self._clock())
+        pairs = fold_raw_meta(
+            observation.raw_meta,
+            observation.codec,
+            observation.file_type,
+            observation.complete_source_count,
+        )
+        variant = (
+            observation.ed2k_hash,
+            observation.filename,
+            observation.size_bytes,
+            observation.media_length_sec,
+            observation.bitrate_kbps,
+            json.dumps(pairs, ensure_ascii=False),
+            observation.keyword,
+            self._node_id,
+        )
+        key = content_hash(*variant)
+        observed_at = iso_to_micros(utc_iso(self._clock()))
         with wrap_sqlite_errors():
             self._connection.execute("BEGIN")
             try:
                 self._connection.execute(
                     _INSERT_FILE, (observation.ed2k_hash, observation.size_bytes)
                 )
+                self._connection.execute(_INSERT_VARIANT, (*variant, key))
                 self._connection.execute(
-                    _INSERT_OBSERVATION,
-                    (
-                        observation.ed2k_hash,
-                        observation.filename,
-                        observation.size_bytes,
-                        observation.source_count,
-                        observation.complete_source_count,
-                        observation.media_length_sec,
-                        observation.bitrate_kbps,
-                        observation.codec,
-                        observation.file_type,
-                        raw_meta,
-                        observation.keyword,
-                        observed_at,
-                        self._node_id,
-                    ),
+                    _INSERT_OBSERVATION, (observed_at, observation.source_count, key)
                 )
                 self._connection.execute("COMMIT")
             except BaseException:

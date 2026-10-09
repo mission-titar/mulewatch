@@ -10,6 +10,7 @@ from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
 from mulewatch.domain.observability.events import ObservationRecorded
 from mulewatch.domain.observation import FileObservation
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
+from tests.catalog_rows import count_observations
 
 _HASH_DL = "31d6cfe0d16ae931b73c59d7e0c089c0"
 _HASH_CAT = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -48,7 +49,7 @@ async def test_observation_is_always_recorded_even_when_discarded(
         network="ed2k",
     )
     assert changed == 0
-    assert catalog_connection.execute("SELECT count(*) FROM file_observations").fetchone()[0] == 1
+    assert count_observations(catalog_connection) == 1
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 0
     assert signal.signalled == []
 
@@ -110,7 +111,7 @@ async def test_unchanged_verdict_is_not_reappended_or_nudged(
     )
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 1
     # But the observation itself is re-persisted (periodic re-observation = the goal).
-    assert catalog_connection.execute("SELECT count(*) FROM file_observations").fetchone()[0] == 2
+    assert count_observations(catalog_connection) == 2
     assert signal.signalled == [_HASH_CAT]  # only once
 
 
@@ -158,7 +159,7 @@ async def test_persistence_error_is_absorbed_and_cycle_continues(
 ) -> None:
     # TEST trigger: makes the observation INSERT fail → RepositoryError absorbed.
     catalog_connection.execute(
-        "CREATE TRIGGER boom BEFORE INSERT ON file_observations"
+        "CREATE TRIGGER boom BEFORE INSERT ON observations"
         " BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
     )
     telemetry = RecordingTelemetry()

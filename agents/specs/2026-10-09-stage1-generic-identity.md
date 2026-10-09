@@ -115,6 +115,8 @@ CREATE TABLE observation_variants (
     content_hash BLOB NOT NULL UNIQUE
 );
 
+CREATE INDEX idx_observation_variants_file_id ON observation_variants (file_id);
+
 CREATE TABLE observations (
     variant_id INTEGER NOT NULL REFERENCES observation_variants (variant_id),
     observed_at INTEGER NOT NULL,
@@ -123,6 +125,8 @@ CREATE TABLE observations (
 ) WITHOUT ROWID;
 ```
 
+- **The index on the file reference** serves every read, which starts from a file's variants.
+  (Corrected: the DDL above omitted it; 0007 names it `idx_observation_variants_ed2k_hash`.)
 - **`content_hash`** is computed in Python. Its input is the variant's columns in a fixed order, serialized
   with `json.dumps(..., ensure_ascii=False, separators=(",", ":"))`, BLOBs written as lowercase hex, and it
   is hashed with `blake2b(digest_size=16)`. The serialization is NULL-safe, type-safe and boundary-safe:
@@ -141,7 +145,8 @@ CREATE TABLE observations (
   by `variant_id` descending, then `source_count` descending. This replaces today's tie-break on `id`, which
   `WITHOUT ROWID` removes. Two tests pin the old tie-break and change in block 140:
   `test_sightings.py::test_latest_sighting_breaks_an_observed_at_tie_on_the_highest_id` and
-  `test_catalog_repository.py:359`.
+  `test_catalog_repository.py:359`. (Corrected: a third,
+  `test_webui_catalog_read.py::test_list_files_observation_tie_break_on_id`, changes too.)
 
 *Reasons, in order. **Variants**: the node's 11.6M rows hold 11,031 variants (section 1). Measured on a
 synthetic 11.5M-row catalog: 532 B per observation today, 20.5 B in this layout, so 6.1 GB become 0.24 GB,
@@ -423,7 +428,9 @@ block that relies on them, each with its bound:
 - **Before block 140.**
   - 0007, run by the runner as the `.sql` file will run, in the image over the bind mount: under 10 min.
   - The new read shapes: `EXPLAIN QUERY PLAN` of the latest-sighting, timeline, known-names and best-name
-    queries shows `SEARCH observations USING PRIMARY KEY` and no `SCAN observations`.
+    queries shows `SEARCH observations USING PRIMARY KEY (variant_id=?` and no `SCAN observations`.
+    (Corrected: the bound read `SEARCH observations USING PRIMARY KEY` alone, which a full-table `max()`
+    also prints; known names no longer reads `observations` at all.)
   - The `/files` page and the busiest file's detail page: median of 5 requests no slower than `main` on the
     same catalog (old schema).
 - **Before block 180.** 0008 under 5 min, in the image over the bind mount.
@@ -468,7 +475,7 @@ Paths under `packages/crawler/` unless noted. Sizes are estimates from `wc -l` o
 | 110 | `test/catalog-row-builders-rest` | The remaining raw rows through builders | `test_webui_app.py`, `test_sightings.py`, `test_catalog_repository.py`, `test_reader.py`, `test_connection.py`, `test_webui_sql_console.py`, `test_decisions.py`, `test_reevaluate_catalog.py`, `test_search_worker.py`, `tests/composition/test_app.py` | 400 / 10 |
 | 120 | `refactor/webui-drop-aich` | The webui drops the AICH hash | `catalog_read.py`, `views.py`, `app.py`, `file_detail.html`, one test (D3) | 20 / 5 |
 | 130 | `feat/variant-content-hash` | Variant hash, fold and migration functions | The D3 fold in `domain/observation.py`; `adapters/persistence_sqlite/variants.py` (`content_hash`, its memoized SQL form, ISO to microseconds), their registration on the catalog connection, tests (D4, D7) | 180 / 5 |
-| 140 | `feat/observation-variants` | Catalog 0007, observations as variants | `0007_observation_variants.sql`, `record_observation`, `sightings.py` (tie-break, D4), `merger.py`, `test_migration_0007.py`, delete `test_migration_0004.py`, the plan tests, builders, merge helpers, `BACKLOG.md` (D4, D7) | **700** / 16 |
+| 140 | `feat/observation-variants` | Catalog 0007, observations as variants | `0007_observation_variants.sql`, `record_observation`, `sightings.py` (tie-break, D4), `merger.py`, `test_migration_0007.py`, delete `test_migration_0004.py`, the plan tests, builders, merge helpers, `BACKLOG.md`, webui `catalog_read.py` (Corrected: added, its counters skip the latest sighting without a name filter, D18) (D4, D7) | **700** / 16 |
 | 150 | `refactor/file-key` | The catalog port speaks `FileKey` | `domain/file_key.py` and test, `ports/catalog_repository.py`, `catalog_repository.py`, `decisions.py` (D12), `reevaluate_catalog.py`, `record_observations.py`, the download loop's catalog seam (D10), tests (D9) | 250 / 16 |
 | 160 | `refactor/events-file-key` | Decision events carry the `FileKey` | `events.py`, `policy.py`, `decisions.py`, their tests | 40 / 6 |
 | 170 | `refactor/network-agnostic-observation` | `FileObservation` without eD2k-only fields | `domain/observation.py`, `adapters/mule_api/mapping.py`, `record_observations.py`, the 16 `FileObservation(` sites, `test_mapping.py`, the fold cross test (D11) | 180 / 16 |

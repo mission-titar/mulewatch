@@ -59,7 +59,7 @@ def test_a_catalog_without_ranges_drops_the_dead_tables_and_keeps_its_files(
     path = tmp_path / "catalog.db"
     _write_catalog_at_5(path, with_range=False)
 
-    connection = open_catalog(path)
+    connection = open_catalog_at(path, 6)
     try:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         assert not _schema_names(connection) & {*_DEAD_TABLES, "migration_0006_guard"}

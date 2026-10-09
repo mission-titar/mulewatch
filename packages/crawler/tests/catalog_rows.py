@@ -2,6 +2,8 @@
 
 import sqlite3
 
+from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
+
 SEEN_AT = "2026-06-22T10:00:00.000000+00:00"
 
 
@@ -19,21 +21,29 @@ def insert_observation(
     source_count: int = 1,
     media_length_sec: int | None = None,
     bitrate_kbps: int | None = None,
+    node_id: str = "n1",
 ) -> None:
+    variant = (
+        ed2k_hash,
+        filename,
+        size_bytes,
+        media_length_sec,
+        bitrate_kbps,
+        "[]",
+        "keroro",
+        node_id,
+    )
+    key = content_hash(*variant)
     conn.execute(
-        "INSERT INTO file_observations"
-        " (ed2k_hash, filename, size_bytes, source_count, complete_source_count,"
-        " media_length_sec, bitrate_kbps, raw_meta, keyword, observed_at, node_id)"
-        " VALUES (?, ?, ?, ?, 0, ?, ?, '[]', 'keroro', ?, 'n1')",
-        (
-            ed2k_hash,
-            filename,
-            size_bytes,
-            source_count,
-            media_length_sec,
-            bitrate_kbps,
-            observed_at,
-        ),
+        "INSERT OR IGNORE INTO observation_variants"
+        " (ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta, keyword,"
+        " node_id, content_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (*variant, key),
+    )
+    conn.execute(
+        "INSERT INTO observations (variant_id, observed_at, source_count)"
+        " SELECT variant_id, ?, ? FROM observation_variants WHERE content_hash = ?",
+        (iso_to_micros(observed_at), source_count, key),
     )
 
 
@@ -55,12 +65,12 @@ def insert_decision(
 
 
 def count_observations(conn: sqlite3.Connection) -> int:
-    count: int = conn.execute("SELECT count(*) FROM file_observations").fetchone()[0]
+    count: int = conn.execute("SELECT count(*) FROM observations").fetchone()[0]
     return count
 
 
 def observation_node_ids(conn: sqlite3.Connection) -> set[str]:
-    return {row[0] for row in conn.execute("SELECT node_id FROM file_observations")}
+    return {row[0] for row in conn.execute("SELECT node_id FROM observation_variants")}
 
 
 def decision_tiers(conn: sqlite3.Connection) -> list[tuple[str, str]]:

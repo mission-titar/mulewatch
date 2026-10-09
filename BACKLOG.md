@@ -10,9 +10,6 @@ dropped, never annotated with what became of it. The history is in git and in
 
 An agent adds an entry only after the operator has agreed to it.
 
-- **Lossless compact observation storage**: 10.9M rows / 4.9 GB in three months on the node, mostly
-  repeated sightings; store them compactly by default without losing information. No spec yet.
-
 - **Multi network**: a generic core driving one container per P2P client, renamed p2pwatch.
   Umbrella spec: `agents/specs/2026-10-08-multi-network-architecture.md`.
   - **Stage 1, generic identity**: catalog keyed by `(network, native_id)` instead of `ed2k_hash`,

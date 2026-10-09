@@ -20,19 +20,7 @@ def _seed(path: Path, letter: str) -> Path:
         path,
         {
             "files": [{"ed2k_hash": ed2k, "size_bytes": 100}],
-            "file_observations": [
-                {
-                    "ed2k_hash": ed2k,
-                    "filename": "f.avi",
-                    "size_bytes": 100,
-                    "source_count": 1,
-                    "complete_source_count": 0,
-                    "raw_meta": "[]",
-                    "keyword": "k",
-                    "observed_at": f"t-{letter}",
-                    "node_id": f"node-{letter}",
-                }
-            ],
+            "observations": [{"ed2k_hash": ed2k, "filename": "f.avi", "node_id": f"node-{letter}"}],
         },
     )
 
