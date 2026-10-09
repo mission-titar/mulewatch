@@ -73,21 +73,19 @@
         <th>Sources</th>
         <th>Keyword</th>
         <th>Observed at</th>
-        <th>Times seen</th>
       </tr>
     </thead>
     <tbody>
       {% for row in file.timeline %}
       <tr>
-        <td>{% for n in row.names %}<div class="cell-line">{{ n }}</div>{% endfor %}</td>
+        <td>{{ row.name }}</td>
         <td>{{ row.size_bytes }}</td>
         <td>{{ row.sources }}</td>
         <td>{{ row.keyword }}</td>
         <td>{{ row.observed_at }}</td>
-        <td>{{ row.times_seen }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="6">No observations.</td></tr>
+      <tr><td colspan="5">No observations.</td></tr>
       {% endfor %}
     </tbody>
   </table>

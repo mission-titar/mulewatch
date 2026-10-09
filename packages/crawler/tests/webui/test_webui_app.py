@@ -28,7 +28,6 @@ from mulewatch.webui.domain.views import (
     FileRow,
     HiddenInput,
 )
-from tests.webui.conftest import seed_range
 
 # ---------------------------------------------------------------------------
 # Parsed-config helpers (since P4a build_app takes already-parsed config)
@@ -737,98 +736,17 @@ async def test_file_detail_explains_over_every_name_and_lists_the_vetoes_fired(
     assert "<li>catalog</li>" in resp.text  # fired by the VF name only
 
 
-_RANGE_ONLY_HASH = "b" * 32
-
-
-@pytest.fixture
-def app_compacted(
-    app_vetoed_alias: tuple[Starlette, str], catalog_db: Path
-) -> tuple[Starlette, str, str]:
-    """The vetoed-alias catalog after a compaction: the ITA alias of TEST_HASH survives only
-    in a range, and a second file is left with ranges only (same decision, same veto)."""
-    app, hash_ = app_vetoed_alias
-    seed_range(catalog_db, hash_, "2023-12-31", ["keroro ITA.avi"])
-    with sqlite3.connect(catalog_db) as conn:
-        conn.execute("DELETE FROM file_observations WHERE filename = 'keroro ITA.avi'")
-        conn.execute("INSERT INTO files VALUES (?, ?, ?)", (_RANGE_ONLY_HASH, 7_000_000, None))
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (2, ?, ?, ?, ?, ?, ?)",
-            (_RANGE_ONLY_HASH, "062A", "catalog", "catalog", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
-    seed_range(catalog_db, _RANGE_ONLY_HASH, "2023-12-30", ["keroro_s2e62a_vf.avi"])
-    seed_range(catalog_db, _RANGE_ONLY_HASH, "2023-12-31", ["keroro_vf.avi", "keroro ITA.avi"])
-    return app, hash_, _RANGE_ONLY_HASH
-
-
 @pytest.mark.asyncio
-async def test_files_shows_a_compacted_file_with_unknown_sources_in_any_sort(
-    app_compacted: tuple[Starlette, str, str],
-) -> None:
-    app, _, range_only = app_compacted
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        pages = [
-            await client.get(f"/files?sort=sources&dir={direction}")
-            for direction in ("asc", "desc")
-        ]
-    for resp in pages:
-        assert resp.status_code == 200
-        row = resp.text.split(f'href="/files/{range_only}"')[1].split("</tr>")[0]
-        assert "keroro ITA.avi" in row
-        assert "<td>unknown</td>" in row
-        assert "None" not in resp.text
-
-
-@pytest.mark.asyncio
-async def test_files_search_finds_a_name_only_kept_in_ranges(
-    app_compacted: tuple[Starlette, str, str],
-) -> None:
-    app, hash_, _ = app_compacted
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/files?q=ITA")
-    assert f'href="/files/{hash_}"' in resp.text
-
-
-@pytest.mark.asyncio
-async def test_file_detail_explains_over_a_compacted_alias_and_lists_compacted_days(
-    app_compacted: tuple[Starlette, str, str],
-) -> None:
-    app, hash_, _ = app_compacted
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
-    assert "<li>ita</li>" in resp.text  # the ITA alias now lives in a range only
-    assert "Compacted days" not in resp.text  # one timeline, no separate table
-    day = resp.text.split("<td>2023-12-31 (compacted day)</td>")
-    assert len(day) == 2
-    assert "<td>1 to 3</td>" in day[0].rsplit("<tr>", 1)[1]  # min to max over the day
-    assert "<td>2</td>" in day[1].split("</tr>")[0]  # the day's observation count
-
-
-@pytest.mark.asyncio
-async def test_file_detail_of_a_range_only_file_still_has_a_link_and_an_explanation(
-    app_compacted: tuple[Starlette, str, str],
-) -> None:
-    app, _, range_only = app_compacted
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{range_only}")
-    assert f"ed2k://|file|keroro%20ITA.avi|7000000|{range_only}|/" in resp.text
-    assert "Evaluated against the current configuration" in resp.text
-    assert "<li>ita</li>" in resp.text
-    assert "<li>catalog</li>" in resp.text  # the VF name of the older range
-    assert "No observations." not in resp.text  # its compacted days are its timeline
-    assert "<td>2023-12-30 (compacted day)</td>" in resp.text
-    assert '<div class="cell-line">keroro_vf.avi</div>' in resp.text
-
-
-@pytest.mark.asyncio
-async def test_file_detail_without_ranges_has_no_compacted_day(
+async def test_file_detail_timeline_shows_each_observation_as_one_plain_line(
     populated_app: tuple[Starlette, str],
 ) -> None:
     app, hash_ = populated_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get(f"/files/{hash_}")
-    assert "(compacted day)" not in resp.text
-    assert "<td>1</td>" in resp.text  # a raw observation counts once
+    cells = ("keroro_s2e62a_vf.avi", "100000000", "5", "keroro", "2024-01-01T00:00:00")
+    line = "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
+    assert line in re.sub(r">\s+<", "><", resp.text)
+    assert "Times seen" not in resp.text
 
 
 @pytest.mark.asyncio

@@ -33,7 +33,7 @@
       <th class="th-tip-host">{% for h in headers %}<a href="{{ h.sources.url }}" data-sort="{{ h.sources.indicator }}">Sources</a>{% else %}Sources{% endfor %}
         <button type="button" class="th-help" aria-label="What Sources counts" aria-describedby="tip-sources">?</button>
         <div id="tip-sources" role="tooltip" class="th-tip">
-          <p>Number of peers seen sharing this file on the eMule network (from the latest observation). Unknown once all its observations are compacted.</p>
+          <p>Number of peers seen sharing this file on the eMule network (from the latest observation).</p>
         </div>
       </th>
       <th>{% for h in headers %}<a href="{{ h.last_seen.url }}" data-sort="{{ h.last_seen.indicator }}">Last seen</a>{% else %}Last seen{% endfor %}</th>

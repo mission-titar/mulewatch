@@ -1,4 +1,4 @@
-"""TDD tests for CatalogReader — coverage, filtered explorer, detail (spec W-D6 / §6)."""
+"""TDD tests for CatalogReader: coverage, filtered explorer, detail (spec W-D6 / §6)."""
 
 import sqlite3
 from pathlib import Path
@@ -8,7 +8,6 @@ import pytest
 from catalog_matching.config import TIER_RANK
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.reader import open_reader
-from mulewatch.domain.observation import Sighting
 from mulewatch.webui.adapters.catalog_read import (
     _SQL_COUNT_FILES_BASE,
     _SQL_CTES,
@@ -21,7 +20,6 @@ from mulewatch.webui.adapters.catalog_read import (
     _tier_rank_case,
 )
 from mulewatch.webui.domain.views import FileRow
-from tests.webui.conftest import seed_range
 
 # Selects the CTE under test on its own: SQLite drops the CTEs a query does not reference, so
 # the resulting plan is exactly how ``latest_sighting`` is resolved.
@@ -185,7 +183,7 @@ def test_target_coverage_ignores_legacy_empty_target_sentinel(catalog_db: Path) 
 
 
 # ---------------------------------------------------------------------------
-# Tests: explorer — filters present / absent
+# Tests: explorer, filters present / absent
 # ---------------------------------------------------------------------------
 
 
@@ -235,7 +233,7 @@ def test_list_files_page_two_is_empty(catalog_db: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests: list_files / count_files — one row per file, decisions aggregated (spec §9)
+# Tests: list_files / count_files: one row per file, decisions aggregated (spec §9)
 # ---------------------------------------------------------------------------
 
 
@@ -288,7 +286,9 @@ def test_file_detail_carries_observations_and_decisions(catalog_db: Path) -> Non
     assert detail.size_bytes == 100
     assert len(detail.decisions) == 1
     assert detail.decisions[0].target_id == "062A"
-    assert len(detail.sightings) == 1
+    assert [s.names for s in detail.sightings] == [("keroro_062.avi",)]
+    assert detail.latest == detail.sightings[0]
+    assert detail.known_filenames == ("keroro_062.avi",)
 
 
 def test_file_detail_unknown_hash_is_none(catalog_db: Path) -> None:
@@ -298,7 +298,7 @@ def test_file_detail_unknown_hash_is_none(catalog_db: Path) -> None:
 
 def test_file_detail_retracted_target_is_no_decision(catalog_db: Path) -> None:
     """A file whose LATEST decision is the crawler's retraction sentinel exposes NO decision
-    from ``file_detail`` — identical to an unmatched file (spec §9). The earlier
+    from ``file_detail``, identical to an unmatched file (spec §9). The earlier
     (pre-retraction) real decision must not leak through."""
     _seed_retracted(catalog_db)
     detail = CatalogReader(open_reader(catalog_db)).file_detail("c" * 32)
@@ -371,7 +371,7 @@ def test_list_files_pagination(catalog_db: Path, page: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests: "latest per hash" — tie-break on decided_at then id
+# Tests: "latest per hash", tie-break on decided_at then id
 # ---------------------------------------------------------------------------
 
 
@@ -613,7 +613,7 @@ def test_list_files_shows_latest_observation(catalog_db: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests: count_files — /files summary (matched, total)
+# Tests: count_files, /files summary (matched, total)
 # ---------------------------------------------------------------------------
 
 
@@ -858,7 +858,7 @@ def test_sort_allowlist_contract_matches_produced_interface() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests: tier_counts — the tier facet's live counts (spec §3.3)
+# Tests: tier_counts, the tier facet's live counts (spec §3.3)
 # ---------------------------------------------------------------------------
 
 
@@ -991,90 +991,6 @@ def test_list_files_observation_tie_break_on_id(catalog_db: Path) -> None:
         target=None, tier=None, query=None, page=1
     )
     assert rows[0].filename == "second.avi"
-
-
-# ---------------------------------------------------------------------------
-# Compacted files: file_observation_ranges stand in for the observations moved out
-# ---------------------------------------------------------------------------
-
-
-def test_list_files_shows_a_range_only_file_by_its_latest_range(catalog_db: Path) -> None:
-    h = _seed_file_without_observation(catalog_db)
-    seed_range(catalog_db, h, "2026-05-02", ["z.avi", "m.avi"])
-    seed_range(catalog_db, h, "2026-05-01", ["a.avi"])
-    rows = CatalogReader(open_reader(catalog_db)).list_files(
-        target=None, tier=None, query=None, page=1
-    )
-    assert rows == [
-        FileRow(
-            ed2k_hash=h,
-            size_bytes=42,
-            filename="m.avi",
-            source_count=None,  # a range keeps min/max/sum, never one latest count
-            last_seen="2026-05-02T23:00:00.000000+00:00",
-            decisions=(),
-        )
-    ]
-
-
-def test_list_files_prefers_the_raw_observation_over_ranges(catalog_db: Path) -> None:
-    _seed(catalog_db)
-    seed_range(catalog_db, "a" * 32, "2026-05-01", ["a.avi"])
-    rows = CatalogReader(open_reader(catalog_db)).list_files(
-        target=None, tier=None, query=None, page=1
-    )
-    assert (rows[0].filename, rows[0].source_count) == ("keroro_062.avi", 5)
-
-
-def test_search_matches_a_name_only_kept_in_ranges(catalog_db: Path) -> None:
-    _seed(catalog_db)
-    seed_range(catalog_db, "a" * 32, "2026-05-01", ["old alias [ES].avi"])
-    reader = CatalogReader(open_reader(catalog_db))
-    rows = reader.list_files(target=None, tier=None, query="alias [es]", page=1)
-    assert [row.ed2k_hash for row in rows] == ["a" * 32]
-    assert reader.count_files(target=None, tier=None, query="alias") == (1, 1)
-    assert reader.tier_counts(target=None, query="alias") == {"download": 1}
-    assert reader.list_files(target=None, tier=None, query="nowhere", page=1) == []
-
-
-def test_file_detail_carries_one_timeline_of_both_forms_and_every_known_name(
-    catalog_db: Path,
-) -> None:
-    _seed(catalog_db)
-    seed_range(catalog_db, "a" * 32, "2026-07-02", ["keroro_062.avi", "zz.avi"], sources=4)
-    seed_range(catalog_db, "a" * 32, "2026-05-01", ["aa.avi"])
-    detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
-    assert detail is not None
-    raw = Sighting(
-        ed2k_hash="a" * 32,
-        names=("keroro_062.avi",),
-        observation_count=1,
-        first_seen="2026-06-22T10:00:00.000000+00:00",
-        last_seen="2026-06-22T10:00:00.000000+00:00",
-        source_count_min=5,
-        source_count_max=5,
-        size_bytes=100,
-        media_length_sec=None,
-        bitrate_kbps=None,
-        keyword="keroro",
-        compacted=False,
-    )
-    assert [(s.first_seen[:10], s.names, s.compacted) for s in detail.sightings] == [
-        ("2026-05-01", ("aa.avi",), True),
-        ("2026-06-22", ("keroro_062.avi",), False),
-        ("2026-07-02", ("keroro_062.avi", "zz.avi"), True),
-    ]
-    assert detail.sightings[1] == raw
-    assert detail.latest == raw  # the raw observation wins over a later compacted day
-    assert detail.known_filenames == ("aa.avi", "keroro_062.avi", "zz.avi")
-
-
-def test_file_detail_without_ranges_has_no_compacted_sighting(catalog_db: Path) -> None:
-    _seed(catalog_db)
-    detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
-    assert detail is not None
-    assert [s.compacted for s in detail.sightings] == [False]
-    assert detail.known_filenames == ("keroro_062.avi",)
 
 
 def test_file_detail_of_a_file_never_seen_has_no_sighting(catalog_db: Path) -> None:

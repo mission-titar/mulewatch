@@ -2,14 +2,14 @@
 
 ``CatalogReader`` exposes four reads:
 
-- ``target_coverage()`` — per ``target_id``, the list of ``(ed2k_hash, tier)`` from each
+- ``target_coverage()``: per ``target_id``, the list of ``(ed2k_hash, tier)`` from each
   file's LATEST match decision **per target** (ROW_NUMBER window PARTITION BY
   ``(ed2k_hash, target_id)``), so a whole-episode file contributes to every target it
   matches. The legacy ``target_id=''`` sentinel and per-target ``retracted`` rows are
   excluded.
-- ``list_files()`` — filtered paginated explorer (files ⨝ latest observation ⨝
+- ``list_files()``: filtered paginated explorer (files ⨝ latest observation ⨝
   latest decision, optional filters + LIMIT/OFFSET).
-- ``count_files()`` — ``(matched, total)`` counts over the same filtered source, for the
+- ``count_files()``: ``(matched, total)`` counts over the same filtered source, for the
   /files summary line.
 - ``file_detail()``: the timeline of sightings, the latest one, known names + current
   decisions for a given hash; ``None`` if the hash is unknown.
@@ -22,7 +22,6 @@ import sqlite3
 from catalog_matching.config import TIER_RANK
 from mulewatch.adapters.persistence_sqlite.sightings import (
     LATEST_SIGHTING_CTE,
-    NAME_MATCH_CLAUSE,
     known_names,
     latest_sighting,
     sightings,
@@ -39,10 +38,7 @@ from mulewatch.webui.domain.views import (
 # ---------------------------------------------------------------------------
 
 PAGE_SIZE = 50
-_PAGE_SIZE = PAGE_SIZE  # historical alias (internal) — the public value is used by the handler
-
-# A compacted day keeps min/max/sum, never one latest count: the list shows it as unknown.
-_LATEST_SOURCE_COUNT = "IIF(obs.compacted, NULL, obs.source_count_max)"
+_PAGE_SIZE = PAGE_SIZE  # historical alias (internal); the public value is used by the handler
 
 # Sort allowlist (webui spec §3.1): a query-param key maps to a FIXED ORDER BY expression; no
 # param value is ever interpolated into SQL. ``tier`` sorts by the file's strongest tier rank
@@ -50,7 +46,7 @@ _LATEST_SOURCE_COUNT = "IIF(obs.compacted, NULL, obs.source_count_max)"
 SORT_COLUMNS: dict[str, str] = {
     "name": "obs.name",
     "size": "f.size_bytes",
-    "sources": _LATEST_SOURCE_COUNT,
+    "sources": "obs.source_count_max",
     "last_seen": "obs.last_seen",
     "tier": "dec.best_tier_rank",
 }
@@ -102,8 +98,8 @@ ORDER BY target_id, ed2k_hash
 #
 # ``latest_sighting`` (from ``sightings``) seeks each file's newest observation through
 # ``idx_file_observations_hash_observed`` instead of numbering the whole raw table with a window
-# (10.9M rows on the node), and falls back to the latest compacted day. It holds one row per
-# catalogued file, all NULL for a file never seen; every consumer LEFT JOINs it onto ``files``.
+# (10.9M rows on the node). It holds one row per catalogued file, all NULL for a file never
+# seen; every consumer LEFT JOINs it onto ``files``.
 #
 # ``latest_dec`` keeps the latest decision per (hash, target_id), dropping the legacy
 # ``target_id == ''`` sentinel and any target whose latest row is a ``retracted`` marker;
@@ -150,12 +146,12 @@ LEFT JOIN dec_agg AS dec ON dec.ed2k_hash = f.ed2k_hash
 # Explorer: files + latest joins, driven by files. Optional filters added in list_files().
 _SQL_LIST_FILES_BASE = (
     _SQL_CTES
-    + f"""\
+    + """\
 SELECT
     f.ed2k_hash,
     f.size_bytes,
     obs.name AS filename,
-    {_LATEST_SOURCE_COUNT} AS source_count,
+    obs.source_count_max AS source_count,
     obs.last_seen AS last_seen,
     dec.target_ids,
     dec.tiers
@@ -252,8 +248,8 @@ def _filter_clauses(
         )
         params.append(tier)
     if query is not None:
-        clauses.append(NAME_MATCH_CLAUSE)
-        params.extend([f"%{query}%"] * 2)
+        clauses.append("obs.name LIKE ?")
+        params.append(f"%{query}%")
     return clauses, params
 
 
@@ -313,7 +309,7 @@ class CatalogReader:
         Filters:
         - ``target`` : keep a file if ANY of its current decisions matches this target_id.
         - ``tier``   : keep a file if ANY of its current decisions has this tier.
-        - ``query``  : substring (LIKE ``%query%``) of the latest name or of any compacted one.
+        - ``query``  : substring (LIKE ``%query%``) of the latest name.
         - ``matched_only``: when true, keep only files with at least one current decision
           (retractions and the legacy ``target_id == ''`` sentinel never produce one).
           Default false = whole catalogue.
