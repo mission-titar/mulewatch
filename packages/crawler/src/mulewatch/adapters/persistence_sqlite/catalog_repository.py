@@ -6,7 +6,7 @@ constructor — plan C will read it from ``LocalStateRepository``). ``raw_meta``
 as a JSON LIST of pairs (``[["0x0308", "0"], …]``), wire order and duplicates preserved,
 ``ensure_ascii=False``, no sorting (spec §3). ``record_observation`` makes ONE transaction
 (spec §4): ``INSERT OR IGNORE`` into ``files`` (first sight wins), into
-``observation_variants`` (found by its ``content_hash``) and into ``observations`` — the
+``observation_variants`` (found by its ``content_hash``) and into ``observations``: the
 OBSERVED size is ALWAYS written into the variant (deviation 1, spec §5: a size anomaly must
 not become invisible).
 
