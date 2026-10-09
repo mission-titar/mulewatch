@@ -45,7 +45,7 @@ def test_open_catalog_creates_the_tables_and_versions_the_schema(tmp_path: Path)
     connection = open_catalog(tmp_path / "catalog.db")
     try:
         assert _table_names(connection) == _CATALOG_TABLES
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 8
     finally:
         connection.close()
 
@@ -108,7 +108,7 @@ def test_reopen_is_idempotent_and_keeps_data(tmp_path: Path) -> None:
     first.close()
     second = open_catalog(path)  # versions already applied: NO script replays
     try:
-        assert second.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert second.execute("PRAGMA user_version").fetchone()[0] == 8
         assert second.execute("SELECT count(*) FROM files").fetchone()[0] == 1
     finally:
         second.close()
@@ -234,8 +234,7 @@ def test_insert_or_replace_on_existing_hash_raises_integrity_error(tmp_path: Pat
         insert_file(connection, _CANONICAL_HASH, 1)
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
-                "INSERT OR REPLACE INTO files (ed2k_hash, size_bytes) VALUES (?, 2)",
-                (_CANONICAL_HASH,),
+                "INSERT OR REPLACE INTO files SELECT file_id, network, native_id, 2 FROM files"
             )
     finally:
         connection.close()

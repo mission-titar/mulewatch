@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.merge.errors import MergeError, SchemaVersionMismatchError
 from mulewatch.merge.merger import merge_catalogs
 
@@ -26,7 +27,7 @@ from .helpers import (
 
 # The current catalog schema version = the last catalog migration's number.
 # open_catalog stamps the output to it; the guard rejects any source that is not at it.
-_CURRENT_SCHEMA_VERSION = 7
+_CURRENT_SCHEMA_VERSION = 8
 _T1 = "2026-06-11T12:00:00.000000+00:00"
 _T2 = "2026-06-11T13:00:00.000000+00:00"
 
@@ -196,34 +197,15 @@ def test_t6_fk_order_inserts_identity_first(tmp_path: Path) -> None:
     assert count(out, "match_decisions") == 1
 
 
-def test_t14_aich_first_wins_a_then_b(tmp_path: Path) -> None:
-    # srcA: aich=NULL; srcB: aich set; merge A→B → the row keeps aich=NULL.
-    src_a = make_catalog(
-        tmp_path / "a.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100, "aich_hash": None}]}
-    )
-    src_b = make_catalog(
-        tmp_path / "b.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100, "aich_hash": "X"}]}
-    )
-    out = tmp_path / "out.db"
-
-    merge_catalogs(out, [src_a, src_b])
-
-    assert rows_without_id(out, "files") == [(HASH_A, 100, None)]
-
-
-def test_t14_aich_first_wins_b_then_a(tmp_path: Path) -> None:
-    # Reverse order B→A → the row keeps aich='X' (first-come wins, §6 rule frozen).
-    src_a = make_catalog(
-        tmp_path / "a.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100, "aich_hash": None}]}
-    )
-    src_b = make_catalog(
-        tmp_path / "b.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100, "aich_hash": "X"}]}
-    )
+def test_t14_files_first_sight_wins(tmp_path: Path) -> None:
+    # The same file with two sizes: the first source merged keeps its row (§6 rule frozen).
+    src_a = make_catalog(tmp_path / "a.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100}]})
+    src_b = make_catalog(tmp_path / "b.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 200}]})
     out = tmp_path / "out.db"
 
     merge_catalogs(out, [src_b, src_a])
 
-    assert rows_without_id(out, "files") == [(HASH_A, 100, "X")]
+    assert rows_without_id(out, "files") == [(HASH_A, 200)]
 
 
 def test_t15_append_only_triggers_present_on_output(tmp_path: Path) -> None:
@@ -249,8 +231,11 @@ def test_t16_merger_wraps_source_copy_in_a_transaction(tmp_path: Path) -> None:
     broken = tmp_path / "broken.db"
     raw = sqlite3.connect(broken)
     raw.execute("PRAGMA journal_mode=WAL")
-    raw.execute("CREATE TABLE files (ed2k_hash TEXT PRIMARY KEY, size_bytes INTEGER)")
-    raw.execute(f"INSERT INTO files VALUES ('{HASH_B}', 200)")
+    raw.execute("CREATE TABLE files (file_id BLOB, network TEXT, native_id TEXT, size_bytes INT)")
+    raw.execute(
+        "INSERT INTO files VALUES (?, 'ed2k', ?, 200)",
+        (FileKey(Network.ED2K, HASH_B).file_id, HASH_B),
+    )
     raw.commit()
     raw.close()
     # Stamp the current schema version so this source clears the version guard and reaches
@@ -265,7 +250,7 @@ def test_t16_merger_wraps_source_copy_in_a_transaction(tmp_path: Path) -> None:
 
     # files (1st table) may have been copied BEFORE the failure on observation_variants (missing
     # table); the ROLLBACK must have undone it → the output still has ONLY the content of `good`.
-    assert rows_without_id(out, "files") == [(HASH_A, 100, None)]
+    assert rows_without_id(out, "files") == [(HASH_A, 100)]
 
 
 def test_t16_unattachable_source_errors(tmp_path: Path) -> None:
@@ -346,4 +331,4 @@ def test_guard_checks_every_source_not_just_the_first(tmp_path: Path) -> None:
 
     # The good source merged first (own transaction, committed); only its row is present.
     assert count(out, "files") == 1
-    assert rows_without_id(out, "files") == [(hash_for("a"), 100, None)]
+    assert rows_without_id(out, "files") == [(hash_for("a"), 100)]

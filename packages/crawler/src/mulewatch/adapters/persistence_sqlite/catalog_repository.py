@@ -35,18 +35,20 @@ from mulewatch.adapters.persistence_sqlite import sightings
 from mulewatch.adapters.persistence_sqlite.connection import Clock, utc_iso, utc_now
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError, wrap_sqlite_errors
 from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
-from mulewatch.domain.file_key import FileKey, Network
+from mulewatch.domain.file_key import FileKey
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import ObservedFile, ReevalRow
 
 _CANONICAL_HASH_RE = re.compile(r"[0-9a-f]{32}\Z")
 
-_INSERT_FILE = "INSERT OR IGNORE INTO files (ed2k_hash, size_bytes, aich_hash) VALUES (?, ?, NULL)"
+_INSERT_FILE = (
+    "INSERT OR IGNORE INTO files (file_id, network, native_id, size_bytes) VALUES (?, ?, ?, ?)"
+)
 
 _INSERT_VARIANT = """
 INSERT OR IGNORE INTO observation_variants (
-    ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta, keyword, node_id,
+    file_id, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta, keyword, node_id,
     content_hash
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
@@ -57,40 +59,42 @@ SELECT variant_id, ?, ? FROM observation_variants WHERE content_hash = ?
 """
 
 _INSERT_DECISION = """
-INSERT INTO match_decisions (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)
+INSERT INTO match_decisions (file_id, target_id, rule_name, tier, decided_at, node_id)
 VALUES (?, ?, ?, ?, ?, ?)
 """
 
-# Latest verdict per (ed2k_hash, target_id) for one hash (set-diff anti-redundancy, spec §7).
+# Latest verdict per (file_id, target_id) for one file (set-diff anti-redundancy, spec §7).
 # ROW_NUMBER per target, order (decided_at, id) DESCENDING (most recent = rank 1); keep rank 1.
 # INCLUDES a target whose latest tier is 'retracted' (no tier filter); EXCLUDES the legacy
-# target_id='' sentinel (not a real target). The idx_match_decisions_ed2k_hash index serves
-# the filter.
+# target_id='' sentinel (not a real target). The idx_match_decisions_file_target_decided index
+# serves the filter.
 _SELECT_LAST_DECISIONS = """
 SELECT target_id, rule_name, tier FROM (
     SELECT
         target_id, rule_name, tier,
         ROW_NUMBER() OVER (PARTITION BY target_id ORDER BY decided_at DESC, id DESC) AS rn
     FROM match_decisions
-    WHERE ed2k_hash = ? AND target_id <> ''
+    WHERE file_id = ? AND target_id <> ''
 ) WHERE rn = 1
 """
 
-# Latest verdict per (ed2k_hash, target_id), kept when tier=download (download spec §5,
-# multi-target §6). Window: ROW_NUMBER per (hash, target_id), order (decided_at, id)
+# Latest verdict per (file_id, target_id), kept when tier=download (download spec §5,
+# multi-target §6). Window: ROW_NUMBER per (file_id, target_id), order (decided_at, id)
 # DESCENDING (most recent = rank 1); keep rank 1 AND tier='download'. PARTITION BY the FULL
-# key so a whole-episode file with BOTH segments in download yields BOTH candidates. Stable
-# sort by (hash, target_id) for a deterministic result.
+# key so a whole-episode file with BOTH segments in download yields BOTH candidates. The
+# download side speaks the eD2k hash until stage 2 (D10). Sorted by (hash, target_id).
 _SELECT_DOWNLOAD_DECISIONS = """
-SELECT ed2k_hash, target_id FROM (
+SELECT f.native_id, d.target_id FROM (
     SELECT
-        ed2k_hash, target_id, tier,
+        file_id, target_id, tier,
         ROW_NUMBER() OVER (
-            PARTITION BY ed2k_hash, target_id ORDER BY decided_at DESC, id DESC
+            PARTITION BY file_id, target_id ORDER BY decided_at DESC, id DESC
         ) AS rn
     FROM match_decisions
-) WHERE rn = 1 AND tier = 'download'
-ORDER BY ed2k_hash, target_id
+) AS d
+JOIN files AS f ON f.file_id = d.file_id
+WHERE d.rn = 1 AND d.tier = 'download' AND f.network = 'ed2k'
+ORDER BY f.native_id, d.target_id
 """
 
 _COUNT_FILES = "SELECT COUNT(*) FROM files"
@@ -108,11 +112,11 @@ class SqliteCatalogRepository:
 
     def record_observation(self, observation: FileObservation) -> None:
         """ONE transaction: file (first sight wins), its variant, the stamped observation."""
-        native_id = observation.file.native_id
-        if not _CANONICAL_HASH_RE.fullmatch(native_id):
-            raise PersistenceError(f"non-canonical eD2k hash: {native_id!r}")
+        file = observation.file
+        if not _CANONICAL_HASH_RE.fullmatch(file.native_id):
+            raise PersistenceError(f"non-canonical eD2k hash: {file.native_id!r}")
         variant = (
-            native_id,
+            file.file_id,
             observation.filename,
             observation.size_bytes,
             observation.media_length_sec,
@@ -126,7 +130,10 @@ class SqliteCatalogRepository:
         with wrap_sqlite_errors():
             self._connection.execute("BEGIN")
             try:
-                self._connection.execute(_INSERT_FILE, (native_id, observation.size_bytes))
+                self._connection.execute(
+                    _INSERT_FILE,
+                    (file.file_id, file.network, file.native_id, observation.size_bytes),
+                )
                 self._connection.execute(_INSERT_VARIANT, (*variant, key))
                 self._connection.execute(
                     _INSERT_OBSERVATION, (observed_at, observation.source_count, key)
@@ -149,7 +156,7 @@ class SqliteCatalogRepository:
             self._connection.execute(
                 _INSERT_DECISION,
                 (
-                    file.native_id,
+                    file.file_id,
                     decision.target_id,
                     decision.rule_name,
                     decision.tier,
@@ -173,7 +180,7 @@ class SqliteCatalogRepository:
             self._connection.execute(
                 _INSERT_DECISION,
                 (
-                    file.native_id,
+                    file.file_id,
                     target_id,
                     "",
                     RETRACTED_TIER,
@@ -191,7 +198,7 @@ class SqliteCatalogRepository:
         non-canonical hash matches nothing → ``{}``).
         """
         with wrap_sqlite_errors():
-            rows = self._connection.execute(_SELECT_LAST_DECISIONS, (file.native_id,)).fetchall()
+            rows = self._connection.execute(_SELECT_LAST_DECISIONS, (file.file_id,)).fetchall()
         return {
             row[0]: DecisionRecord(target_id=row[0], rule_name=row[1], tier=row[2]) for row in rows
         }
@@ -209,7 +216,7 @@ class SqliteCatalogRepository:
     def last_observation(self, file: FileKey) -> ObservedFile | None:
         """Name and size of the latest sighting (the ed2k link), or ``None`` (read)."""
         with wrap_sqlite_errors():
-            latest = sightings.latest_sighting(self._connection, file.native_id)
+            latest = sightings.latest_sighting(self._connection, file)
         if latest is None:
             return None
         return ObservedFile(filename=latest.names[0], size_bytes=latest.size_bytes)
@@ -217,13 +224,13 @@ class SqliteCatalogRepository:
     def best_observation(self, file: FileKey) -> ObservedFile | None:
         """The clean name (most sources, then latest) and size, or ``None`` (read)."""
         with wrap_sqlite_errors():
-            best = sightings.best_name(self._connection, file.native_id)
+            best = sightings.best_name(self._connection, file)
         return None if best is None else ObservedFile(filename=best[0], size_bytes=best[1])
 
     def known_filenames(self, file: FileKey) -> tuple[str, ...]:
         """Every distinct name this hash was observed under, sorted (read)."""
         with wrap_sqlite_errors():
-            return sightings.known_names(self._connection, file.native_id)
+            return sightings.known_names(self._connection, file)
 
     def count_files(self) -> int:
         """Number of catalogued hashes, the re-evaluation progress total (read)."""
@@ -236,7 +243,7 @@ class SqliteCatalogRepository:
         with wrap_sqlite_errors():
             for latest in sightings.iter_latest_sightings(self._connection):
                 yield ReevalRow(
-                    file=FileKey(Network.ED2K, latest.ed2k_hash),
+                    file=latest.file,
                     filename=latest.names[0],
                     size_bytes=latest.size_bytes,
                     media_length_sec=latest.media_length_sec,

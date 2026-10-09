@@ -38,8 +38,8 @@ _SRC = "src"
 # --- Content-identity tables: INSERT OR IGNORE, explicit columns (no SELECT *). ---
 
 _COPY_FILES = (
-    f"INSERT OR IGNORE INTO main.files (ed2k_hash, size_bytes, aich_hash) "
-    f"SELECT ed2k_hash, size_bytes, aich_hash FROM {_SRC}.files"
+    f"INSERT OR IGNORE INTO main.files (file_id, network, native_id, size_bytes) "
+    f"SELECT file_id, network, native_id, size_bytes FROM {_SRC}.files"
 )
 
 
@@ -72,7 +72,7 @@ def _copy_journal(table: str, columns: Sequence[str]) -> str:
 
 
 _VARIANT_COLUMNS = (
-    "ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta, keyword, node_id,"
+    "file_id, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta, keyword, node_id,"
     " content_hash"
 )
 
@@ -91,7 +91,7 @@ JOIN main.observation_variants AS d ON d.content_hash = s.content_hash
 
 _COPY_MATCH_DECISIONS = _copy_journal(
     "match_decisions",
-    ("ed2k_hash", "target_id", "rule_name", "tier", "decided_at", "node_id"),
+    ("file_id", "target_id", "rule_name", "tier", "decided_at", "node_id"),
 )
 
 # MANDATORY FK order (spec §4.3): the identities (files) BEFORE the journals that reference them.

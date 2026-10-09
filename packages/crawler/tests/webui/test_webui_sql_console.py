@@ -42,8 +42,7 @@ class _StubControl:
 
 
 def _seed_catalog(path: Path) -> None:
-    """Create + seed a real catalog.db via the writer. ``aich_hash`` is left NULL so a
-    ``SELECT aich_hash`` exercises the ``None -> 'NULL'`` rendering."""
+    """Create + seed a real catalog.db via the writer."""
     writer = open_catalog(path)
     try:
         insert_file(writer, _HASH_A, 10)
@@ -62,12 +61,12 @@ def test_run_query_select_returns_columns_and_rows(tmp_path: Path) -> None:
     _seed_catalog(path)
     outcome = run_query(
         db_path=path,
-        sql="SELECT ed2k_hash, size_bytes FROM files",
+        sql="SELECT native_id, size_bytes FROM files",
         row_cap=1000,
         timeout_seconds=5.0,
     )
     assert outcome.error is None
-    assert outcome.columns == ("ed2k_hash", "size_bytes")
+    assert outcome.columns == ("native_id", "size_bytes")
     assert outcome.rows == ((_HASH_A, "10"),)
     assert outcome.row_count == 1
     assert outcome.truncated is False
@@ -79,7 +78,7 @@ def test_run_query_renders_none_cell_as_null_literal(tmp_path: Path) -> None:
     path = tmp_path / "catalog.db"
     _seed_catalog(path)
     outcome = run_query(
-        db_path=path, sql="SELECT aich_hash FROM files", row_cap=1000, timeout_seconds=5.0
+        db_path=path, sql="SELECT NULL AS missing FROM files", row_cap=1000, timeout_seconds=5.0
     )
     assert outcome.error is None
     assert outcome.rows == (("NULL",),)
@@ -91,7 +90,7 @@ def test_run_query_write_is_rejected_read_only(tmp_path: Path) -> None:
     _seed_catalog(path)
     outcome = run_query(
         db_path=path,
-        sql="INSERT INTO files (ed2k_hash, size_bytes) VALUES ('b', 1)",
+        sql="INSERT INTO files (native_id, size_bytes) VALUES ('b', 1)",
         row_cap=1000,
         timeout_seconds=5.0,
     )
@@ -354,11 +353,11 @@ async def test_post_console_valid_select_renders_result(console_app: Starlette) 
         transport=ASGITransport(app=console_app), base_url="http://test"
     ) as client:
         resp = await client.post(
-            "/console", data={"sql": "SELECT ed2k_hash FROM files", "db": "catalog"}
+            "/console", data={"sql": "SELECT native_id FROM files", "db": "catalog"}
         )
     assert resp.status_code == 200
     assert _HASH_A in resp.text  # the row value rendered
-    assert "SELECT ed2k_hash FROM files" in resp.text  # SQL echoed into the textarea
+    assert "SELECT native_id FROM files" in resp.text  # SQL echoed into the textarea
     assert '<option value="catalog" selected>' in resp.text
     assert 'class="console-table"' in resp.text
 
@@ -370,7 +369,7 @@ async def test_post_console_bogus_db_shows_error_no_query(console_app: Starlette
         transport=ASGITransport(app=console_app), base_url="http://test"
     ) as client:
         resp = await client.post(
-            "/console", data={"sql": "SELECT ed2k_hash FROM files", "db": "bogus"}
+            "/console", data={"sql": "SELECT native_id FROM files", "db": "bogus"}
         )
     assert resp.status_code == 200
     assert 'class="console-error"' in resp.text
@@ -435,13 +434,13 @@ async def test_post_console_csv_valid_select(console_app: Starlette) -> None:
         transport=ASGITransport(app=console_app), base_url="http://test"
     ) as client:
         resp = await client.post(
-            "/console.csv", data={"sql": "SELECT ed2k_hash FROM files", "db": "catalog"}
+            "/console.csv", data={"sql": "SELECT native_id FROM files", "db": "catalog"}
         )
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/csv")
     assert "attachment" in resp.headers["content-disposition"]
     assert "query.csv" in resp.headers["content-disposition"]
-    assert "ed2k_hash" in resp.text  # header row
+    assert "native_id" in resp.text  # header row
     assert _HASH_A in resp.text  # data row
 
 
@@ -452,7 +451,7 @@ async def test_post_console_csv_bad_db_returns_400(console_app: Starlette) -> No
         transport=ASGITransport(app=console_app), base_url="http://test"
     ) as client:
         resp = await client.post(
-            "/console.csv", data={"sql": "SELECT ed2k_hash FROM files", "db": "bogus"}
+            "/console.csv", data={"sql": "SELECT native_id FROM files", "db": "bogus"}
         )
     assert resp.status_code == 400
     assert resp.headers["content-type"].startswith("text/plain")

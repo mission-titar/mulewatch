@@ -40,8 +40,8 @@ def test_open_reader_reads_seeded_row_with_dict_access(tmp_path: Path) -> None:
     _seed(path)
     reader = open_reader(path)
     try:
-        row = reader.execute("SELECT ed2k_hash, size_bytes FROM files").fetchone()
-        assert row["ed2k_hash"] == _HASH_A
+        row = reader.execute("SELECT native_id, size_bytes FROM files").fetchone()
+        assert row["native_id"] == _HASH_A
         assert row["size_bytes"] == 10
     finally:
         reader.close()
