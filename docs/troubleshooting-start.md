@@ -85,11 +85,16 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
     Un disque s'est rempli pendant la migration : celui de Docker, qui reçoit ses fichiers
     temporaires (voir [Limites connues](limits.md)), ou celui de `data/`, où le catalogue grandit le
     temps d'être réécrit. La migration a été annulée : le catalogue est intact. Vérifiez la place
-    libre sur les deux :
+    libre sur les deux, celui de Docker mesuré depuis un conteneur :
 
     ```bash
-    df -h data "$(docker info --format '{{.DockerRootDir}}')"
+    df -h data
+    docker run --rm --entrypoint df ghcr.io/mission-titar/mulewatch:latest -h /tmp
     ```
+
+    Sous Docker Desktop, ce second chiffre est celui de l'image disque de sa machine virtuelle, qui
+    ne grandit que tant que le disque de l'hôte qui la porte a de la place : vérifiez aussi ce
+    disque-là. Son emplacement est affiché dans *Settings*, *Resources*, *Advanced*.
 
     Remède : libérez de la place sur le disque plein (`docker image prune` retire les images
     inutilisées), puis `docker compose up -d`. La migration repart de zéro et, une fois passée, ne
