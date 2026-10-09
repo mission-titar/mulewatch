@@ -49,8 +49,8 @@ def error_from_response(response: httpx.Response) -> ApiError:
         f"{response.status_code} {code}: {message}"
     )
     if code == "rate_limited":
-        # The adapter never sleeps (the caller owns the backoff), so honouring Retry-After
-        # means surfacing it rather than acting on it.
+        # The adapter never waits out a refusal (the caller owns the backoff), so honouring
+        # Retry-After means surfacing it rather than acting on it.
         detail += f" (retry after {response.headers.get('Retry-After', 'an unstated delay')}s)"
     if code == "kad_more_exhausted":
         return ApiKadExhaustedError(detail)

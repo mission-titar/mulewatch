@@ -1,15 +1,18 @@
 """Drives ``amuled`` over amuleapi, satisfying ``MuleClient`` and ``MuleDownloadClient``.
 
-The ports know no ``search_id``, so the client holds the one in flight. No sleep and no retry
+``search()`` waits for its own search; the four-call search keeps the one in flight. No retry
 beyond the single re-login a ``401`` mandates: the adapter signals, the caller decides.
 """
 
 import json
+import logging
 from contextlib import suppress
+from datetime import timedelta
 from typing import Any
 
 import httpx
 
+from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.errors import (
     ApiAuthError,
     ApiError,
@@ -25,6 +28,7 @@ from mulewatch.adapters.mule_api.mapping import (
     map_shared_entry,
 )
 from mulewatch.domain.observation import FileObservation
+from mulewatch.ports.clock import Clock
 from mulewatch.ports.mule_client import NetworkStatus, SearchChannel
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 
@@ -33,6 +37,13 @@ from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 _PAGE_SIZE = 500
 
 _MAX_PROGRESS_PERCENT = 100
+
+# How often search() reads a search's progress: local traffic with our own daemon.
+_POLL_INTERVAL_SECONDS = 5.0
+
+_SEARCH_TYPES = {"ed2k": "global", "kad": "kad"}
+
+_logger = logging.getLogger("mulewatch.adapters.mule_api.client")
 
 
 class AmuleApiClient:
@@ -47,11 +58,13 @@ class AmuleApiClient:
         *,
         timeout: float = 10.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self._base_url = f"http://{host}:{port}/api/v1"
         self._password = password
         self._timeout = timeout
         self._transport = transport
+        self._clock = clock or AsyncioClock()
         self._http: httpx.AsyncClient | None = None
         self._search_id: int | None = None
         self._current_keyword = ""
@@ -97,14 +110,30 @@ class AmuleApiClient:
             with suppress(ApiError):
                 await self.stop_search()
             self._search_id = None
-        payload = await self._call(
-            "POST", "/search", body={"query": keyword, "type": channel.value}
-        )
-        search_id = payload.get("search_id")
-        if not isinstance(search_id, int) or isinstance(search_id, bool):
-            raise ApiRejectedError("POST /search answered without a search_id")
-        self._search_id = search_id
+        self._search_id = await self._post_search(keyword, channel.value)
         self._current_keyword = keyword  # provenance, set AFTER success
+
+    async def search(
+        self, keyword: str, channel: str, budget_seconds: float
+    ) -> tuple[FileObservation, ...]:
+        """Polls until amuled reports the search finished, or until ``budget_seconds`` after its
+        start, then returns what it holds. Never stops nor frees it: amuled expires both."""
+        search_id = await self._post_search(keyword, _SEARCH_TYPES[channel])
+        deadline = self._clock.now() + timedelta(seconds=budget_seconds)
+        widen = channel == "kad"
+        polls = 0
+        while await self._search_state(search_id) != "finished":
+            remaining = (deadline - self._clock.now()).total_seconds()
+            if remaining <= 0:
+                break
+            if widen and polls:  # first poll: Kad has queried nobody yet, a reask is wasted
+                widen = await self._widen(search_id)
+            polls += 1
+            await self._clock.sleep(min(_POLL_INTERVAL_SECONDS, remaining))
+        rows = await self._collect(f"/search/{search_id}/results", "results")
+        observations, skipped = map_search_results(rows, keyword)
+        self.skipped_entries_total += skipped
+        return observations
 
     async def fetch_results(self) -> tuple[FileObservation, ...]:
         """CUMULATIVE snapshot of what the daemon holds for the search in flight."""
@@ -177,6 +206,31 @@ class AmuleApiClient:
         """Snapshot of amuled's SHARED files: the completion signal. NEVER reads the bytes."""
         rows = await self._collect("/shared", "shared")
         return tuple(entry for row in rows if (entry := map_shared_entry(row)) is not None)
+
+    async def _post_search(self, keyword: str, search_type: str) -> int:
+        payload = await self._call("POST", "/search", body={"query": keyword, "type": search_type})
+        search_id = payload.get("search_id")
+        if not isinstance(search_id, int) or isinstance(search_id, bool):
+            raise ApiRejectedError("POST /search answered without a search_id")
+        return search_id
+
+    async def _search_state(self, search_id: int) -> object:
+        """``progress.state``, read with zero rows: the envelope travels with the results."""
+        payload = await self._call("GET", f"/search/{search_id}/results", params={"limit": 0})
+        progress = payload.get("progress")
+        return progress.get("state") if isinstance(progress, dict) else None
+
+    async def _widen(self, search_id: int) -> bool:
+        """Asks Kad for more; ``False`` once it refuses or fails, the search standing either way.
+        A reask on a finished search answers ``400 bad_request``, mapped to unreachable."""
+        try:
+            await self._call("POST", f"/search/{search_id}/more")
+        except ApiKadExhaustedError:
+            return False
+        except (ApiRejectedError, ApiUnreachableError) as failure:
+            _logger.info("widening Kad search %d failed (%s)", search_id, failure)
+            return False
+        return True
 
     # --- transport --------------------------------------------------------------------------
 
