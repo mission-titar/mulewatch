@@ -1,4 +1,4 @@
-"""TDD tests for the ``python -m mulewatch.merge`` CLI (safe-by-default) — design §6/§7.
+"""TDD tests for the ``python -m mulewatch.merge`` CLI (safe-by-default), design §6/§7.
 
 We call ``main(argv)`` directly (returns an ``int``); usage/merge errors return ``2`` with a
 clear message on ``stderr`` (never a traceback); argparse itself returns ``2`` (via
@@ -141,12 +141,11 @@ def test_t13_missing_source_file_errors_before_output_created(tmp_path: Path) ->
     assert not out.exists()
 
 
-def test_cli_reports_the_raw_observations_a_range_already_counts(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_cli_logs_the_output_once_done(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     src = _seed(tmp_path / "a.db", "a")
+    out = tmp_path / "out.db"
     caplog.set_level("INFO", logger="mulewatch.merge")
 
-    assert main(["--output", str(tmp_path / "out.db"), str(src)]) == 0
+    assert main(["--output", str(out), str(src)]) == 0
 
-    assert "0 raw observation(s) already counted by a compacted day, not copied" in caplog.text
+    assert caplog.messages[-1] == f"merge done: {out}"

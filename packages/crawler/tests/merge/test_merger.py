@@ -1,17 +1,15 @@
-"""TDD tests for the ``merge_catalogs`` core (ATTACH + idempotent INSERT…SELECT) — design §7.
+"""TDD tests for the ``merge_catalogs`` core (ATTACH + idempotent INSERT…SELECT), design §7.
 
 Everything is tested without Docker: we build N real ``catalog.db`` files (helpers), merge,
 and assert content + cardinality + reassigned ``id`` + idempotence.
 """
 
 import sqlite3
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.compact.compactor import compact_catalog
 from mulewatch.merge.errors import MergeError, SchemaVersionMismatchError
 from mulewatch.merge.merger import merge_catalogs
 
@@ -52,22 +50,11 @@ def _file_observation(ed2k_hash: str, *, node_id: str, observed_at: str) -> dict
 
 
 def _full_catalog(letter: str, *, node_id: str) -> dict[str, list[dict[str, object]]]:
-    """A consistent catalog: 1 file, 1 source, and 1 row in each of the 4 journals."""
+    """A consistent catalog: 1 file and 1 row in each of the 2 journals."""
     ed2k = hash_for(letter)
-    user = f"user-{letter}"
     return {
         "files": [{"ed2k_hash": ed2k, "size_bytes": 100}],
-        "sources": [{"user_hash": user, "client_name": "aMule"}],
         "file_observations": [_file_observation(ed2k, node_id=node_id, observed_at="t1")],
-        "source_observations": [
-            {
-                "user_hash": user,
-                "ed2k_hash": ed2k,
-                "raw_meta": "[]",
-                "observed_at": "t1",
-                "node_id": node_id,
-            }
-        ],
         "match_decisions": [
             {
                 "ed2k_hash": ed2k,
@@ -81,13 +68,7 @@ def _full_catalog(letter: str, *, node_id: str) -> dict[str, list[dict[str, obje
     }
 
 
-_ALL_TABLES = (
-    "files",
-    "sources",
-    "file_observations",
-    "source_observations",
-    "match_decisions",
-)
+_ALL_TABLES = ("files", "file_observations", "match_decisions")
 
 
 def test_t1_merge_two_distinct_catalogs(tmp_path: Path) -> None:
@@ -112,28 +93,15 @@ def test_t1_merge_two_distinct_catalogs(tmp_path: Path) -> None:
 
 
 def test_t2_merge_overlapping_identity_files_or_ignore(tmp_path: Path) -> None:
-    # Both sources share the SAME ed2k_hash and the SAME user_hash (content-identity).
-    src_a = make_catalog(
-        tmp_path / "a.db",
-        {
-            "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
-            "sources": [{"user_hash": "shared", "client_name": "aMule"}],
-        },
-    )
-    src_b = make_catalog(
-        tmp_path / "b.db",
-        {
-            "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
-            "sources": [{"user_hash": "shared", "client_name": "aMule"}],
-        },
-    )
+    # Both sources share the SAME ed2k_hash (content-identity).
+    src_a = make_catalog(tmp_path / "a.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100}]})
+    src_b = make_catalog(tmp_path / "b.db", {"files": [{"ed2k_hash": HASH_A, "size_bytes": 100}]})
     out = tmp_path / "out.db"
 
     merge_catalogs(out, [src_a, src_b])
 
-    # INSERT OR IGNORE: the already-present PK is ignored → a single row each.
+    # INSERT OR IGNORE: the already-present PK is ignored → a single row.
     assert count(out, "files") == 1
-    assert count(out, "sources") == 1
 
 
 def test_t3_re_merge_is_idempotent(tmp_path: Path) -> None:
@@ -221,15 +189,14 @@ def test_t5_journal_drops_local_id(tmp_path: Path) -> None:
 
 
 def test_t6_fk_order_inserts_identity_first(tmp_path: Path) -> None:
-    # A source whose journals reference files/sources. If the insertion order were reversed
-    # (journals before identities), the FK would raise — the merge succeeds so the order holds.
+    # A source whose journals reference files. If the insertion order were reversed
+    # (journals before identities), the FK would raise; the merge succeeds so the order holds.
     src = make_catalog(tmp_path / "a.db", _full_catalog("a", node_id="node-a"))
     out = tmp_path / "out.db"
 
     merge_catalogs(out, [src])
 
     assert count(out, "file_observations") == 1
-    assert count(out, "source_observations") == 1
     assert count(out, "match_decisions") == 1
 
 
@@ -330,7 +297,7 @@ def test_t18_dedups_identical_rows_internal_to_one_source(tmp_path: Path) -> Non
     # A SINGLE source containing TWO bit-for-bit identical journal rows (same natural
     # key, different id by autoincrement, NULL COLUMNS included) PLUS a legitimately
     # distinct row (a single field differs). The N=1 merge must NORMALIZE: collapse the
-    # internal duplicates (§1/§8 promise — at-least-once dedup of a single catalog) without
+    # internal duplicates (§1/§8 promise: at-least-once dedup of a single catalog) without
     # ever losing the distinct row.
     identical = _file_observation(HASH_A, node_id="node", observed_at="t1")
     distinct = _file_observation(HASH_A, node_id="node", observed_at="t2")  # observed_at differs
@@ -420,101 +387,3 @@ def test_guard_checks_every_source_not_just_the_first(tmp_path: Path) -> None:
     # The good source merged first (own transaction, committed); only its row is present.
     assert count(out, "files") == 1
     assert rows_without_id(out, "files") == [(hash_for("a"), 100, None)]
-
-
-def test_merge_unions_observation_ranges_and_is_idempotent(tmp_path: Path) -> None:
-    row_a = {
-        "ed2k_hash": HASH_A,
-        "bucket": "2026-01-01",
-        "filenames": '["x"]',
-        "node_ids": '["n1"]',
-        "observation_count": 2,
-        "first_observed_at": "2026-01-01",
-        "last_observed_at": "2026-01-01",
-        "source_count_min": 1,
-        "source_count_max": 3,
-        "source_count_sum": 4,
-        "complete_source_count_min": 0,
-        "complete_source_count_max": 1,
-        "complete_source_count_sum": 1,
-    }
-    row_b = {**row_a, "node_ids": '["n2"]', "source_count_sum": 6}  # other node → distinct row
-    src1 = make_catalog(
-        tmp_path / "s1.db",
-        {
-            "files": [{"ed2k_hash": HASH_A, "size_bytes": 1}],
-            "file_observation_ranges": [row_a],
-        },
-    )
-    src2 = make_catalog(
-        tmp_path / "s2.db",
-        {
-            "files": [{"ed2k_hash": HASH_A, "size_bytes": 1}],
-            "file_observation_ranges": [row_b],
-        },
-    )
-    out = tmp_path / "out.db"
-    merge_catalogs(out, [src1, src2])
-    assert count(out, "file_observation_ranges") == 2  # union (two distinct node_ids)
-    merge_catalogs(out, [src1, src2], dest_is_source=False)  # re-merge → no-op
-    assert count(out, "file_observation_ranges") == 2
-
-
-def _raw_catalog(path: Path, *observations: tuple[str, str]) -> Path:
-    """One file seen at each ``(observed_at, node_id)``."""
-    return make_catalog(
-        path,
-        {
-            "files": [{"ed2k_hash": HASH_A, "size_bytes": 100}],
-            "file_observations": [
-                _file_observation(HASH_A, node_id=node, observed_at=at) for at, node in observations
-            ],
-        },
-    )
-
-
-def _compacted(source: Path, output: Path) -> Path:
-    clock = lambda: datetime(2026, 6, 1, tzinfo=UTC)  # noqa: E731
-    compact_catalog(source, output, keep_recent_days=90, clock=clock)
-    return output
-
-
-_OLD_DAY_TWICE_AND_A_RECENT_DAY = (
-    ("2026-01-10T01:00:00.000000+00:00", "n1"),
-    ("2026-01-10T20:00:00.000000+00:00", "n1"),
-    ("2026-01-11T05:00:00.000000+00:00", "n1"),
-    ("2026-05-31T05:00:00.000000+00:00", "n1"),
-)
-
-
-@pytest.mark.parametrize("compacted_first", [False, True])
-def test_merging_a_catalog_with_its_compacted_copy_counts_each_day_once(
-    tmp_path: Path, compacted_first: bool
-) -> None:
-    raw = _raw_catalog(tmp_path / "x.db", *_OLD_DAY_TWICE_AND_A_RECENT_DAY)
-    compacted = _compacted(raw, tmp_path / "x-compacted.db")
-    sources = [compacted, raw] if compacted_first else [raw, compacted]
-    out = tmp_path / "out.db"
-
-    skipped = merge_catalogs(out, sources)
-
-    for table in ("file_observations", "file_observation_ranges"):
-        assert rows_without_id(out, table) == rows_without_id(compacted, table)
-    recompacted = _compacted(out, tmp_path / "out-compacted.db")
-    assert rows_without_id(recompacted, "file_observation_ranges") == rows_without_id(
-        compacted, "file_observation_ranges"
-    )  # no doubled observation_count, no doubled sums
-    assert skipped == 3  # the three old raw rows a range already counts
-
-
-def test_merge_keeps_the_raw_rows_of_another_node_on_a_compacted_day(tmp_path: Path) -> None:
-    compacted = _compacted(
-        _raw_catalog(tmp_path / "x.db", *_OLD_DAY_TWICE_AND_A_RECENT_DAY), tmp_path / "xc.db"
-    )
-    other = _raw_catalog(tmp_path / "y.db", ("2026-01-10T03:00:00.000000+00:00", "n2"))
-    out = tmp_path / "out.db"
-
-    skipped = merge_catalogs(out, [compacted, other])
-
-    assert count(out, "file_observations") == 2  # x's recent row and y's row on the same day
-    assert skipped == 0
