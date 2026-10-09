@@ -13,6 +13,7 @@ from mulewatch.adapters.persistence_sqlite.variants import (
     iso_to_micros,
     register_functions,
 )
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import fold_raw_meta
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
@@ -128,3 +129,13 @@ def test_iso_to_micros_refuses_a_naive_stamp() -> None:
 def test_iso_to_micros_sql_function_matches_the_python_one(connection: sqlite3.Connection) -> None:
     row = connection.execute("SELECT iso_to_micros('1970-01-01T00:00:00.000001+00:00')").fetchone()
     assert row[0] == 1
+
+
+def test_file_id_sql_function_is_the_file_key_file_id(connection: sqlite3.Connection) -> None:
+    row = connection.execute("SELECT file_id('ed2k', ?)", (_HASH,)).fetchone()
+    assert row[0] == FileKey(Network.ED2K, _HASH).file_id
+
+
+def test_file_id_sql_function_refuses_an_unknown_network(connection: sqlite3.Connection) -> None:
+    with pytest.raises(sqlite3.OperationalError, match="user-defined function raised"):
+        connection.execute("SELECT file_id('kad', ?)", (_HASH,)).fetchone()

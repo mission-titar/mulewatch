@@ -9,6 +9,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from functools import cache
 
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import fold_raw_meta
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -45,8 +46,13 @@ def iso_to_micros(stamp: str) -> int:
     return (datetime.fromisoformat(stamp) - _EPOCH) // _MICROSECOND
 
 
+def file_id(network: str, native_id: str) -> bytes:
+    """``FileKey.file_id`` for the SQL function; an unknown network raises."""
+    return FileKey(Network(network), native_id).file_id
+
+
 def register_functions(connection: sqlite3.Connection) -> None:
-    """Registers ``content_hash``, ``fold_raw_meta`` and ``iso_to_micros`` on ``connection``."""
+    """Registers ``content_hash``, ``file_id``, ``fold_raw_meta`` and ``iso_to_micros``."""
 
     # A stored raw_meta, folded and serialized as record_observation serializes it.
     def fold_stored(raw_meta: str, codec: str | None, file_type: str | None, complete: int) -> str:
@@ -57,5 +63,6 @@ def register_functions(connection: sqlite3.Connection) -> None:
     # Memoized for the connection's life: one entry per distinct key, ~11k on the node.
     connection.create_function("content_hash", 8, cache(content_hash), deterministic=True)
     connection.create_function("fold_raw_meta", 4, cache(fold_stored), deterministic=True)
+    connection.create_function("file_id", 2, file_id, deterministic=True)
     # Never memoized: every observation has its own stamp, the memo would hold them all.
     connection.create_function("iso_to_micros", 1, iso_to_micros, deterministic=True)

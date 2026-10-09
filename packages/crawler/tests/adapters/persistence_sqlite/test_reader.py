@@ -54,7 +54,7 @@ def test_open_reader_refuses_writes(tmp_path: Path) -> None:
     reader = open_reader(path)
     try:
         with pytest.raises(sqlite3.OperationalError):
-            reader.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (_HASH_B, 1))
+            insert_file(reader, _HASH_B, 1)
     finally:
         reader.close()
 
