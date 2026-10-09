@@ -47,19 +47,17 @@ _TARGETS = (
 
 
 class _ShutdownAfterFirstCycleClient:
-    """Wraps a real client and triggers shutdown on the 2nd cycle's status poll.
+    """Wraps a real client and triggers shutdown on the 2nd cycle's first search.
 
-    We do NOT trigger on the 1st poll (start of the 1st cycle): a shutdown set during the status
-    poll cancels the in-flight cycle BEFORE its final ``write_cycle_state``, and the index would
-    never advance (verified empirically). So we let the 1st cycle COMPLETE (it writes
-    ``cycle_index=1``), then we trigger shutdown on the 2nd cycle's 1st poll. The index stays at
-    1, proof that a full cycle actually ran. The ``cycle_interval`` is tiny → the 2nd cycle starts
-    right after the 1st (the run stays bounded, under the 180 s ``wait_for``)."""
+    A shutdown during the 1st cycle would cancel it BEFORE its final ``write_cycle_state``, and the
+    index would never advance. So the 1st cycle COMPLETES (it writes ``cycle_index=1``), and the
+    first search of the 2nd cycle triggers the shutdown: the index stays at 1, proof that a full
+    cycle ran. The ``cycle_interval`` is tiny → the 2nd cycle starts right after the 1st."""
 
     def __init__(self, inner: object, app_holder: dict[str, CrawlerApp]) -> None:
         self._inner = inner
         self._app_holder = app_holder
-        self._status_calls = 0
+        self._searches = 0
 
     channels: tuple[str, ...] = ("ed2k", "kad")
 
@@ -72,17 +70,16 @@ class _ShutdownAfterFirstCycleClient:
     async def search(
         self, keyword: str, channel: str, budget_seconds: float
     ) -> tuple[FileObservation, ...]:
+        self._searches += 1
+        if self._searches == len(self.channels) + 1:  # one keyword: the 2nd cycle's first search
+            self._app_holder["app"]._on_signal()
         return await self._inner.search(keyword, channel, budget_seconds)  # type: ignore[attr-defined,no-any-return]
 
     async def status(self) -> ClientStatus:
         return await self._inner.status()  # type: ignore[attr-defined,no-any-return]
 
     async def network_status(self) -> NetworkStatus:
-        status = await self._inner.network_status()  # type: ignore[attr-defined]
-        self._status_calls += 1
-        if self._status_calls == 2:  # 1st poll of the 2nd cycle (the 1st cycle wrote its index)
-            self._app_holder["app"]._on_signal()
-        return status  # type: ignore[no-any-return]
+        return await self._inner.network_status()  # type: ignore[attr-defined,no-any-return]
 
 
 @pytest.mark.asyncio
@@ -94,7 +91,7 @@ async def test_real_loop_runs_one_cycle_and_stops(amuled: ApiEndpoint, tmp_path:
     matcher_config = parse_matcher_config(load_yaml(_MATCHER))
     crawler_config = CrawlerConfig(
         # Tiny interval: the 2nd cycle starts right after the 1st (which wrote its index)
-        # → the shutdown at the 2nd cycle's poll bounds the run, well under wait_for 120 s.
+        # → the shutdown at the 2nd cycle's first search bounds the run, well under wait_for 120 s.
         cycle_interval_seconds=0.05,
         keyword_pause_min_seconds=0.01,  # tiny pauses (the test does not measure spacing)
         keyword_pause_max_seconds=0.05,

@@ -193,10 +193,10 @@ Points clés en chemin :
   *abandonnée* avec une trace de télémétrie et rejouée au cycle suivant. La redondance multi-nœuds
   est désormais entièrement affaire de faire tourner plusieurs nœuds et de fusionner leurs
   catalogues.
-- **La couverture n'est pas la liveness** : « le processus est vivant » n'implique pas « on peut
-  trouver quelque chose là, maintenant ». Le démon est *search-capable* s'il a un HighID eD2k **ou**
-  s'il est connecté à Kad ; cela donne `HEALTHY / DEGRADED / BLIND`. `BLIND` est loggé bruyamment
-  (déclenché sur front, anti-spam).
+- **Le statut n'est pas la liveness** : « le processus est vivant » n'implique pas « on peut
+  trouver quelque chose là, maintenant ». Une boucle lit le statut de chaque client toutes les
+  minutes, par canal (`on_network`, `connectable`), et alerte sur un état dégradé qui dure : 5 min
+  pour un canal, 2 min pour l'API injoignable, puis envoie son rétablissement.
 - **Résilience** : une `RepositoryError` en fin de cycle est absorbée, l'index n'avance pas, et le
   cycle est rejoué au tour suivant (état append-only, pas de corruption).
 

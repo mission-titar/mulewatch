@@ -144,17 +144,6 @@ class FakeMuleClient:
         return self._status
 
 
-class UnreachableStatusClient(FakeMuleClient):
-    """Variant whose ``network_status`` raises ``ClientUnreachableError`` (unreachable instance).
-
-    Models the real adapter: a non-connected client raises ``ApiUnreachableError`` (which IS a
-    ``ClientUnreachableError``) on a status read. Serves to cover the tolerant branch of
-    ``_aggregate_coverage`` (unreachable instance → not search-capable, no crash)."""
-
-    async def network_status(self) -> NetworkStatus:
-        raise ClientUnreachableError("client not connected (instance unreachable)")
-
-
 def make_unreachable(message: str = "down") -> ClientUnreachableError:
     return ClientUnreachableError(message)
 
