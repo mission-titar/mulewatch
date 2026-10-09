@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from catalog_matching.config import TIER_RANK
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.reader import open_reader
 from mulewatch.webui.adapters.catalog_read import (
     _SQL_COUNT_FILES_BASE,
@@ -20,6 +19,7 @@ from mulewatch.webui.adapters.catalog_read import (
     _tier_rank_case,
 )
 from mulewatch.webui.domain.views import FileRow
+from tests.catalog_rows import insert_decision, insert_file, insert_observation
 
 # Selects the CTE under test on its own: SQLite drops the CTEs a query does not reference, so
 # the resulting plan is exactly how ``latest_sighting`` is resolved.
@@ -33,41 +33,16 @@ LATEST_SIGHTING_PROBE = "SELECT ed2k_hash, name, source_count_max, last_seen FRO
 def _seed(db: Path) -> None:
     """Populate the database with a file, an observation, a decision."""
     with sqlite3.connect(db) as conn:
-        conn.execute(
-            "INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)",
-            ("a" * 32, 100),
+        insert_file(conn, "a" * 32)
+        insert_observation(conn, "a" * 32, "keroro_062.avi", source_count=5)
+        insert_decision(
+            conn,
+            "a" * 32,
+            "062A",
+            "download",
+            rule_name="id_segment_exact",
+            decided_at="2026-06-22T10:00:01.000000+00:00",
         )
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "a" * 32,
-                "keroro_062.avi",
-                100,
-                5,
-                2,
-                "[]",
-                "keroro",
-                "2026-06-22T10:00:00.000000+00:00",
-                "n1",
-            ),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                "a" * 32,
-                "062A",
-                "id_segment_exact",
-                "download",
-                "2026-06-22T10:00:01.000000+00:00",
-                "n1",
-            ),
-        )
-        conn.commit()
 
 
 def _seed_whole_episode(db: Path) -> None:
@@ -76,42 +51,24 @@ def _seed_whole_episode(db: Path) -> None:
     Standalone: never combine with ``_seed`` (same hash)."""
     h = "a" * 32
     with sqlite3.connect(db) as conn:
-        conn.execute(
-            "INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)",
-            (h, 170_000_000),
-        )
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                h,
-                "keroro_072.avi",
-                170_000_000,
-                7,
-                3,
-                "[]",
-                "keroro",
-                "2026-07-01T10:00:00.000000+00:00",
-                "n1",
-            ),
+        insert_file(conn, h, 170_000_000)
+        insert_observation(
+            conn,
+            h,
+            "keroro_072.avi",
+            observed_at="2026-07-01T10:00:00.000000+00:00",
+            size_bytes=170_000_000,
+            source_count=7,
         )
         for tid in ("072A", "072B"):
-            conn.execute(
-                "INSERT INTO match_decisions"
-                " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    h,
-                    tid,
-                    "numero_nu_confirmed",
-                    "download",
-                    "2026-07-01T10:00:01.000000+00:00",
-                    "n1",
-                ),
+            insert_decision(
+                conn,
+                h,
+                tid,
+                "download",
+                rule_name="numero_nu_confirmed",
+                decided_at="2026-07-01T10:00:01.000000+00:00",
             )
-        conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -136,18 +93,8 @@ def test_target_coverage_multiple_files_same_target(catalog_db: Path) -> None:
     """Two files matching the same target_id → list of length 2."""
     with sqlite3.connect(catalog_db) as conn:
         for suffix in ("a", "b"):
-            h = suffix * 32
-            conn.execute(
-                "INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)",
-                (h, 100),
-            )
-            conn.execute(
-                "INSERT INTO match_decisions"
-                " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (h, "062A", "rule", "download", "2026-06-22T10:00:00.000000+00:00", "n1"),
-            )
-        conn.commit()
+            insert_file(conn, suffix * 32)
+            insert_decision(conn, suffix * 32, "062A", "download")
     reader = CatalogReader(open_reader(catalog_db))
     coverage = reader.target_coverage()
     assert len(coverage["062A"]) == 2
@@ -163,20 +110,18 @@ def test_target_coverage_whole_episode_contributes_to_both_targets(catalog_db: P
 def test_target_coverage_ignores_legacy_empty_target_sentinel(catalog_db: Path) -> None:
     h = "e" * 32
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 100))
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "090A", "id_segment_exact", "download", "2026-07-05T10:00:00.000000+00:00", "n1"),
+        insert_file(conn, h)
+        insert_decision(
+            conn,
+            h,
+            "090A",
+            "download",
+            rule_name="id_segment_exact",
+            decided_at="2026-07-05T10:00:00.000000+00:00",
         )
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "", "", "retracted", "2026-07-05T11:00:00.000000+00:00", "n1"),
+        insert_decision(
+            conn, h, "", "retracted", rule_name="", decided_at="2026-07-05T11:00:00.000000+00:00"
         )
-        conn.commit()
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
     assert coverage["090A"] == [(h, "download")]
     assert "" not in coverage
@@ -309,28 +254,14 @@ def test_file_detail_retracted_target_is_no_decision(catalog_db: Path) -> None:
 def test_file_detail_no_decision(catalog_db: Path) -> None:
     """Detail works even without a decision (unmatched file)."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)",
-            ("b" * 32, 200),
+        insert_file(conn, "b" * 32, 200)
+        insert_observation(
+            conn,
+            "b" * 32,
+            "unknown.avi",
+            observed_at="2026-06-22T09:00:00.000000+00:00",
+            size_bytes=200,
         )
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "b" * 32,
-                "unknown.avi",
-                200,
-                1,
-                0,
-                "[]",
-                "unknown",
-                "2026-06-22T09:00:00.000000+00:00",
-                "n2",
-            ),
-        )
-        conn.commit()
     detail = CatalogReader(open_reader(catalog_db)).file_detail("b" * 32)
     assert detail is not None
     assert detail.decisions == ()
@@ -379,20 +310,9 @@ def test_target_coverage_uses_latest_decision_per_hash(catalog_db: Path) -> None
     """Same hash with two decisions (T1 < T2) → target_coverage returns T2's tier."""
     h = "a" * 32
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 100))
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "062A", "rule", "catalog", "2026-06-22T10:00:00.000000+00:00", "n1"),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "062A", "rule", "download", "2026-06-22T11:00:00.000000+00:00", "n1"),
-        )
-        conn.commit()
+        insert_file(conn, h)
+        insert_decision(conn, h, "062A", "catalog")
+        insert_decision(conn, h, "062A", "download", decided_at="2026-06-22T11:00:00.000000+00:00")
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
     assert coverage["062A"] == [(h, "download")]
 
@@ -409,22 +329,10 @@ def test_target_coverage_omits_retracted(catalog_db: Path) -> None:
 def test_coverage_tie_break_on_id(catalog_db: Path) -> None:
     """Same hash, same decided_at, two different tiers → the larger id wins."""
     h = "b" * 32
-    ts = "2026-06-22T10:00:00.000000+00:00"
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 200))
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "062A", "rule", "catalog", ts, "n1"),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "062A", "rule", "download", ts, "n1"),
-        )
-        conn.commit()
+        insert_file(conn, h, 200)
+        insert_decision(conn, h, "062A", "catalog")
+        insert_decision(conn, h, "062A", "download")
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
     assert coverage["062A"] == [(h, "download")]
 
@@ -444,27 +352,16 @@ def test_file_detail_observations_include_media_fields_present(catalog_db: Path)
     """A sighting's media_length_sec and bitrate_kbps are filled when present."""
     h = "d" * 32
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 150))
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count, complete_source_count,"
-            " media_length_sec, bitrate_kbps, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                h,
-                "keroro_media.avi",
-                150,
-                3,
-                1,
-                1320,
-                192,
-                "[]",
-                "keroro",
-                "2026-06-22T10:00:00.000000+00:00",
-                "n1",
-            ),
+        insert_file(conn, h, 150)
+        insert_observation(
+            conn,
+            h,
+            "keroro_media.avi",
+            size_bytes=150,
+            source_count=3,
+            media_length_sec=1320,
+            bitrate_kbps=192,
         )
-        conn.commit()
     detail = CatalogReader(open_reader(catalog_db)).file_detail(h)
     assert detail is not None
     assert len(detail.sightings) == 1
@@ -480,61 +377,37 @@ def _seed_retracted(db: Path) -> None:
     it must be treated as unmatched everywhere."""
     h = "c" * 32
     with sqlite3.connect(db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 300))
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                h,
-                "keroro_063.avi",
-                300,
-                2,
-                1,
-                "[]",
-                "keroro",
-                "2026-06-22T09:00:00.000000+00:00",
-                "n1",
-            ),
+        insert_file(conn, h, 300)
+        insert_observation(
+            conn,
+            h,
+            "keroro_063.avi",
+            observed_at="2026-06-22T09:00:00.000000+00:00",
+            size_bytes=300,
+            source_count=2,
         )
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "063A", "id_segment_exact", "download", "2026-06-22T10:00:00.000000+00:00", "n1"),
+        insert_decision(conn, h, "063A", "download", rule_name="id_segment_exact")
+        insert_decision(
+            conn,
+            h,
+            "063A",
+            "retracted",
+            rule_name="",
+            decided_at="2026-06-22T11:00:00.000000+00:00",
         )
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (h, "063A", "", "retracted", "2026-06-22T11:00:00.000000+00:00", "n1"),
-        )
-        conn.commit()
 
 
 def _seed_unmatched(db: Path) -> None:
     """Add a second file (b*32) with an observation but NO match decision."""
     with sqlite3.connect(db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", ("b" * 32, 200))
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "b" * 32,
-                "gallego_ep021.ogm",
-                200,
-                1,
-                0,
-                "[]",
-                "keroro",
-                "2026-06-22T09:00:00.000000+00:00",
-                "n2",
-            ),
+        insert_file(conn, "b" * 32, 200)
+        insert_observation(
+            conn,
+            "b" * 32,
+            "gallego_ep021.ogm",
+            observed_at="2026-06-22T09:00:00.000000+00:00",
+            size_bytes=200,
         )
-        conn.commit()
 
 
 def test_list_files_matched_only_excludes_unmatched(catalog_db: Path) -> None:
@@ -570,42 +443,22 @@ def test_list_files_shows_latest_observation(catalog_db: Path) -> None:
     """Same hash with two observations → list_files returns the most recent filename."""
     h = "c" * 32
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 300))
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                h,
-                "old_name.avi",
-                300,
-                1,
-                0,
-                "[]",
-                "keroro",
-                "2026-06-22T09:00:00.000000+00:00",
-                "n1",
-            ),
+        insert_file(conn, h, 300)
+        insert_observation(
+            conn,
+            h,
+            "old_name.avi",
+            observed_at="2026-06-22T09:00:00.000000+00:00",
+            size_bytes=300,
         )
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                h,
-                "new_name.avi",
-                300,
-                2,
-                1,
-                "[]",
-                "keroro",
-                "2026-06-22T12:00:00.000000+00:00",
-                "n1",
-            ),
+        insert_observation(
+            conn,
+            h,
+            "new_name.avi",
+            observed_at="2026-06-22T12:00:00.000000+00:00",
+            size_bytes=300,
+            source_count=2,
         )
-        conn.commit()
     reader = CatalogReader(open_reader(catalog_db))
     rows = reader.list_files(target=None, tier=None, query=None, page=1)
     assert len(rows) == 1
@@ -659,38 +512,22 @@ def test_count_files_empty_catalogue_matched_is_zero_not_none(catalog_db: Path) 
 def _seed_catalog_tier_on_001a(db: Path) -> None:
     """A keroro_large catch-all file: its only decision is tier 'catalog' pinned to 001A."""
     with sqlite3.connect(db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", ("b" * 32, 50))
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "b" * 32,
-                "keroro manga.zip",
-                50,
-                1,
-                0,
-                "[]",
-                "keroro",
-                "2026-07-01T10:00:00.000000+00:00",
-                "n1",
-            ),
+        insert_file(conn, "b" * 32, 50)
+        insert_observation(
+            conn,
+            "b" * 32,
+            "keroro manga.zip",
+            observed_at="2026-07-01T10:00:00.000000+00:00",
+            size_bytes=50,
         )
-        conn.execute(
-            "INSERT INTO match_decisions"
-            " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                "b" * 32,
-                "001A",
-                "keroro_large",
-                "catalog",
-                "2026-07-01T10:00:01.000000+00:00",
-                "n1",
-            ),
+        insert_decision(
+            conn,
+            "b" * 32,
+            "001A",
+            "catalog",
+            rule_name="keroro_large",
+            decided_at="2026-07-01T10:00:01.000000+00:00",
         )
-        conn.commit()
 
 
 def test_target_scope_excludes_catalog_tier(catalog_db: Path) -> None:
@@ -735,21 +572,11 @@ def _seed_sortable(db: Path) -> None:
     ]
     with sqlite3.connect(db) as conn:
         for h, name, size, sources, seen, tid, tier in rows:
-            conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, size))
-            conn.execute(
-                "INSERT INTO file_observations"
-                " (ed2k_hash, filename, size_bytes, source_count,"
-                " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (h, name, size, sources, 0, "[]", "keroro", seen, "n1"),
+            insert_file(conn, h, size)
+            insert_observation(
+                conn, h, name, observed_at=seen, size_bytes=size, source_count=sources
             )
-            conn.execute(
-                "INSERT INTO match_decisions"
-                " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (h, tid, "rule", tier, "2026-01-04T10:00:00.000000+00:00", "n1"),
-            )
-        conn.commit()
+            insert_decision(conn, h, tid, tier, decided_at="2026-01-04T10:00:00.000000+00:00")
 
 
 def _hashes(rows: list[FileRow]) -> list[str]:
@@ -825,15 +652,8 @@ def test_list_files_sort_tiebreak_is_ed2k_hash(catalog_db: Path) -> None:
     """Two files with the same sort key keep a deterministic order via the ed2k_hash tiebreak."""
     with sqlite3.connect(catalog_db) as conn:
         for h in ("b" * 32, "a" * 32):  # inserted b-first on purpose
-            conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 100))
-            conn.execute(
-                "INSERT INTO file_observations"
-                " (ed2k_hash, filename, size_bytes, source_count,"
-                " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (h, "same.avi", 100, 1, 0, "[]", "keroro", "2026-01-01T10:00:00.000000+00:00", "n"),
-            )
-        conn.commit()
+            insert_file(conn, h)
+            insert_observation(conn, h, "same.avi", observed_at="2026-01-01T10:00:00.000000+00:00")
     reader = CatalogReader(open_reader(catalog_db))
     rows = reader.list_files(
         target=None, tier=None, query=None, page=1, sort="size", direction="asc"
@@ -867,22 +687,10 @@ def _seed_mixed_tier_file(db: Path) -> None:
     under both facets."""
     h = "d" * 32
     with sqlite3.connect(db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 100))
-        conn.execute(
-            "INSERT INTO file_observations"
-            " (ed2k_hash, filename, size_bytes, source_count,"
-            " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (h, "mixed.avi", 100, 1, 0, "[]", "keroro", "2026-01-01T10:00:00.000000+00:00", "n"),
-        )
+        insert_file(conn, h)
+        insert_observation(conn, h, "mixed.avi", observed_at="2026-01-01T10:00:00.000000+00:00")
         for tid, tier in (("062A", "download"), ("062B", "notify")):
-            conn.execute(
-                "INSERT INTO match_decisions"
-                " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (h, tid, "rule", tier, "2026-01-02T10:00:00.000000+00:00", "n"),
-            )
-        conn.commit()
+            insert_decision(conn, h, tid, tier, decided_at="2026-01-02T10:00:00.000000+00:00")
 
 
 def test_tier_counts_groups_by_tier(catalog_db: Path) -> None:
@@ -919,8 +727,7 @@ def _seed_file_without_observation(db: Path) -> str:
     recorded). Returns its hash."""
     h = "d" * 32
     with sqlite3.connect(db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 42))
-        conn.commit()
+        insert_file(conn, h, 42)
     return h
 
 
@@ -977,16 +784,9 @@ def test_list_files_observation_tie_break_on_id(catalog_db: Path) -> None:
     """
     h = "a" * 32
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, ?)", (h, 100))
+        insert_file(conn, h)
         for name in ("first.avi", "second.avi"):  # same instant, ascending ids
-            conn.execute(
-                "INSERT INTO file_observations"
-                " (ed2k_hash, filename, size_bytes, source_count,"
-                " complete_source_count, raw_meta, keyword, observed_at, node_id)"
-                " VALUES (?, ?, 100, 1, 0, '[]', 'keroro', ?, 'n1')",
-                (h, name, "2026-07-03T10:00:00.000000+00:00"),
-            )
-        conn.commit()
+            insert_observation(conn, h, name, observed_at="2026-07-03T10:00:00.000000+00:00")
     rows = CatalogReader(open_reader(catalog_db)).list_files(
         target=None, tier=None, query=None, page=1
     )
@@ -1015,7 +815,7 @@ def test_file_detail_of_a_file_never_seen_has_no_sighting(catalog_db: Path) -> N
     ],
 )
 def test_latest_obs_seeks_per_file_instead_of_scanning_observations(
-    tmp_path: Path, label: str, sql: str
+    catalog_db: Path, label: str, sql: str
 ) -> None:
     """Every /files query must SEEK each file's newest observation through
     ``idx_file_observations_hash_observed``, never walk ``file_observations``.
@@ -1027,13 +827,8 @@ def test_latest_obs_seeks_per_file_instead_of_scanning_observations(
     ``latest_obs``) fails here instead of silently regressing the page by ~430x. All three real
     queries are checked, so a later edit to ``_SQL_FILES_SOURCE`` that defeats the seek cannot
     slip through on the strength of the isolated CTE alone.
-
-    Uses ``open_catalog`` (the real migrations) rather than the ``catalog_db`` fixture, whose
-    hand-copied schema carries no indices.
     """
-    catalog = open_catalog(tmp_path / "catalog.db")
-    plan = [str(row[3]) for row in catalog.execute("EXPLAIN QUERY PLAN " + sql)]
-    catalog.close()
+    plan = [str(row[3]) for row in open_reader(catalog_db).execute("EXPLAIN QUERY PLAN " + sql)]
 
     assert any(
         step.startswith("SEARCH") and "idx_file_observations_hash_observed" in step for step in plan
