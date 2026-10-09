@@ -11,8 +11,8 @@ from catalog_matching.config import TIER_RANK
 from mulewatch.webui.domain.views import CoverageStatus
 
 
-def coverage_for(target_id: str, decisions: Sequence[tuple[str, str]]) -> CoverageStatus:
-    """``decisions`` = ``(ed2k_hash, tier)`` of the latest decisions for this target.
+def coverage_for(target_id: str, decisions: Sequence[tuple[bytes, str]]) -> CoverageStatus:
+    """``decisions`` = ``(file_id, tier)`` of the latest decisions for this target.
 
     Catalog-tier decisions are the ``keroro_large`` catch-all: any keroro file with no numeric
     token resolves to the smallest ``target_id`` (``001A``) via the engine tie-break, so counting

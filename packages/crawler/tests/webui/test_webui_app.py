@@ -12,6 +12,7 @@ from starlette.applications import Starlette
 from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.webui.composition.app import (
     _normalize_dir,
     _normalize_sort,
@@ -28,7 +29,7 @@ from mulewatch.webui.domain.views import (
     FileRow,
     HiddenInput,
 )
-from tests.catalog_rows import SEEN_AT, insert_decision, insert_file, insert_observation
+from tests.catalog_rows import SEEN_AT, file_id, insert_decision, insert_file, insert_observation
 
 # ---------------------------------------------------------------------------
 # Parsed-config helpers (since P4a build_app takes already-parsed config)
@@ -36,6 +37,10 @@ from tests.catalog_rows import SEEN_AT, insert_decision, insert_file, insert_obs
 
 TEST_HASH = "aabbccdd00112233aabbccdd00112233"
 _AMULE_URL = "http://localhost:4711"
+
+
+def _detail_url(ed2k_hash: str) -> str:
+    return f"/files/{file_id(ed2k_hash).hex()}"
 
 
 class _RecordingControl:
@@ -540,14 +545,62 @@ async def test_files_show_unmatched_reveals_and_toggles_back(
 async def test_file_detail_with_decision_returns_200(
     populated_app: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} with a decision → 200, contains the ed2k link + explanation info."""
+    """/files/{file_id} with a decision → 200, contains the ed2k link + explanation info."""
     app, hash_ = populated_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "ed2k://" in resp.text
     assert "062A" in resp.text
     assert "AICH" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_file_detail_shows_the_network_and_the_native_id(
+    populated_app: tuple[Starlette, str],
+) -> None:
+    app, hash_ = populated_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(_detail_url(hash_))
+    page = re.sub(r">\s+<", "><", resp.text)
+    assert "<dt>Network</dt><dd>ed2k</dd>" in page
+    assert f"<dt>Native ID</dt><dd>{hash_}</dd>" in page
+    assert "eD2k hash" not in page
+
+
+@pytest.mark.asyncio
+async def test_file_detail_by_the_ed2k_hash_returns_404(
+    populated_app: tuple[Starlette, str],
+) -> None:
+    app, hash_ = populated_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(f"/files/{hash_}")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformed",
+    ["zz", file_id(TEST_HASH).hex().upper(), file_id(TEST_HASH).hex()[:31], " " * 32],
+)
+async def test_file_detail_malformed_file_id_returns_404(
+    populated_app: tuple[Starlette, str], malformed: str
+) -> None:
+    app, _ = populated_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get(f"/files/{malformed}")
+    assert resp.status_code == 404
+    assert "not found" in resp.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_files_list_links_each_file_to_its_file_id(
+    populated_app: tuple[Starlette, str],
+) -> None:
+    app, hash_ = populated_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/files")
+    assert f'<a href="{_detail_url(hash_)}">{hash_[:8]}…</a>' in resp.text
 
 
 @pytest.fixture
@@ -607,7 +660,7 @@ async def test_file_detail_explains_over_every_name_and_lists_the_vetoes_fired(
 ) -> None:
     app, hash_ = app_vetoed_alias
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "Vetoes fired:" in resp.text
     assert "<li>ita</li>" in resp.text  # fired by the ITA alias only
@@ -620,7 +673,7 @@ async def test_file_detail_timeline_shows_each_observation_as_one_plain_line(
 ) -> None:
     app, hash_ = populated_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     cells = ("keroro_s2e62a_vf.avi", "100000000", "5", "keroro", SEEN_AT)
     line = "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
     assert line in re.sub(r">\s+<", "><", resp.text)
@@ -631,10 +684,10 @@ async def test_file_detail_timeline_shows_each_observation_as_one_plain_line(
 async def test_file_detail_without_decision_returns_200(
     app_no_decision: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} without a decision → 200, empty branches rendered."""
+    """/files/{file_id} without a decision → 200, empty branches rendered."""
     app, hash_ = app_no_decision
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "ed2k://" in resp.text
     assert "No matching decision." in resp.text
@@ -645,12 +698,12 @@ async def test_file_detail_without_decision_returns_200(
 async def test_file_detail_retracted_shows_no_decision(
     app_retracted_decision: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} whose LATEST decision is a retraction renders exactly like a file with
+    """/files/{file_id} whose LATEST decision is a retraction renders exactly like a file with
     no decision at all: "No matching decision.", never a tier/target/rule badge, and never
     the literal "retracted" string anywhere in the page."""
     app, hash_ = app_retracted_decision
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "No matching decision." in resp.text
     assert "No explanation available." in resp.text
@@ -662,10 +715,10 @@ async def test_file_detail_retracted_shows_no_decision(
 async def test_file_detail_explanation_none_unknown_target(
     app_unknown_target: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} with a target_id unknown to the config → 200 (explanation=None)."""
+    """/files/{file_id} with a target_id unknown to the config → 200 (explanation=None)."""
     app, hash_ = app_unknown_target
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "ed2k://" in resp.text
 
@@ -674,7 +727,7 @@ async def test_file_detail_explanation_none_unknown_target(
 async def test_file_detail_unknown_hash_returns_404(
     populated_app: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} nonexistent (32 hex) → 404."""
+    """/files/{file_id} nonexistent (32 hex) → 404."""
     app, _ = populated_app
     unknown = "00000000000000000000000000000000"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -735,10 +788,10 @@ async def test_files_non_numeric_page_defaults_to_1(
 async def test_file_detail_no_observations_returns_200(
     app_no_observations: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} without observations → 200; no ed2k link, empty branch rendered."""
+    """/files/{file_id} without observations → 200; no ed2k link, empty branch rendered."""
     app, hash_ = app_no_observations
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "ed2k://" not in resp.text
     assert "No observations." in resp.text
@@ -817,10 +870,10 @@ def app_with_media_obs(catalog_db: Path, local_db: Path) -> tuple[Starlette, str
 async def test_file_detail_with_media_fields_returns_200(
     app_with_media_obs: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} with media_length_sec + bitrate_kbps → 200, explanation computed."""
+    """/files/{file_id} with media_length_sec + bitrate_kbps → 200, explanation computed."""
     app, hash_ = app_with_media_obs
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "062A" in resp.text
 
@@ -829,7 +882,7 @@ async def test_file_detail_with_media_fields_returns_200(
 async def test_file_detail_unknown_hash_returns_styled_404(
     populated_app: tuple[Starlette, str],
 ) -> None:
-    """/files/{hash} nonexistent → 404 with the styled HTML template (contains 'not found')."""
+    """/files/{file_id} nonexistent → 404 with the styled HTML template (contains 'not found')."""
     app, _ = populated_app
     unknown = "00000000000000000000000000000000"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -965,7 +1018,7 @@ async def test_hostile_filename_is_escaped_in_ed2k_link(
     # separators) and size/hash would be shifted → unusable file / pointing elsewhere.
     app, hash_ = app_with_hostile_filename
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     # The link in the response must contain %7C (and NOT a raw ``|`` in the middle of the name).
     assert "%7C" in resp.text
@@ -995,7 +1048,7 @@ _SEGMENTS_AB = {s.target_id: s for s in (_SEGMENT_062A, _SEGMENT_062B)}
 
 def _file_row(*, decisions: tuple[FileDecision, ...]) -> FileRow:
     return FileRow(
-        ed2k_hash=TEST_HASH,
+        file=FileKey(Network.ED2K, TEST_HASH),
         size_bytes=1024,
         filename="f.avi",
         source_count=1,
@@ -1057,7 +1110,7 @@ def test_to_display_rows_two_segments_differing_tiers_lists_per_target() -> None
 
 def test_to_display_rows_computes_size_and_last_seen_display() -> None:
     row = FileRow(
-        ed2k_hash=TEST_HASH,
+        file=FileKey(Network.ED2K, TEST_HASH),
         size_bytes=1024,
         filename="f.avi",
         source_count=1,
@@ -1304,7 +1357,7 @@ async def test_file_detail_whole_episode_shows_both_targets(
 ) -> None:
     app, hash_ = app_whole_episode
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     assert "072A" in resp.text
     assert "072B" in resp.text
@@ -1768,11 +1821,11 @@ async def test_nav_amule_link_uses_the_configured_base(catalog_db: Path, local_d
 async def test_nav_on_a_non_nav_path_renders_every_entry_as_a_link(
     populated_app: tuple[Starlette, str],
 ) -> None:
-    """A page that is NOT a nav destination (here /files/{hash}, the file detail) leaves every
+    """A page that is NOT a nav destination (here /files/{file_id}, the file detail) leaves every
     entry a link and marks none active: the active entry is an EXACT path match, not a prefix."""
     app, hash_ = populated_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get(f"/files/{hash_}")
+        resp = await client.get(_detail_url(hash_))
     assert resp.status_code == 200
     for path, label in _NAV_ENTRIES:
         assert f'<a href="{path}">{label}</a>' in resp.text

@@ -6,9 +6,10 @@ routes. The handlers are closures capturing the dependencies: no ``app.state``.
 
 import csv
 import io
+import re
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, assert_never
 from urllib.parse import parse_qs, urlencode
 
 from starlette.applications import Starlette
@@ -26,6 +27,7 @@ from catalog_matching.config import MatcherConfig
 from catalog_matching.ed2k_link import build_ed2k_link
 from catalog_matching.models import TargetSegment
 from mulewatch.adapters.persistence_sqlite.reader import ReaderProvider
+from mulewatch.domain.file_key import Network
 from mulewatch.domain.observation import Sighting
 from mulewatch.ports.crawler_control import CrawlerControl
 from mulewatch.webui.adapters.catalog_read import (
@@ -68,6 +70,9 @@ from mulewatch.webui.domain.views import (
     TimelineRow,
 )
 
+# The detail page's path segment: a file_id as 32 lowercase hex (stage 1 spec D13).
+_FILE_ID = re.compile(r"[0-9a-f]{32}")
+
 # The top-nav destinations, in render order: (path, label). The single source of truth for what
 # base.html renders; every page reaches all five.
 _NAV_DESTINATIONS: tuple[tuple[str, str], ...] = (
@@ -85,7 +90,7 @@ def _make_nav_context(amule_url: str) -> Callable[[Request], dict[str, Any]]:
     which base.html then renders as the bold current page: that is what replaces the per-page
     ``<h1>``.
 
-    The match is exact, so a sub-page (``/files/{hash}``, ``/targets/{id}``) marks no entry
+    The match is exact, so a sub-page (``/files/{file_id}``, ``/targets/{id}``) marks no entry
     active: it is not itself a nav destination, and it names itself with its own heading.
 
     The last entry is the container's OTHER web surface, amuleapi's own UI (design §9). Its base
@@ -152,15 +157,14 @@ def _to_display_rows(
             tier_display = "·"
         rows.append(
             FileRowDisplay(
-                ed2k_hash=row.ed2k_hash,
-                short_hash=short_hash(row.ed2k_hash),
+                file_id=row.file.file_id.hex(),
+                short_hash=short_hash(row.file.native_id),
                 filename=row.filename,
                 sources_display="unknown" if row.source_count is None else str(row.source_count),
                 decisions_display=decisions_display,
                 size_display=human_size(row.size_bytes),
                 last_seen_display=short_timestamp(row.last_seen),
                 tier_display=tier_display,
-                ed2k_link=build_ed2k_link(row.filename, row.size_bytes, row.ed2k_hash),
             )
         )
     return rows
@@ -581,20 +585,24 @@ def build_app(
         )
 
     async def handle_file_detail(request: Request) -> Response:
-        ed2k_hash: str = request.path_params["ed2k_hash"]
+        raw_id: str = request.path_params["file_id"]
 
         catalog = CatalogReader(catalog_reader.connection())
-        detail = catalog.file_detail(ed2k_hash)
+        detail = catalog.file_detail(bytes.fromhex(raw_id)) if _FILE_ID.fullmatch(raw_id) else None
 
         if detail is None:
             return templates.TemplateResponse(request, "404.html", {}, status_code=404)
 
         latest = detail.latest
-        link = (
-            ""
-            if latest is None
-            else build_ed2k_link(latest.names[0], latest.size_bytes, detail.ed2k_hash)
-        )
+        link = ""
+        if latest is not None:
+            match detail.file.network:
+                case Network.ED2K:
+                    link = build_ed2k_link(
+                        latest.names[0], latest.size_bytes, detail.file.native_id
+                    )
+                case _:  # pragma: no cover
+                    assert_never(detail.file.network)
 
         # Explanation from the current config
         explanation_target_id: str | None = None
@@ -621,7 +629,8 @@ def build_app(
                 explanation_notes = ("Evaluated against the current configuration",)
 
         display = FileDetailDisplay(
-            ed2k_hash=detail.ed2k_hash,
+            network=detail.file.network,
+            native_id=detail.file.native_id,
             size_bytes=detail.size_bytes,
             timeline=tuple(_timeline_row(sighting) for sighting in detail.sightings),
             decisions=detail.decisions,
@@ -810,7 +819,7 @@ def build_app(
             Route("/health", handle_health),
             Route("/", handle_dashboard),
             Route("/files", handle_files),
-            Route("/files/{ed2k_hash}", handle_file_detail),
+            Route("/files/{file_id}", handle_file_detail),
             Route("/targets/{target_id}", handle_target),
             Route("/node", handle_node),
             Route("/controls", handle_controls),
