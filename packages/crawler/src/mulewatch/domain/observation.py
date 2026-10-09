@@ -36,6 +36,22 @@ def candidate_from_fields(
     )
 
 
+def fold_raw_meta(
+    raw_meta: tuple[tuple[str, str], ...],
+    codec: str | None,
+    file_type: str | None,
+    complete_source_count: int,
+) -> tuple[tuple[str, str | int | None], ...]:
+    """``raw_meta`` with the three eD2k-only fields appended, absent ones as ``None``. The
+    amuleapi mapper and the catalog migration share it, so both store the same pairs."""
+    return (
+        *raw_meta,
+        ("codec", codec),
+        ("file_type", file_type),
+        ("complete_source_count", complete_source_count),
+    )
+
+
 @dataclass(frozen=True)
 class FileObservation:
     """A file observed during a search (content key = eD2k hash, never the person).
