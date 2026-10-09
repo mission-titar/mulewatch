@@ -1,6 +1,6 @@
-"""Sightings: every observation read, raw or compacted, through one module (spec 2026-10-05)."""
+"""Sightings: every observation read, through one module (spec 2026-10-05)."""
 
-import json
+import dataclasses
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -35,37 +35,12 @@ def _raw(
     *,
     sources: int = 5,
     media: int | None = None,
-    node: str = "n1",
 ) -> None:
     connection.execute(
         "INSERT INTO file_observations (ed2k_hash, filename, size_bytes, source_count,"
         " complete_source_count, media_length_sec, bitrate_kbps, raw_meta, keyword,"
-        " observed_at, node_id) VALUES (?, ?, 100, ?, 1, ?, ?, '[]', 'keroro', ?, ?)",
-        (ed2k_hash, name, sources, media, None if media is None else 900, at, node),
-    )
-
-
-def _range(
-    connection: sqlite3.Connection,
-    ed2k_hash: str,
-    day: str,
-    names: list[str],
-    nodes: tuple[str, ...] = ("n1",),
-) -> None:
-    connection.execute(
-        "INSERT INTO file_observation_ranges (ed2k_hash, bucket, filenames, node_ids,"
-        " observation_count, first_observed_at, last_observed_at, source_count_min,"
-        " source_count_max, source_count_sum, complete_source_count_min,"
-        " complete_source_count_max, complete_source_count_sum)"
-        " VALUES (?, ?, ?, ?, 7, ?, ?, 2, 9, 30, 0, 1, 1)",
-        (
-            ed2k_hash,
-            day,
-            json.dumps(sorted(names)),
-            json.dumps(sorted(nodes)),
-            f"{day}T01:00",
-            f"{day}T23:00",
-        ),
+        " observed_at, node_id) VALUES (?, ?, 100, ?, 1, ?, ?, '[]', 'keroro', ?, 'n1')",
+        (ed2k_hash, name, sources, media, None if media is None else 900, at),
     )
 
 
@@ -82,24 +57,6 @@ def _raw_sighting(name: str, at: str, *, media: int | None = None) -> Sighting:
         media_length_sec=media,
         bitrate_kbps=None if media is None else 900,
         keyword="keroro",
-        compacted=False,
-    )
-
-
-def _range_sighting(day: str, names: tuple[str, ...], ed2k_hash: str = _A) -> Sighting:
-    return Sighting(
-        ed2k_hash=ed2k_hash,
-        names=names,
-        observation_count=7,
-        first_seen=f"{day}T01:00",
-        last_seen=f"{day}T23:00",
-        source_count_min=2,
-        source_count_max=9,
-        size_bytes=4242,
-        media_length_sec=None,
-        bitrate_kbps=None,
-        keyword=None,
-        compacted=True,
     )
 
 
@@ -123,25 +80,6 @@ def test_latest_sighting_breaks_an_observed_at_tie_on_the_highest_id(
     assert latest.names == ("second.avi",)
 
 
-def test_latest_sighting_of_a_compacted_file_is_its_latest_range(
-    connection: sqlite3.Connection,
-) -> None:
-    _file(connection, _A)
-    _range(connection, _A, "2026-05-02", ["z.avi", "m.avi"])
-    _range(connection, _A, "2026-05-01", ["a.avi"])
-    latest = sightings.latest_sighting(connection, _A)
-    assert latest == _range_sighting("2026-05-02", ("m.avi", "z.avi"))
-
-
-def test_latest_sighting_prefers_a_raw_observation_over_a_later_range(
-    connection: sqlite3.Connection,
-) -> None:
-    _file(connection, _A)
-    _raw(connection, _A, "raw.avi", "2026-05-01T10:00")
-    _range(connection, _A, "2026-06-01", ["later.avi"])
-    assert sightings.latest_sighting(connection, _A) == _raw_sighting("raw.avi", "2026-05-01T10:00")
-
-
 def test_latest_sighting_of_a_file_never_seen_or_unknown_is_none(
     connection: sqlite3.Connection,
 ) -> None:
@@ -155,24 +93,24 @@ def test_iter_latest_sightings_yields_one_per_seen_file_sorted_by_hash(
 ) -> None:
     for ed2k_hash in (_C, _B, _A):
         _file(connection, ed2k_hash)
-    _range(connection, _C, "2026-05-01", ["c.avi"])
+    _raw(connection, _C, "c.avi", "2026-05-01T10:00")
     _raw(connection, _A, "old.avi", "2026-06-01T10:00")
     _raw(connection, _A, "new.avi", "2026-06-02T10:00")
     assert list(sightings.iter_latest_sightings(connection)) == [
         _raw_sighting("new.avi", "2026-06-02T10:00"),
-        _range_sighting("2026-05-01", ("c.avi",), ed2k_hash=_C),
+        dataclasses.replace(_raw_sighting("c.avi", "2026-05-01T10:00"), ed2k_hash=_C),
     ]
 
 
-def test_known_names_are_every_distinct_name_of_both_forms(
+def test_known_names_are_every_distinct_name_of_the_file_sorted(
     connection: sqlite3.Connection,
 ) -> None:
     _file(connection, _A)
     _file(connection, _B)
     _raw(connection, _A, "raw.avi", "2026-06-01T10:00")
     _raw(connection, _A, "raw.avi", "2026-06-02T10:00")
-    _range(connection, _A, "2026-05-01", ["old [ES].avi", "raw.avi"])
-    _range(connection, _B, "2026-05-01", ["other.avi"])
+    _raw(connection, _A, "old [ES].avi", "2026-05-01T10:00")
+    _raw(connection, _B, "other.avi", "2026-05-01T10:00")
     assert sightings.known_names(connection, _A) == ("old [ES].avi", "raw.avi")
     assert sightings.known_names(connection, _C) == ()
 
@@ -182,30 +120,6 @@ def test_best_name_of_raw_rows_is_the_most_sourced(connection: sqlite3.Connectio
     _raw(connection, _A, "clean.avi", "2026-06-01T10:00", sources=8)
     _raw(connection, _A, "mojibake.avi", "2026-06-02T10:00", sources=3)
     assert sightings.best_name(connection, _A) == ("clean.avi", 100)
-
-
-def test_best_name_of_ranges_only_takes_the_latest_then_the_first_name_on_a_tie(
-    connection: sqlite3.Connection,
-) -> None:
-    # A range keeps one source maximum for all its names: the name order settles the tie.
-    _file(connection, _A)
-    _range(connection, _A, "2026-05-02", ["new b.avi", "new a.avi"])
-    _range(connection, _A, "2026-05-01", ["old.avi"])
-    assert sightings.best_name(connection, _A) == ("new a.avi", 4242)
-
-
-@pytest.mark.parametrize(
-    ("raw_sources", "best"),
-    [(5, ("ranged.avi", 4242)), (12, ("raw.avi", 100))],
-    ids=["range wins", "raw wins"],
-)
-def test_best_name_compares_raw_sources_with_range_maximums(
-    connection: sqlite3.Connection, raw_sources: int, best: tuple[str, int]
-) -> None:
-    _file(connection, _A)
-    _raw(connection, _A, "raw.avi", "2026-06-01T10:00", sources=raw_sources)
-    _range(connection, _A, "2026-05-01", ["ranged.avi"])
-    assert sightings.best_name(connection, _A) == best
 
 
 def test_best_name_takes_the_latest_seen_on_a_source_tie(connection: sqlite3.Connection) -> None:
@@ -220,62 +134,21 @@ def test_best_name_of_a_file_never_seen_is_none(connection: sqlite3.Connection) 
     assert sightings.best_name(connection, _A) is None
 
 
-def test_sightings_are_the_timeline_of_both_forms_oldest_first(
-    connection: sqlite3.Connection,
-) -> None:
+def test_sightings_are_the_timeline_oldest_first(connection: sqlite3.Connection) -> None:
     _file(connection, _A)
     _file(connection, _B)
     _raw(connection, _A, "late.avi", "2026-06-02T10:00")
-    _range(connection, _A, "2026-05-01", ["a.avi", "b.avi"])
+    _raw(connection, _A, "early.avi", "2026-05-01T10:00")
     _raw(connection, _A, "tie 1.avi", "2026-05-15T10:00")
     _raw(connection, _A, "tie 2.avi", "2026-05-15T10:00")
     _raw(connection, _B, "other.avi", "2026-05-20T10:00")
     assert sightings.sightings(connection, _A) == (
-        _range_sighting("2026-05-01", ("a.avi", "b.avi")),
+        _raw_sighting("early.avi", "2026-05-01T10:00"),
         _raw_sighting("tie 1.avi", "2026-05-15T10:00"),
         _raw_sighting("tie 2.avi", "2026-05-15T10:00"),
         _raw_sighting("late.avi", "2026-06-02T10:00"),
     )
     assert sightings.sightings(connection, _C) == ()
-
-
-def test_the_timeline_shows_a_day_compacted_for_its_node_once_as_the_range(
-    connection: sqlite3.Connection,
-) -> None:
-    # merge --into leaves both forms in storage (append-only); a read shows the range alone.
-    _file(connection, _A)
-    _range(connection, _A, "2026-05-01", ["a.avi"])
-    _raw(connection, _A, "a.avi", "2026-05-01T10:00")
-    _raw(connection, _A, "other node.avi", "2026-05-01T12:00", node="n2")
-    _raw(connection, _A, "next day.avi", "2026-05-02T10:00")
-    assert sightings.sightings(connection, _A) == (
-        _range_sighting("2026-05-01", ("a.avi",)),
-        _raw_sighting("other node.avi", "2026-05-01T12:00"),
-        _raw_sighting("next day.avi", "2026-05-02T10:00"),
-    )
-
-
-@pytest.mark.parametrize(
-    ("ed2k_hash", "observed_at", "node_id", "covered"),
-    [
-        pytest.param(_A, "2026-03-01T05:00:00.000000+00:00", "n1", True, id="same node"),
-        pytest.param(_A, "2026-03-01T23:59:59.999999+00:00", "n2", True, id="its other node"),
-        pytest.param(_A, "2026-03-01T05:00:00.000000+00:00", "n3", False, id="other node"),
-        pytest.param(_A, "2026-03-02T00:00:00.000000+00:00", "n1", False, id="other day"),
-        pytest.param(_B, "2026-03-01T05:00:00.000000+00:00", "n1", False, id="other hash"),
-    ],
-)
-def test_a_range_covers_a_raw_row_of_its_hash_its_day_and_one_of_its_nodes(
-    connection: sqlite3.Connection, ed2k_hash: str, observed_at: str, node_id: str, covered: bool
-) -> None:
-    _file(connection, _A)
-    _range(connection, _A, "2026-03-01", ["f.avi"], nodes=("n1", "n2"))
-    row = connection.execute(
-        f"SELECT {sightings.covered_by_range('file_observation_ranges', 'o')}"
-        " FROM (SELECT ? AS ed2k_hash, ? AS observed_at, ? AS node_id) AS o",
-        (ed2k_hash, observed_at, node_id),
-    ).fetchone()
-    assert bool(row[0]) is covered
 
 
 @pytest.mark.parametrize(

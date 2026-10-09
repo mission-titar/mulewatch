@@ -212,7 +212,7 @@ class SqliteCatalogRepository:
         return None if best is None else ObservedFile(filename=best[0], size_bytes=best[1])
 
     def known_filenames(self, ed2k_hash: str) -> tuple[str, ...]:
-        """Every distinct name this hash was observed under, ranges included, sorted (read)."""
+        """Every distinct name this hash was observed under, sorted (read)."""
         with wrap_sqlite_errors():
             return sightings.known_names(self._connection, ed2k_hash)
 

@@ -66,7 +66,7 @@ class FileObservation:
 
 @dataclass(frozen=True)
 class Sighting:
-    """A file seen once (a raw observation) or over a compacted day (no keyword, no media)."""
+    """A file seen once: one observation."""
 
     ed2k_hash: str
     names: tuple[str, ...]
@@ -79,4 +79,3 @@ class Sighting:
     media_length_sec: int | None
     bitrate_kbps: int | None
     keyword: str | None
-    compacted: bool
