@@ -128,14 +128,14 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
 ### amuled ne se connecte à rien
 
-- **Symptôme.** Le crawler boucle (lignes `cycle ...`) mais reste en `effective_coverage=blind`,
-  avec des avertissements d'injoignabilité.
+- **Symptôme.** Le crawler boucle (lignes `cycle ...`) mais signale au bout de 5 minutes
+  `amuled ed2k: off its network for 5 min` (ou `kad`), avec des avertissements d'injoignabilité.
 
 !!! tip "D'abord, patientez : au premier démarrage, c'est attendu"
 
     amuled amorce seul sa liste de serveurs eD2k et de nœuds Kad par DNS et HTTPS sortant, ce qui
-    prend 1 à 3 minutes. `effective_coverage=blind` pendant ce temps se résorbe tout seul ; vous
-    n'avez aucun serveur à ajouter.
+    prend 1 à 3 minutes, sous le délai de 5 minutes avant l'alerte. Une alerte qui tombe quand même
+    se résorbe toute seule (`back on its network`) ; vous n'avez aucun serveur à ajouter.
 
     Un message **Low-ID** n'est pas non plus une panne : c'est l'état normal par défaut, recherche,
     catalogage et téléchargement fonctionnent, seule la joignabilité est sous-optimale. Voir
@@ -161,7 +161,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 - **La page se charge, mais le tableau est vide.** C'est normal les premières heures : le catalogue
   se remplit au fil des recherches, et les cibles rares peuvent mettre des jours à réapparaître.
   Vérifiez plutôt que le nœud vit : `docker compose logs mulewatch` doit montrer des lignes
-  `cycle ...` jusqu'à `cycle 0 done`. S'il reste `effective_coverage=blind`, voir
+  `cycle ...` jusqu'à `cycle 0 done`. S'il signale `off its network`, voir
   [« amuled ne se connecte à rien »](#amuled-ne-se-connecte-à-rien).
 - **La page ne se charge pas du tout.** La webui est servie en intra-processus par le crawler, il
   n'y a pas de service `webui` séparé. Et un conteneur `Up (healthy)` ne prouve pas que le crawler

@@ -20,16 +20,13 @@ from mulewatch.application.search_worker import (
     WorkerPolicy,
 )
 from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability.events import AllInstancesBlind, SearchCapabilitySampled
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.application.fakes import (
     FakeClock,
     FakeMuleClient,
     FakeRng,
     RecordingSignal,
     RecordingTelemetry,
-    UnreachableStatusClient,
 )
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
@@ -187,137 +184,6 @@ async def test_two_workers_drain_the_same_queue(
     total_searches = len(client_a.searches) + len(client_b.searches)
     assert total_searches >= 2  # all tasks distributed between the two workers
     assert scheduler_state.read_cycle_index() == 4
-
-
-@pytest.mark.asyncio
-async def test_one_instance_blind_still_runs_others(
-    catalog: SqliteCatalogRepository,
-    local_connection: sqlite3.Connection,
-    engine: MatchingEngine,
-) -> None:
-    clock = FakeClock()
-    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    blind = NetworkStatus(ed2k_id=None, ed2k_high=False, kad_status=KadStatus.OFF)
-    healthy = NetworkStatus(ed2k_id=1, ed2k_high=True, kad_status=KadStatus.CONNECTED)
-    client_a = FakeMuleClient(status=blind)
-    client_b = FakeMuleClient(status=healthy)
-    deps = _deps(catalog, engine, clock, backoff)
-    workers = [_worker("amule-1", client_a, deps), _worker("amule-2", client_b, deps)]
-    scheduler_state = SqliteSchedulerStateRepository(local_connection)
-    await run_search_cycle(
-        workers=workers,
-        clients=[client_a, client_b],
-        keywords=_KEYWORDS,
-        rng=_NoopRng(),
-        node_id="node-A",
-        cycle_index=0,
-        scheduler_state=scheduler_state,
-        backoff=backoff,
-        clock=clock,
-        telemetry=RecordingTelemetry(),
-        edge=EdgeState(),
-    )
-    assert scheduler_state.read_cycle_index() == 1  # the cycle runs (DEGRADED), no exception
-
-
-@pytest.mark.asyncio
-async def test_cycle_logs_blind_coverage(
-    catalog: SqliteCatalogRepository,
-    local_connection: sqlite3.Connection,
-    engine: MatchingEngine,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    clock = FakeClock()
-    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    blind = NetworkStatus(ed2k_id=None, ed2k_high=False, kad_status=KadStatus.OFF)
-    client = FakeMuleClient(status=blind)
-    worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
-    scheduler_state = SqliteSchedulerStateRepository(local_connection)
-    with caplog.at_level(logging.INFO, logger="mulewatch.application.run_search_cycle"):
-        await run_search_cycle(
-            workers=[worker],
-            clients=[client],
-            keywords=_KEYWORDS,
-            rng=_NoopRng(),
-            node_id="node-A",
-            cycle_index=0,
-            scheduler_state=scheduler_state,
-            backoff=backoff,
-            clock=clock,
-            telemetry=RecordingTelemetry(),
-            edge=EdgeState(),
-        )
-    assert "blind" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_unreachable_status_makes_instance_not_capable_and_logs_blind(
-    catalog: SqliteCatalogRepository,
-    local_connection: sqlite3.Connection,
-    engine: MatchingEngine,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    # network_status raises ClientUnreachableError (instance unreachable, e.g. not connected at
-    # the moment of the coverage readout) → the instance is treated as not search-capable
-    # instead of taking down the whole cycle. A single instance, all unreachable → BLIND
-    # logged, and the cycle ADVANCES anyway (resilience, spec §7).
-    clock = FakeClock()
-    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    client = UnreachableStatusClient()
-    worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
-    scheduler_state = SqliteSchedulerStateRepository(local_connection)
-    with caplog.at_level(logging.WARNING, logger="mulewatch.application.run_search_cycle"):
-        await run_search_cycle(
-            workers=[worker],
-            clients=[client],
-            keywords=_KEYWORDS,
-            rng=_NoopRng(),
-            node_id="node-A",
-            cycle_index=0,
-            scheduler_state=scheduler_state,
-            backoff=backoff,
-            clock=clock,
-            telemetry=RecordingTelemetry(),
-            edge=EdgeState(),
-        )
-    assert "unreachable" in caplog.text  # warning at the status readout of the down instance
-    assert "blind" in caplog.text  # effective_coverage=BLIND (no capable instance)
-    assert scheduler_state.read_cycle_index() == 1  # the cycle advanced anyway
-
-
-@pytest.mark.asyncio
-async def test_unreachable_instance_does_not_blind_a_healthy_peer(
-    catalog: SqliteCatalogRepository,
-    local_connection: sqlite3.Connection,
-    engine: MatchingEngine,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    # An unreachable instance (status raises) + a healthy instance → DEGRADED (not BLIND):
-    # the tolerant branch does NOT contaminate the healthy peer (covers the capable=True
-    # side of the for).
-    clock = FakeClock()
-    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    down = UnreachableStatusClient()
-    healthy = FakeMuleClient()  # default status: HighID + Kad CONNECTED → capable
-    deps = _deps(catalog, engine, clock, backoff)
-    workers = [_worker("amule-1", down, deps), _worker("amule-2", healthy, deps)]
-    scheduler_state = SqliteSchedulerStateRepository(local_connection)
-    with caplog.at_level(logging.INFO, logger="mulewatch.application.run_search_cycle"):
-        await run_search_cycle(
-            workers=workers,
-            clients=[down, healthy],
-            keywords=_KEYWORDS,
-            rng=_NoopRng(),
-            node_id="node-A",
-            cycle_index=0,
-            scheduler_state=scheduler_state,
-            backoff=backoff,
-            clock=clock,
-            telemetry=RecordingTelemetry(),
-            edge=EdgeState(),
-        )
-    assert "blind" not in caplog.text  # a peer stays capable → not blind
-    assert scheduler_state.read_cycle_index() == 1
 
 
 @pytest.mark.asyncio
@@ -618,7 +484,7 @@ async def test_repository_error_on_save_channel_backoff_is_absorbed(
 
 
 @pytest.mark.asyncio
-async def test_emits_cycle_completed_and_connected_gauges(
+async def test_emits_cycle_completed(
     catalog: SqliteCatalogRepository,
     local_connection: sqlite3.Connection,
     engine: MatchingEngine,
@@ -626,7 +492,7 @@ async def test_emits_cycle_completed_and_connected_gauges(
     telemetry, edge = RecordingTelemetry(), EdgeState()
     clock = FakeClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    client = FakeMuleClient()  # default status: ed2k_high=True, kad CONNECTED → capable
+    client = FakeMuleClient()
     worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
     scheduler_state = SqliteSchedulerStateRepository(local_connection)
     await run_search_cycle(
@@ -643,113 +509,4 @@ async def test_emits_cycle_completed_and_connected_gauges(
         edge=edge,
     )
     types = [type(e).__name__ for e in telemetry.events]
-    assert "ConnectedInstancesSampled" in types
     assert types[-1] == "SearchCycleCompleted"
-
-
-@pytest.mark.asyncio
-async def test_blind_coverage_is_edge_triggered(
-    catalog: SqliteCatalogRepository,
-    local_connection: sqlite3.Connection,
-    engine: MatchingEngine,
-) -> None:
-    telemetry, edge = RecordingTelemetry(), EdgeState()
-    clock = FakeClock()
-    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    client = UnreachableStatusClient()  # all not search-capable → BLIND
-    worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
-    scheduler_state = SqliteSchedulerStateRepository(local_connection)
-    await run_search_cycle(
-        workers=[worker],
-        clients=[client],
-        keywords=_KEYWORDS,
-        rng=_NoopRng(),
-        node_id="node-A",
-        cycle_index=0,
-        scheduler_state=scheduler_state,
-        backoff=backoff,
-        clock=clock,
-        telemetry=telemetry,
-        edge=edge,
-    )
-    blind = [e for e in telemetry.events if isinstance(e, AllInstancesBlind)]
-    assert blind and blind[0].first_occurrence is True
-    # 2nd consecutive blind cycle → first_occurrence False (anti-spam)
-    telemetry.events.clear()
-    await run_search_cycle(
-        workers=[worker],
-        clients=[client],
-        keywords=_KEYWORDS,
-        rng=_NoopRng(),
-        node_id="node-A",
-        cycle_index=1,
-        scheduler_state=scheduler_state,
-        backoff=backoff,
-        clock=clock,
-        telemetry=telemetry,
-        edge=edge,
-    )
-    blind = [e for e in telemetry.events if isinstance(e, AllInstancesBlind)]
-    assert blind and blind[0].first_occurrence is False
-
-
-@pytest.mark.asyncio
-async def test_search_capability_sampled_when_capable(
-    catalog: SqliteCatalogRepository,
-    local_connection: sqlite3.Connection,
-    engine: MatchingEngine,
-) -> None:
-    # A search-capable instance → the current-state gauge is sampled with capable=True
-    # (value 1) EVERY cycle, independent of the edge-triggered AllInstancesBlind notification.
-    telemetry, edge = RecordingTelemetry(), EdgeState()
-    clock = FakeClock()
-    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    client = FakeMuleClient()  # default status: ed2k_high=True, kad CONNECTED → capable
-    worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
-    scheduler_state = SqliteSchedulerStateRepository(local_connection)
-    await run_search_cycle(
-        workers=[worker],
-        clients=[client],
-        keywords=_KEYWORDS,
-        rng=_NoopRng(),
-        node_id="node-A",
-        cycle_index=0,
-        scheduler_state=scheduler_state,
-        backoff=backoff,
-        clock=clock,
-        telemetry=telemetry,
-        edge=edge,
-    )
-    samples = [e for e in telemetry.events if isinstance(e, SearchCapabilitySampled)]
-    assert samples == [SearchCapabilitySampled(capable=True)]
-
-
-@pytest.mark.asyncio
-async def test_search_capability_sampled_when_blind(
-    catalog: SqliteCatalogRepository,
-    local_connection: sqlite3.Connection,
-    engine: MatchingEngine,
-) -> None:
-    # No search-capable instance → the current-state gauge is sampled with capable=False
-    # (value 0) EVERY cycle (unlike AllInstancesBlind, this is not edge-triggered).
-    telemetry, edge = RecordingTelemetry(), EdgeState()
-    clock = FakeClock()
-    backoff = BackoffRegistry(_POLICY, clock, FakeRng())
-    client = UnreachableStatusClient()  # all not search-capable → BLIND
-    worker = _worker("amule-1", client, _deps(catalog, engine, clock, backoff))
-    scheduler_state = SqliteSchedulerStateRepository(local_connection)
-    await run_search_cycle(
-        workers=[worker],
-        clients=[client],
-        keywords=_KEYWORDS,
-        rng=_NoopRng(),
-        node_id="node-A",
-        cycle_index=0,
-        scheduler_state=scheduler_state,
-        backoff=backoff,
-        clock=clock,
-        telemetry=telemetry,
-        edge=edge,
-    )
-    samples = [e for e in telemetry.events if isinstance(e, SearchCapabilitySampled)]
-    assert samples == [SearchCapabilitySampled(capable=False)]

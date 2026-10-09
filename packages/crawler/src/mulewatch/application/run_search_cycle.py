@@ -1,13 +1,12 @@
-"""One search cycle: status → coverage → keywords → fan-out → drain → advance (§4).
+"""One search cycle: keywords → fan-out → drain → advance (§4).
 
 APPLICATION layer. ``run_search_cycle`` runs ONE cycle (spec §4):
 
-  1. ``network_status`` of EACH worker → aggregated ``effective_coverage`` (logged).
-  2. ``generate_keywords(config_keywords)`` → sentinels; ``shuffle_for_cycle`` (seed =
+  1. ``generate_keywords(config_keywords)`` → sentinels; ``shuffle_for_cycle`` (seed =
      node_id + cycle index).
-  3. enqueue a ``SearchTask`` (keyword × channel) into a shared ``asyncio.Queue``.
-  4. N workers drain in parallel (one per instance); one sentinel per worker.
-  5. queue drained → ``write_cycle_state`` (index = N+1, last_full_cycle_at) AND
+  2. enqueue a ``SearchTask`` (keyword × channel) into a shared ``asyncio.Queue``.
+  3. N workers drain in parallel (one per instance); one sentinel per worker.
+  4. queue drained → ``write_cycle_state`` (index = N+1, last_full_cycle_at) AND
      ``save_channel_backoff`` (snapshot of the SHARED registry) - AT THE SAME TIME (spec §3/§7).
 
 The pool degenerates to a sequential loop at N=1 (spec §3). The workers share the
@@ -31,72 +30,16 @@ from collections.abc import Sequence
 
 from mulewatch.application.edge_state import EdgeState
 from mulewatch.application.search_worker import BackoffRegistry, SearchTask, SearchWorker
-from mulewatch.domain.observability.events import (
-    AllInstancesBlind,
-    ConnectedInstancesSampled,
-    SearchCapabilitySampled,
-    SearchCycleCompleted,
-)
-from mulewatch.domain.search.coverage import Coverage, effective_coverage
+from mulewatch.domain.observability.events import SearchCycleCompleted
 from mulewatch.domain.search.cycle import Rng, shuffle_for_cycle
 from mulewatch.domain.search.keywords import generate_keywords
-from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.mule_client import MuleClient
-from mulewatch.ports.port_sync import KadStatus
 from mulewatch.ports.repository_errors import RepositoryError
 from mulewatch.ports.scheduler_state_repository import SchedulerStateRepository
 from mulewatch.ports.telemetry import Telemetry
 
 _logger = logging.getLogger("mulewatch.application.run_search_cycle")
-
-
-def _is_search_capable(*, ed2k_high: bool, kad_status: KadStatus) -> bool:
-    """Can an instance make a search SUCCEED? (HighID OR Kad CONNECTED).
-
-    APPLICATION translation of ``NetworkStatus`` (port) into a pure boolean, before calling the
-    domain ``effective_coverage`` (which does not know ``NetworkStatus`` - dependency rule, the
-    domain never imports a port).
-    """
-    return ed2k_high or kad_status == KadStatus.CONNECTED
-
-
-async def _aggregate_coverage(
-    clients: Sequence[MuleClient], telemetry: Telemetry, edge: EdgeState
-) -> None:
-    """Samples connected{network} + search-capable gauges + aggregated coverage (logged, §7)."""
-    capable: list[bool] = []
-    ed2k_count = 0
-    kad_count = 0
-    for client in clients:
-        # An instance unreachable at sampling time (EC stream dead / not yet connected) must NOT
-        # bring down the whole cycle: we count it as NOT search-capable (the aggregate will then
-        # report BLIND/DEGRADED, the true state). We do NOT (re)connect here - the worker
-        # owns the connection cycle and its anti-ban backoff (reconnecting every cycle would
-        # hammer a down daemon and short-circuit that backoff, spec §3/§7).
-        try:
-            status = await client.network_status()
-        except ClientUnreachableError as error:
-            _logger.warning("instance unreachable at status readout (%s): not capable", error)
-            capable.append(False)
-            continue
-        if status.ed2k_high:
-            ed2k_count += 1
-        if status.kad_status == KadStatus.CONNECTED:
-            kad_count += 1
-        capable.append(_is_search_capable(ed2k_high=status.ed2k_high, kad_status=status.kad_status))
-    await telemetry.emit(ConnectedInstancesSampled(network="ed2k", count=ed2k_count))
-    await telemetry.emit(ConnectedInstancesSampled(network="kad", count=kad_count))
-    coverage = effective_coverage(capable)
-    # Current-state binary gauge, sampled EVERY cycle (independent of the edge-triggered
-    # AllInstancesBlind notification below): 1 when we can search now, 0 when all blind.
-    await telemetry.emit(SearchCapabilitySampled(capable=coverage != Coverage.BLIND))
-    if coverage == Coverage.BLIND:
-        _logger.warning("effective_coverage=%s (blind)", coverage)
-        await telemetry.emit(AllInstancesBlind(first_occurrence=edge.enter("coverage_blind")))
-    else:
-        _logger.info("effective_coverage=%s (%d instance(s))", coverage, len(capable))
-        edge.leave("coverage_blind")
 
 
 async def _worker_loop(
@@ -159,9 +102,9 @@ async def run_search_cycle(
     telemetry: Telemetry,
     edge: EdgeState,
 ) -> None:
-    """Runs ONE full cycle (spec §4); persists the advance + backoff at the END (spec §7)."""
+    """Runs ONE full cycle (spec §4); persists the advance + backoff at the END (spec §7).
+    ``clients`` and ``edge`` are unused since the status loop; they leave with the module."""
     started = clock.now()
-    await _aggregate_coverage(clients, telemetry, edge)
     generated = generate_keywords(keywords)
     texts = tuple(keyword.text for keyword in generated)
     ordered = shuffle_for_cycle(texts, rng, node_id, cycle_index)

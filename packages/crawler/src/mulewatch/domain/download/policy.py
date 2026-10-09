@@ -3,8 +3,7 @@
 PURE domain: no I/O, no repo. ``download_policy`` returns a
 ``DownloadVerdict`` (enum, not bool → explainability + future metric) from PRIMITIVES:
 the ``target_id → status`` lookup is done by the APPLICATION (from the loaded ``targets``)
-and passed as a bool/string, exactly as ``effective_coverage`` receives bools (the
-domain never imports a port).
+and passed as a bool/string (the domain never imports a port).
 
 Guard order (spec §6): a non-``download`` is a conservative guard (DECISION D5:
 never download — the application should not call the policy outside download, but we do

@@ -204,7 +204,7 @@ async def test_app_runs_one_cycle_then_shuts_down_cleanly(
     app_holder["app"] = app
     await asyncio.wait_for(app.run(), timeout=5.0)
     assert created and created[0].close_calls == 1  # client closed AFTER the unwind
-    assert created[0].connect_calls >= 1  # connected at pool setup (before coverage)
+    assert created[0].connect_calls >= 1  # connected at setup
     assert (tmp_path / "catalog.db").exists()
     assert (tmp_path / "local.db").exists()
 
@@ -253,72 +253,6 @@ async def test_the_status_loop_reads_the_search_client_under_its_endpoint_name(
         "p2pwatch_channel_on_network", {"client": "amuled", "network": "kad"}
     )
     assert gauge == 1.0
-
-
-class _OrderRecordingClient(FakeMuleClient):
-    """Records the ORDER of calls (connect / network_status) to prove the ordering bug.
-
-    The bug: ``_aggregate_coverage`` polls the status BEFORE any connection → the 1st
-    ``network_status`` hits an unconnected client and raises. The fix connects at pool
-    setup → ``connect`` PRECEDES the 1st ``network_status`` on each client. A single
-    client in the pool triggers the shutdown (SHARED flag) → the run is bounded to one
-    cycle with no double-signal (which would escalate to SystemExit)."""
-
-    def __init__(
-        self, app_holder: dict[str, CrawlerApp], events: list[str], fired: list[bool]
-    ) -> None:
-        super().__init__()
-        self._app_holder = app_holder
-        self._events = events
-        self._fired = fired  # shared by the whole pool: a single shutdown
-
-    async def connect(self) -> None:
-        self._events.append("connect")
-        await super().connect()
-
-    async def network_status(self) -> NetworkStatus:
-        self._events.append("status")
-        if not self._fired:
-            self._fired.append(True)
-            self._app_holder["app"]._on_signal()
-        return await super().network_status()
-
-
-@pytest.mark.asyncio
-async def test_search_setup_connects_the_client_before_coverage(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # The composition root CONNECTS the search client at setup, BEFORE
-    # _aggregate_coverage polls the status: otherwise the 1st network_status hits an
-    # unconnected client and raises (ordering bug caught by the e2e).
-    created: list[_OrderRecordingClient] = []
-    events: dict[str, list[str]] = {}
-    fired: list[bool] = []
-    app_holder: dict[str, CrawlerApp] = {}
-
-    def factory(endpoint: AmuleEndpoint) -> _OrderRecordingClient:
-        log: list[str] = []
-        events[endpoint.name] = log
-        client = _OrderRecordingClient(app_holder, log, fired)
-        created.append(client)
-        return client
-
-    app = CrawlerApp(
-        crawler_config=_crawler_config(tmp_path),
-        targets=_TARGETS,
-        matcher_config=matcher_config,
-        clock=FakeClock(),
-        rng=_NoopRng(),
-        signal_hub=RecordingSignal(),
-        policy_fingerprint=_FP,
-        client_factory=factory,
-    )
-    app_holder["app"] = app
-    await asyncio.wait_for(app.run(), timeout=5.0)
-    assert len(created) == 1  # one container, one amuled, one search client
-    for log in events.values():
-        assert log[0] == "connect"  # connected at setup BEFORE any status poll
-        assert "status" in log  # coverage did poll the status afterwards
 
 
 class _UnreachableAtStartupClient(_ShutdownOnStatusClient):

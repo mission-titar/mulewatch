@@ -594,8 +594,7 @@ class CrawlerApp:
             endpoint = self._crawler_config.amule_endpoint
             client = self._client_factory(endpoint)
             stack.push_async_callback(client.close)
-            # CONNECT at setup, BEFORE the 1st coverage readout (otherwise _aggregate_coverage
-            # hits an unconnected client and raises). A daemon not yet listening must NOT bring
+            # CONNECT at setup. A daemon not yet listening must NOT bring
             # the crawler down, and in one container that is the NORMAL case, not the exception:
             # the crawler and amuled start together under s6, and amuled starts amuleapi itself,
             # so the crawler routinely knocks first (design §4). We TOLERATE the
