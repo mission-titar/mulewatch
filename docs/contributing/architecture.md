@@ -178,7 +178,7 @@ flowchart TD
 
 Points clés en chemin :
 
-- **Deux canaux** par mot-clé : `SearchChannel.GLOBAL` (multi-serveurs eD2k) et `SearchChannel.KAD`.
+- **Deux canaux** par mot-clé : `ed2k` (multi-serveurs eD2k) et `kad`.
   Une tâche = *(mot-clé, canal)*.
 - **Mots-clés minimaux, depuis la config** : `search.keywords` (défaut `keroro` + `titar`). `keroro`
   ratisse large ; `titar` est une **sentinelle française** rare et non saturable (voir le handoff de

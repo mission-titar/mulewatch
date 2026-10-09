@@ -31,7 +31,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from catalog_matching.engine import MatchingEngine
-from mulewatch.application.channels import network_label
 from mulewatch.application.record_observations import record_observation
 from mulewatch.domain.observability.events import (
     InstanceUnreachable,
@@ -44,7 +43,7 @@ from mulewatch.ports.catalog_repository import CatalogRepository
 from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
 from mulewatch.ports.clock import Clock, Rng
 from mulewatch.ports.decision_signal import DecisionSignal
-from mulewatch.ports.mule_client import MuleClient, SearchChannel
+from mulewatch.ports.mule_client import MuleClient
 from mulewatch.ports.scheduler_state_repository import ChannelBackoff
 from mulewatch.ports.telemetry import Telemetry
 
@@ -72,7 +71,7 @@ class SearchTask:
     idempotent union, hashable (compatible with ``dataclass(frozen=True)``)."""
 
     keyword: str
-    channel: SearchChannel
+    channel: str
     skipped_by: frozenset[str] = frozenset()
 
 
@@ -199,7 +198,7 @@ class SearchWorker:
             task.channel,
         )
         await self._deps.telemetry.emit(
-            SearchTaskDropped(keyword=task.keyword, network=network_label(task.channel))
+            SearchTaskDropped(keyword=task.keyword, network=task.channel)
         )
 
     async def _ensure_connected(self) -> bool:
@@ -223,7 +222,7 @@ class SearchWorker:
         _logger.info("instance %s connected", self._instance)
         return True
 
-    async def _poll_then_fetch(self, channel: SearchChannel) -> int:
+    async def _poll_then_fetch(self, channel: str) -> int:
         """Bounded polling (config budget) then ``fetch_results`` → per-obs pipeline.
 
         Returns the number of CHANGED verdicts (logging). Polling stops at 100 % or when the
@@ -234,7 +233,7 @@ class SearchWorker:
         results) then ``ObservationRecorded``/``DecisionsRecorded`` via ``record_observation``.
         """
         waited = 0.0
-        widen = channel is SearchChannel.KAD
+        widen = channel == "kad"  # the four-call search's last aMule rule, gone with it
         while waited < self._deps.policy.poll_budget_seconds:
             progress = await self._client.search_progress()
             if progress is not None and progress >= _PROGRESS_DONE:
@@ -244,8 +243,7 @@ class SearchWorker:
             await self._deps.clock.sleep(self._deps.policy.poll_interval_seconds)
             waited += self._deps.policy.poll_interval_seconds
         results = await self._client.fetch_results()
-        network = network_label(channel)
-        await self._deps.telemetry.emit(SearchExecuted(network=network, n_results=len(results)))
+        await self._deps.telemetry.emit(SearchExecuted(network=channel, n_results=len(results)))
         changed = 0
         for observation in results:
             if await record_observation(
@@ -254,7 +252,7 @@ class SearchWorker:
                 engine=self._deps.engine,
                 signal=self._deps.signal,
                 telemetry=self._deps.telemetry,
-                network=network,
+                network=channel,
             ):
                 changed += 1
         return changed
@@ -300,7 +298,7 @@ class SearchWorker:
                 error,
                 delay,
             )
-            await self._deps.telemetry.emit(SearchFailed(network=network_label(task.channel)))
+            await self._deps.telemetry.emit(SearchFailed(network=task.channel))
             return
         except ClientUnreachableError as error:
             self._connected = False

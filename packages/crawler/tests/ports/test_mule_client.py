@@ -7,14 +7,7 @@ from mulewatch.ports.mule_client import (
     KadStatus,
     MuleClient,
     NetworkStatus,
-    SearchChannel,
 )
-
-
-def test_search_channel_is_the_closed_global_kad_enum() -> None:
-    assert {channel.value for channel in SearchChannel} == {"global", "kad"}
-    assert SearchChannel("global") is SearchChannel.GLOBAL
-    assert SearchChannel("kad") is SearchChannel.KAD
 
 
 def test_kad_status_is_the_closed_four_state_enum() -> None:
@@ -54,7 +47,7 @@ class _StubClient:
     async def close(self) -> None:
         return None
 
-    async def start_search(self, keyword: str, channel: SearchChannel) -> None:
+    async def start_search(self, keyword: str, channel: str) -> None:
         return None
 
     async def fetch_results(self) -> tuple[FileObservation, ...]:
@@ -78,7 +71,7 @@ async def test_stub_client_satisfies_mule_client_protocol() -> None:
     # The `MuleClient` annotation forces mypy to check STRUCTURAL compatibility.
     client: MuleClient = _StubClient()
     await client.connect()
-    await client.start_search("keroro", SearchChannel.GLOBAL)
+    await client.start_search("keroro", "ed2k")
     assert await client.fetch_results() == ()
     assert await client.search_progress() is None
     assert await client.widen_search() is False
