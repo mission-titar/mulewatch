@@ -4,6 +4,7 @@ these fields. No template-side logic."""
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from mulewatch.domain.file_key import FileKey
 from mulewatch.domain.observation import Sighting
 
 
@@ -58,7 +59,7 @@ class TargetCoverageRow:
 @dataclass(frozen=True)
 class FileDecision:
     """One current decision on a file: the latest match decision for a given
-    ``(ed2k_hash, target_id)``, already filtered to exclude retractions and the legacy
+    ``(file, target_id)``, already filtered to exclude retractions and the legacy
     ``target_id == ""`` sentinel (webui spec §9). A whole-episode file carries two (``072A``
     and ``072B``); an unidentified file carries one (``tier == "catalog"``); a file with no
     current match carries none."""
@@ -71,7 +72,7 @@ class FileDecision:
 class FileRow:
     """Summary view of a file for the explorer (paginated list)."""
 
-    ed2k_hash: str
+    file: FileKey
     size_bytes: int
     filename: str  # latest observed name
     source_count: int | None  # latest observation's count; None for a file never seen
@@ -110,7 +111,7 @@ class DecisionView:
 class FileDetail:
     """Full view of a file: timeline + current decisions."""
 
-    ed2k_hash: str
+    file: FileKey
     size_bytes: int
     sightings: tuple[Sighting, ...]  # oldest first
     latest: Sighting | None  # the latest observation
@@ -190,15 +191,14 @@ class FileRowDisplay:
       as ``"{target_id}: {tier}"`` joined with ``" · "``.
     """
 
-    ed2k_hash: str
-    short_hash: str
+    file_id: str  # 32 lowercase hex, the detail page's path
+    short_hash: str  # of the native id
     filename: str
     sources_display: str  # the count, or "unknown" for a file never seen
     decisions_display: tuple[DecisionCell, ...]  # one per current decision, 0..N; () when none
     size_display: str  # human_size(size_bytes)
     last_seen_display: str  # short_timestamp(last_seen)
     tier_display: str  # shared tier, or "target_id: tier" per decision joined with " · "
-    ed2k_link: str
 
 
 @dataclass(frozen=True)
@@ -344,7 +344,8 @@ class FileDetailDisplay:
     (the text note) otherwise: allows conditional iteration without {% if %}.
     """
 
-    ed2k_hash: str
+    network: str
+    native_id: str
     size_bytes: int
     timeline: tuple[TimelineRow, ...]  # one row per sighting, oldest first
     decisions: tuple[DecisionView, ...]  # 0..N elements: for template iteration

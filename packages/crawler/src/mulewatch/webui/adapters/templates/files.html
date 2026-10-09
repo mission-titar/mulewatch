@@ -63,7 +63,7 @@
   <tbody>
     {% for row in rows %}
     <tr>
-      <td><a href="/files/{{ row.ed2k_hash }}">{{ row.short_hash }}</a></td>
+      <td><a href="/files/{{ row.file_id }}">{{ row.short_hash }}</a></td>
       <td><span class="cell-name" title="{{ row.filename }}">{{ row.filename }}</span></td>
       <td>{{ row.size_display }}</td>
       <td>{{ row.sources_display }}</td>

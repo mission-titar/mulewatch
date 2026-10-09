@@ -1,13 +1,15 @@
 {% extends "base.html" %}
-{% block title %}File {{ file.ed2k_hash }} · mulewatch{% endblock %}
+{% block title %}File {{ file.native_id }} · mulewatch{% endblock %}
 {% block content %}
 <h1>File detail</h1>
 
 <section>
   <h2>General information</h2>
   <dl>
-    <dt>eD2k hash</dt>
-    <dd>{{ file.ed2k_hash }}</dd>
+    <dt>Network</dt>
+    <dd>{{ file.network }}</dd>
+    <dt>Native ID</dt>
+    <dd>{{ file.native_id }}</dd>
     <dt>Size</dt>
     <dd>{{ file.size_bytes }}</dd>
     <dt>eD2k link</dt>

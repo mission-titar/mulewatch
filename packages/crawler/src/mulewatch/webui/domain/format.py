@@ -6,11 +6,11 @@ webui/crawler divergence on the canonical format (webui-security#0 regression: t
 webui interpolated the raw filename, a hostile ``|`` broke the link framing)."""
 
 
-def short_hash(ed2k_hash: str) -> str:
+def short_hash(native_id: str) -> str:
     """Truncated hash for display (first 8 characters + ellipsis)."""
-    if len(ed2k_hash) <= 8:
-        return ed2k_hash
-    return f"{ed2k_hash[:8]}…"
+    if len(native_id) <= 8:
+        return native_id
+    return f"{native_id[:8]}…"
 
 
 _KIB = 1024

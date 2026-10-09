@@ -2,7 +2,7 @@
 
 ``CatalogReader`` exposes four reads:
 
-- ``target_coverage()``: per ``target_id``, the list of ``(ed2k_hash, tier)`` from each
+- ``target_coverage()``: per ``target_id``, the list of ``(file_id, tier)`` from each
   file's LATEST match decision **per target** (ROW_NUMBER window PARTITION BY
   ``(file_id, target_id)``), so a whole-episode file contributes to every target it
   matches. The legacy ``target_id=''`` sentinel and per-target ``retracted`` rows are
@@ -12,10 +12,7 @@
 - ``count_files()``: ``(matched, total)`` counts over the same filtered source, for the
   /files summary line.
 - ``file_detail()``: the timeline of sightings, the latest one, known names + current
-  decisions for a given eD2k hash; ``None`` if the hash is unknown.
-
-Rows still name a file by its eD2k hash (``native_id AS ed2k_hash``) until the routes take a
-``file_id`` (stage 1, block 190).
+  decisions for a given ``file_id``; ``None`` if the file is unknown.
 
 All SQL lives in module constants, parameterized (no value interpolation).
 """
@@ -70,14 +67,14 @@ def _tier_rank_case(column: str) -> str:
 
 _TIER_RANK_CASE = _tier_rank_case("ld.tier")
 
-# Latest decision per (hash, target_id) via ROW_NUMBER window: a whole-episode file holds
+# Latest decision per (file_id, target_id) via ROW_NUMBER window: a whole-episode file holds
 # one CURRENT decision per target it satisfies, so it must contribute to each of them, not
 # just the single most-recent row across all its targets. The legacy target_id='' sentinel
 # (pre-per-target retraction model) is excluded, and a per-target "retracted" latest decision
 # (retracted == unmatched for that target) is dropped too.
 _SQL_COVERAGE = """\
 SELECT
-    f.native_id AS ed2k_hash,
+    ld.file_id,
     ld.target_id,
     ld.tier
 FROM (
@@ -91,11 +88,10 @@ FROM (
         ) AS rn
     FROM match_decisions AS md
 ) AS ld
-JOIN files AS f ON f.file_id = ld.file_id
 WHERE ld.rn = 1
 AND ld.target_id != ''
 AND ld.tier != 'retracted'
-ORDER BY ld.target_id, f.native_id
+ORDER BY ld.target_id, ld.file_id
 """
 
 # The "latest per group" CTEs shared by the explorer list + counter, each folding an
@@ -106,9 +102,9 @@ ORDER BY ld.target_id, f.native_id
 # catalogued file, all NULL for a file never seen; every consumer LEFT JOINs it onto ``files``,
 # the counters only for a name filter, since the default page needs no name.
 #
-# ``latest_dec`` keeps the latest decision per (hash, target_id), dropping the legacy
+# ``latest_dec`` keeps the latest decision per (file_id, target_id), dropping the legacy
 # ``target_id == ''`` sentinel and any target whose latest row is a ``retracted`` marker;
-# ``dec_agg`` folds those to ONE row per hash, target_ids/tiers ``char(31)``-joined and both
+# ``dec_agg`` folds those to ONE row per file, target_ids/tiers ``char(31)``-joined and both
 # ordered by target_id so the two lists stay index-aligned (spec §9, rendering A).
 _SQL_CTES = f"""\
 WITH latest_dec AS (
@@ -150,7 +146,8 @@ _SQL_LIST_FILES_BASE = (
     _SQL_CTES
     + """\
 SELECT
-    f.native_id AS ed2k_hash,
+    f.network,
+    f.native_id,
     f.size_bytes,
     obs.name AS filename,
     obs.source_count_max AS source_count,
@@ -216,7 +213,7 @@ ORDER BY target_id
 
 # Basic lookup on files (for file_detail).
 _SQL_FILE = """\
-SELECT native_id AS ed2k_hash, size_bytes
+SELECT network, native_id, size_bytes
 FROM files
 WHERE file_id = ?
 """
@@ -281,16 +278,16 @@ class CatalogReader:
     # Coverage
     # ------------------------------------------------------------------
 
-    def target_coverage(self) -> dict[str, list[tuple[str, str]]]:
-        """Return, for each ``target_id``, the list of ``(ed2k_hash, tier)``
+    def target_coverage(self) -> dict[str, list[tuple[bytes, str]]]:
+        """Return, for each ``target_id``, the list of ``(file_id, tier)``
         from each file's LATEST match decision **per target** (a whole-episode
         file appears under every target it currently matches).
         """
         rows = self._conn.execute(_SQL_COVERAGE).fetchall()
-        result: dict[str, list[tuple[str, str]]] = {}
+        result: dict[str, list[tuple[bytes, str]]] = {}
         for row in rows:
             target_id: str = row["target_id"]
-            entry = (row["ed2k_hash"], row["tier"])
+            entry = (row["file_id"], row["tier"])
             if target_id not in result:
                 result[target_id] = []
             result[target_id].append(entry)
@@ -328,7 +325,7 @@ class CatalogReader:
           ``DEFAULT_SORT`` (``last_seen``). ``tier`` sorts by the file's strongest tier rank.
         - ``direction``: ``asc`` or ``desc``; an unknown value falls back to ``DEFAULT_DIR``
           (``desc``). SQLite sorts NULLs first in ASC, so a NULL ``filename``/``observed_at``
-          (a file with no observation) clusters predictably. The ``ed2k_hash`` tiebreak keeps
+          (a file with no observation) clusters predictably. The ``file_id`` tiebreak keeps
           paging stable.
         """
         clauses, str_params = _filter_clauses(target, tier, query)
@@ -342,11 +339,11 @@ class CatalogReader:
         if clauses:
             sql += "WHERE " + " AND ".join(clauses) + "\n"
         # ORDER BY from the allowlist (spec §3.1): unknown sort/direction fall back to the
-        # default; the ed2k_hash tiebreak keeps paging stable. Both operands come from fixed
+        # default; the file_id tiebreak keeps paging stable. Both operands come from fixed
         # maps, never from the raw param, so the f-string is injection-safe.
         column_expr = SORT_COLUMNS.get(sort, SORT_COLUMNS[DEFAULT_SORT])
         dir_sql = SORT_DIRECTIONS.get(direction, SORT_DIRECTIONS[DEFAULT_DIR])
-        sql += f"ORDER BY {column_expr} {dir_sql}, f.native_id\n"
+        sql += f"ORDER BY {column_expr} {dir_sql}, f.file_id\n"
         sql += "LIMIT ? OFFSET ?\n"
         params.append(_PAGE_SIZE)
         params.append((page - 1) * _PAGE_SIZE)
@@ -361,7 +358,7 @@ class CatalogReader:
             )
             result.append(
                 FileRow(
-                    ed2k_hash=row["ed2k_hash"],
+                    file=FileKey(Network(row["network"]), row["native_id"]),
                     size_bytes=row["size_bytes"],
                     # A file with no observation LEFT JOINs to NULLs; an unknown count stays None.
                     filename=row["filename"] or "",
@@ -417,14 +414,14 @@ class CatalogReader:
     # Detail
     # ------------------------------------------------------------------
 
-    def file_detail(self, ed2k_hash: str) -> FileDetail | None:
+    def file_detail(self, file_id: bytes) -> FileDetail | None:
         """Return the full detail of a file, or ``None`` if unknown."""
-        file = FileKey(Network.ED2K, ed2k_hash)
-        file_row = self._conn.execute(_SQL_FILE, (file.file_id,)).fetchone()
+        file_row = self._conn.execute(_SQL_FILE, (file_id,)).fetchone()
         if file_row is None:
             return None
 
-        dec_rows = self._conn.execute(_SQL_FILE_DECISIONS, (file.file_id,)).fetchall()
+        file = FileKey(Network(file_row["network"]), file_row["native_id"])
+        dec_rows = self._conn.execute(_SQL_FILE_DECISIONS, (file_id,)).fetchall()
 
         decisions = tuple(
             DecisionView(
@@ -438,7 +435,7 @@ class CatalogReader:
         )
 
         return FileDetail(
-            ed2k_hash=file_row["ed2k_hash"],
+            file=file,
             size_bytes=file_row["size_bytes"],
             sightings=sightings(self._conn, file),
             latest=latest_sighting(self._conn, file),

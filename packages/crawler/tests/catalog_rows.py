@@ -8,14 +8,14 @@ from mulewatch.domain.file_key import FileKey, Network
 SEEN_AT = "2026-06-22T10:00:00.000000+00:00"
 
 
-def _file_id(ed2k_hash: str) -> bytes:
+def file_id(ed2k_hash: str) -> bytes:
     return FileKey(Network.ED2K, ed2k_hash).file_id
 
 
 def insert_file(conn: sqlite3.Connection, ed2k_hash: str, size_bytes: int = 100) -> None:
     conn.execute(
         "INSERT INTO files (file_id, network, native_id, size_bytes) VALUES (?, 'ed2k', ?, ?)",
-        (_file_id(ed2k_hash), ed2k_hash, size_bytes),
+        (file_id(ed2k_hash), ed2k_hash, size_bytes),
     )
 
 
@@ -32,7 +32,7 @@ def insert_observation(
     node_id: str = "n1",
 ) -> None:
     variant = (
-        _file_id(ed2k_hash),
+        file_id(ed2k_hash),
         filename,
         size_bytes,
         media_length_sec,
@@ -69,7 +69,7 @@ def insert_decision(
         "INSERT INTO match_decisions"
         " (file_id, target_id, rule_name, tier, decided_at, node_id)"
         " VALUES (?, ?, ?, ?, ?, ?)",
-        (_file_id(ed2k_hash), target_id, rule_name, tier, decided_at, node_id),
+        (file_id(ed2k_hash), target_id, rule_name, tier, decided_at, node_id),
     )
 
 

@@ -9,6 +9,7 @@ import pytest
 
 from catalog_matching.config import TIER_RANK
 from mulewatch.adapters.persistence_sqlite.reader import open_reader
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.webui.adapters.catalog_read import (
     _JOIN_DECISIONS,
     _JOIN_LATEST_SIGHTING,
@@ -23,7 +24,7 @@ from mulewatch.webui.adapters.catalog_read import (
     _tier_rank_case,
 )
 from mulewatch.webui.domain.views import FileRow
-from tests.catalog_rows import insert_decision, insert_file, insert_observation
+from tests.catalog_rows import file_id, insert_decision, insert_file, insert_observation
 
 # Selects the CTE under test on its own: SQLite drops the CTEs a query does not reference, so
 # the resulting plan is exactly how ``latest_sighting`` is resolved.
@@ -84,7 +85,7 @@ def test_target_coverage_groups_by_target(catalog_db: Path) -> None:
     _seed(catalog_db)
     reader = CatalogReader(open_reader(catalog_db))
     coverage = reader.target_coverage()
-    assert coverage["062A"] == [("a" * 32, "download")]
+    assert coverage["062A"] == [(file_id("a" * 32), "download")]
 
 
 def test_target_coverage_empty_db_returns_empty(catalog_db: Path) -> None:
@@ -107,8 +108,8 @@ def test_target_coverage_multiple_files_same_target(catalog_db: Path) -> None:
 def test_target_coverage_whole_episode_contributes_to_both_targets(catalog_db: Path) -> None:
     _seed_whole_episode(catalog_db)
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
-    assert coverage["072A"] == [("a" * 32, "download")]
-    assert coverage["072B"] == [("a" * 32, "download")]
+    assert coverage["072A"] == [(file_id("a" * 32), "download")]
+    assert coverage["072B"] == [(file_id("a" * 32), "download")]
 
 
 def test_target_coverage_ignores_legacy_empty_target_sentinel(catalog_db: Path) -> None:
@@ -127,7 +128,7 @@ def test_target_coverage_ignores_legacy_empty_target_sentinel(catalog_db: Path) 
             conn, h, "", "retracted", rule_name="", decided_at="2026-07-05T11:00:00.000000+00:00"
         )
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
-    assert coverage["090A"] == [(h, "download")]
+    assert coverage["090A"] == [(file_id(h), "download")]
     assert "" not in coverage
 
 
@@ -141,7 +142,7 @@ def test_list_files_no_filter_returns_all(catalog_db: Path) -> None:
     reader = CatalogReader(open_reader(catalog_db))
     rows = reader.list_files(target=None, tier=None, query=None, page=1)
     assert len(rows) == 1
-    assert rows[0].ed2k_hash == "a" * 32
+    assert rows[0].file == FileKey(Network.ED2K, "a" * 32)
     assert rows[0].filename == "keroro_062.avi"
     assert rows[0].source_count == 5
 
@@ -230,8 +231,9 @@ def test_count_files_whole_episode_counts_as_one_file(catalog_db: Path) -> None:
 
 def test_file_detail_carries_observations_and_decisions(catalog_db: Path) -> None:
     _seed(catalog_db)
-    detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(file_id("a" * 32))
     assert detail is not None
+    assert detail.file == FileKey(Network.ED2K, "a" * 32)
     assert detail.size_bytes == 100
     assert len(detail.decisions) == 1
     assert detail.decisions[0].target_id == "062A"
@@ -240,9 +242,9 @@ def test_file_detail_carries_observations_and_decisions(catalog_db: Path) -> Non
     assert detail.known_filenames == ("keroro_062.avi",)
 
 
-def test_file_detail_unknown_hash_is_none(catalog_db: Path) -> None:
+def test_file_detail_unknown_file_id_is_none(catalog_db: Path) -> None:
     _seed(catalog_db)
-    assert CatalogReader(open_reader(catalog_db)).file_detail("f" * 32) is None
+    assert CatalogReader(open_reader(catalog_db)).file_detail(file_id("f" * 32)) is None
 
 
 def test_file_detail_retracted_target_is_no_decision(catalog_db: Path) -> None:
@@ -250,7 +252,7 @@ def test_file_detail_retracted_target_is_no_decision(catalog_db: Path) -> None:
     from ``file_detail``, identical to an unmatched file (spec §9). The earlier
     (pre-retraction) real decision must not leak through."""
     _seed_retracted(catalog_db)
-    detail = CatalogReader(open_reader(catalog_db)).file_detail("c" * 32)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(file_id("c" * 32))
     assert detail is not None
     assert detail.decisions == ()
 
@@ -266,7 +268,7 @@ def test_file_detail_no_decision(catalog_db: Path) -> None:
             observed_at="2026-06-22T09:00:00.000000+00:00",
             size_bytes=200,
         )
-    detail = CatalogReader(open_reader(catalog_db)).file_detail("b" * 32)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(file_id("b" * 32))
     assert detail is not None
     assert detail.decisions == ()
     assert detail.size_bytes == 200
@@ -274,7 +276,7 @@ def test_file_detail_no_decision(catalog_db: Path) -> None:
 
 def test_file_detail_whole_episode_lists_both_decisions(catalog_db: Path) -> None:
     _seed_whole_episode(catalog_db)
-    detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(file_id("a" * 32))
     assert detail is not None
     assert [d.target_id for d in detail.decisions] == ["072A", "072B"]
 
@@ -318,7 +320,7 @@ def test_target_coverage_uses_latest_decision_per_hash(catalog_db: Path) -> None
         insert_decision(conn, h, "062A", "catalog")
         insert_decision(conn, h, "062A", "download", decided_at="2026-06-22T11:00:00.000000+00:00")
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
-    assert coverage["062A"] == [(h, "download")]
+    assert coverage["062A"] == [(file_id(h), "download")]
 
 
 def test_target_coverage_omits_retracted(catalog_db: Path) -> None:
@@ -326,7 +328,7 @@ def test_target_coverage_omits_retracted(catalog_db: Path) -> None:
     _seed(catalog_db)
     _seed_retracted(catalog_db)
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
-    assert coverage["062A"] == [("a" * 32, "download")]
+    assert coverage["062A"] == [(file_id("a" * 32), "download")]
     assert "063A" not in coverage  # the retracted file's earlier (now stale) target
 
 
@@ -338,13 +340,13 @@ def test_coverage_tie_break_on_id(catalog_db: Path) -> None:
         insert_decision(conn, h, "062A", "catalog")
         insert_decision(conn, h, "062A", "download")
     coverage = CatalogReader(open_reader(catalog_db)).target_coverage()
-    assert coverage["062A"] == [(h, "download")]
+    assert coverage["062A"] == [(file_id(h), "download")]
 
 
 def test_file_detail_observations_include_media_fields_none(catalog_db: Path) -> None:
     """A sighting's media_length_sec and bitrate_kbps are None when the observation has none."""
     _seed(catalog_db)
-    detail = CatalogReader(open_reader(catalog_db)).file_detail("a" * 32)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(file_id("a" * 32))
     assert detail is not None
     assert len(detail.sightings) == 1
     obs = detail.sightings[0]
@@ -366,7 +368,7 @@ def test_file_detail_observations_include_media_fields_present(catalog_db: Path)
             media_length_sec=1320,
             bitrate_kbps=192,
         )
-    detail = CatalogReader(open_reader(catalog_db)).file_detail(h)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(file_id(h))
     assert detail is not None
     assert len(detail.sightings) == 1
     obs = detail.sightings[0]
@@ -419,7 +421,7 @@ def test_list_files_matched_only_excludes_unmatched(catalog_db: Path) -> None:
     _seed_unmatched(catalog_db)
     reader = CatalogReader(open_reader(catalog_db))
     rows = reader.list_files(target=None, tier=None, query=None, page=1, matched_only=True)
-    hashes = {r.ed2k_hash for r in rows}
+    hashes = {r.file.native_id for r in rows}
     assert hashes == {"a" * 32}  # only the matched file
 
 
@@ -430,7 +432,7 @@ def test_list_files_matched_only_excludes_retracted(catalog_db: Path) -> None:
     _seed_retracted(catalog_db)
     reader = CatalogReader(open_reader(catalog_db))
     rows = reader.list_files(target=None, tier=None, query=None, page=1, matched_only=True)
-    hashes = {r.ed2k_hash for r in rows}
+    hashes = {r.file.native_id for r in rows}
     assert hashes == {"a" * 32}  # the retracted file ("c"*32) is excluded
 
 
@@ -439,7 +441,7 @@ def test_list_files_default_includes_unmatched(catalog_db: Path) -> None:
     _seed_unmatched(catalog_db)
     reader = CatalogReader(open_reader(catalog_db))
     rows = reader.list_files(target=None, tier=None, query=None, page=1)
-    hashes = {r.ed2k_hash for r in rows}
+    hashes = {r.file.native_id for r in rows}
     assert hashes == {"a" * 32, "b" * 32}  # default matched_only=False → both
 
 
@@ -584,7 +586,7 @@ def _seed_sortable(db: Path) -> None:
 
 
 def _hashes(rows: list[FileRow]) -> list[str]:
-    return [r.ed2k_hash for r in rows]
+    return [r.file.native_id for r in rows]
 
 
 @pytest.mark.parametrize(
@@ -652,8 +654,8 @@ def test_list_files_sort_injection_is_rejected_not_interpolated(catalog_db: Path
         assert conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 3
 
 
-def test_list_files_sort_tiebreak_is_ed2k_hash(catalog_db: Path) -> None:
-    """Two files with the same sort key keep a deterministic order via the ed2k_hash tiebreak."""
+def test_list_files_sort_tiebreak_is_file_id(catalog_db: Path) -> None:
+    """Two files with the same sort key keep a deterministic order via the file_id tiebreak."""
     with sqlite3.connect(catalog_db) as conn:
         for h in ("b" * 32, "a" * 32):  # inserted b-first on purpose
             insert_file(conn, h)
@@ -662,7 +664,7 @@ def test_list_files_sort_tiebreak_is_ed2k_hash(catalog_db: Path) -> None:
     rows = reader.list_files(
         target=None, tier=None, query=None, page=1, sort="size", direction="asc"
     )
-    assert _hashes(rows) == ["a" * 32, "b" * 32]  # ed2k_hash asc breaks the tie
+    assert _hashes(rows) == ["b" * 32, "a" * 32]  # b's file_id sorts first
 
 
 def test_tier_rank_case_matches_tier_rank() -> None:
@@ -747,7 +749,7 @@ def test_list_files_lists_file_with_no_observation(catalog_db: Path) -> None:
     rows = CatalogReader(open_reader(catalog_db)).list_files(
         target=None, tier=None, query=None, page=1
     )
-    assert [row.ed2k_hash for row in rows] == [h]
+    assert [row.file.native_id for row in rows] == [h]
     assert rows[0].filename == ""
     assert rows[0].last_seen == ""
 
@@ -794,7 +796,7 @@ def test_list_files_observation_tie_break_on_the_newest_variant(catalog_db: Path
 
 def test_file_detail_of_a_file_never_seen_has_no_sighting(catalog_db: Path) -> None:
     h = _seed_file_without_observation(catalog_db)
-    detail = CatalogReader(open_reader(catalog_db)).file_detail(h)
+    detail = CatalogReader(open_reader(catalog_db)).file_detail(file_id(h))
     assert detail is not None
     assert (detail.sightings, detail.latest, detail.known_filenames) == ((), None, ())
 
