@@ -58,6 +58,14 @@ CASES: list[tuple[ev.Event, Report]] = [
         ),
     ),
     (
+        ev.SearchTaskDropped(keyword="titar", network="kad"),
+        Report(
+            Severity.WARNING,
+            "task 'titar'/kad dropped (all instances in backoff)",
+            (MetricInstruction(MetricName.SEARCH_TASKS_DROPPED, "inc", (("network", "kad"),)),),
+        ),
+    ),
+    (
         ev.ObservationRecorded(network="kad"),
         Report(
             Severity.DEBUG,

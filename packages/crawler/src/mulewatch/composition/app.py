@@ -8,7 +8,8 @@ COMPOSITION layer (the only one allowed to import adapters AND application). Bui
 - ONE ``MuleClient`` + ``SearchWorker`` on the container's single amuled (design §6), whose
   session the status loop shares.
 
-Loop (``_run_loop``): per cycle, ``run_search_cycle`` then sleep (cadence − elapsed).
+Loops: the search tasks (``run_search_tasks``), the status loop, and the download and port-sync
+loops when configured.
 OBSERVABLE & BOUNDED shutdown (spec §6): ``loop.add_signal_handler`` (NOT ``KeyboardInterrupt``,
 which would preempt a sync function mid-write); 1st ^C → human line on stderr +
 cancellation of the ``TaskGroup``; 2nd ^C → immediate ``SystemExit``; long-lived resources
@@ -67,7 +68,7 @@ from mulewatch.application.run_download_cycle import (
     DownloadLoopDeps,
     download_loop,
 )
-from mulewatch.application.run_search_cycle import run_search_cycle
+from mulewatch.application.search_tasks import run_search_tasks
 from mulewatch.application.search_worker import (
     BackoffRegistry,
     SearchWorker,
@@ -244,43 +245,6 @@ class CrawlerApp:
             _human("Forced shutdown.")
             raise SystemExit(1)
 
-    async def _run_loop(
-        self,
-        *,
-        workers: Sequence[SearchWorker],
-        clients: Sequence[MuleClient],
-        node_id: str,
-        scheduler_state: SchedulerStateRepository,
-        backoff: BackoffRegistry,
-        telemetry: Telemetry,
-        edge: EdgeState,
-    ) -> None:
-        """Cycle loop until the shutdown event (cancelled by the ``TaskGroup``)."""
-        cycle_index = scheduler_state.read_cycle_index()
-        while not self._shutdown.is_set():
-            # Pause gate (phase P6a): returns at once while running (``_resumed`` set); blocks
-            # here while paused (the current cycle already finished, the crawler idles). A
-            # shutdown cancels the task at this await - clean (never mid DB write).
-            await self._resumed.wait()
-            started = self._clock.now()
-            await run_search_cycle(
-                workers=workers,
-                clients=clients,
-                keywords=self._crawler_config.search_keywords,
-                rng=self._rng,
-                node_id=node_id,
-                cycle_index=cycle_index,
-                scheduler_state=scheduler_state,
-                backoff=backoff,
-                clock=self._clock,
-                telemetry=telemetry,
-                edge=edge,
-            )
-            cycle_index += 1
-            elapsed = (self._clock.now() - started).total_seconds()
-            remaining = max(0.0, self._crawler_config.cycle_interval_seconds - elapsed)
-            await self._clock.sleep(remaining)
-
     def _port_sync_enabled(self) -> bool:
         """Port-sync activates IFF the ``port_sync`` section is present (``enabled: true``).
 
@@ -380,15 +344,11 @@ class CrawlerApp:
         *,
         shutdown_timeout: asyncio.Timeout,
         workers: Sequence[SearchWorker],
-        clients: Sequence[MuleClient],
-        node_id: str,
         scheduler_state: SchedulerStateRepository,
         backoff: BackoffRegistry,
         status_deps: StatusLoopDeps,
         download_deps: DownloadLoopDeps | None,
         port_sync_deps: PortSyncLoopDeps | None,
-        telemetry: Telemetry,
-        edge: EdgeState,
     ) -> None:
         """Launch the loops, wait for shutdown (UNBOUNDED), ARM the bound, cancel ALL and unwind.
 
@@ -401,8 +361,8 @@ class CrawlerApp:
         Cancellation lands at the next network ``await`` (never mid DB write, sync repos,
         spec §6).
         PROMPT SHUTDOWN OF ALL LOOPS: each sibling task must be cancelled EXPLICITLY -
-        cancelling ``loop_task`` (search) does NOT cancel the download/port-sync loops, which are
-        its siblings in the ``TaskGroup``. Without this, shutdown would wait on each loop's
+        cancelling the search tasks does NOT cancel the download/port-sync loops, which are
+        their siblings in the ``TaskGroup``. Without this, shutdown would wait on each loop's
         in-cycle sleep (``_sleep_or_nudge`` of the download watches ONLY poll/nudge, not
         ``self._shutdown``), and the ``shutdown_deadline`` armed
         above would fire a ``TimeoutError`` FIRST - a routine Ctrl-C would then force the
@@ -416,14 +376,13 @@ class CrawlerApp:
         async with asyncio.TaskGroup() as group:
             tasks = [
                 group.create_task(
-                    self._run_loop(
+                    run_search_tasks(
                         workers=workers,
-                        clients=clients,
-                        node_id=node_id,
-                        scheduler_state=scheduler_state,
+                        keywords=self._crawler_config.search_keywords,
+                        resumed=self._resumed,
                         backoff=backoff,
-                        telemetry=telemetry,
-                        edge=edge,
+                        scheduler_state=scheduler_state,
+                        clock=self._clock,
                     )
                 ),
                 group.create_task(status_loop(status_deps)),
@@ -498,7 +457,7 @@ class CrawlerApp:
 
         Ownership (spec §6): the ``AsyncExitStack`` owns the long-lived resources (daemon clients +
         2 connections). The shutdown bound is an ``asyncio.timeout`` ENTERED DISARMED (deadline
-        ``None``): the steady-state run (waiting on the signal, cycles) is UNBOUNDED - otherwise
+        ``None``): the steady-state run (waiting on the signal, searches) is UNBOUNDED - otherwise
         the crawler would die after ``shutdown_deadline_seconds`` of normal operation. ONLY the
         SHUTDOWN PHASE is bounded: ``_supervise`` ARMS the bound (``reschedule``) as soon as
         shutdown is requested, so the ``TaskGroup`` unwind THEN the LIFO stack close below fall
@@ -552,7 +511,7 @@ class CrawlerApp:
                 self._start_webui(stack)
             # SHARED backoff registry: built ONCE, RELOADED from scheduler_state
             # (backoff survives restart, spec §3/§7), injected into ALL workers
-            # + passed to the cycle that persists it. Single writer on the event loop → no race.
+            # + passed to the search tasks that persist it. Single writer on the event loop.
             policy = _build_policy(self._crawler_config)
             backoff = BackoffRegistry(policy, self._clock, self._rng)
             backoff.load_from(scheduler_state.load_channel_backoff())
@@ -582,9 +541,8 @@ class CrawlerApp:
                 await client.connect()
             except ClientUnreachableError as error:
                 _logger.warning(
-                    "amuled unreachable at startup (%s): tolerated, backoff at cycle", error
+                    "amuled unreachable at startup (%s): tolerated, the searches back off", error
                 )
-            clients: list[MuleClient] = [client]
             workers = [SearchWorker(endpoint.name, client, deps)]
             # The status loop shares the search session (one session per container's amuled).
             status_deps = StatusLoopDeps(
@@ -625,7 +583,7 @@ class CrawlerApp:
             # comment/whitespace-only edit to matcher.yml/targets.yml still triggers one
             # harmless extra pass, which then writes nothing before the marker updates).
             # Runs to completion BEFORE the loops so tier actions (download nudge, notify)
-            # fire for the very first cycle, not a cycle later.
+            # fire for the very first search, not a search later.
             summary = await run_backfill_if_policy_changed(
                 fingerprint=self._policy_fingerprint,
                 local_repo=local_repo,
@@ -650,17 +608,13 @@ class CrawlerApp:
                 await self._supervise(
                     shutdown_timeout=shutdown_timeout,
                     workers=workers,
-                    clients=clients,
-                    node_id=node_id,
                     scheduler_state=scheduler_state,
                     backoff=backoff,
                     status_deps=status_deps,
                     download_deps=download_deps,
                     port_sync_deps=port_sync_deps,
-                    telemetry=telemetry,
-                    edge=edge,
                 )
-                _human(f"{len(clients)} amuled session(s) closing…")
+                _human(f"{len(workers)} amuled session(s) closing…")
                 await stack.aclose()
                 _human("Databases closed: exiting.")
         finally:
