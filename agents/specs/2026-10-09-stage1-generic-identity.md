@@ -484,7 +484,7 @@ Paths under `packages/crawler/` unless noted. Sizes are estimates from `wc -l` o
 | 190 | `feat/webui-file-id-urls` | File pages addressed by `file_id` | `/files/{file_id}`, views, detail labels, ed2k link from `native_id`, `coverage.py`, `format.py`, webui tests, `docs/operate.md` (D13) | 190 / 11 |
 | 200 | `feat/vacuum-after-migration` | Catalog 0009, `VACUUM` | `0009_vacuum.sql` (the directive's consumer), its test, `docs/limits.md` (first boot after the upgrade, with the duration measured in D18), `docs/contributing/architecture.md` (schema, version 9, MD4 and `file_observations` passages), `docs/operate.md` (merge of an older snapshot) | 130 / 5 |
 | 205 | `fix/stage1-holistic-findings` | Holistic fixes in code (Corrected: closing block split at its file bound) | merge's `MergeError` and the `AGENTS.md` invariant, the SQL console's hex, `Sighting` collapsed, `file=` log fields, docstrings, their tests | 90 / 18 |
-| 210 | `docs/stage1-closing` | Closing | Holistic findings, `BACKLOG.md` reconciled, handoff | n/a |
+| 210 | `docs/stage1-closing` | Closing | The other holistic findings (0009 truncates the WAL, a log line per migration, the webui reader on `temp_store = FILE`, operator and contributor docs), `BACKLOG.md` reconciled, handoff (Corrected: the code fixes moved to 205) | 80 / 10 |
 
 The deletions run in import order: the command (30), then merge's copy of ranges (40), then the webui's
 compacted days (50), then the engine (60), which is the last importer of `domain/retention` and of
