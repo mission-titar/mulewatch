@@ -33,6 +33,25 @@ S'il en manque, la migration échoue sans rien abîmer : elle est annulée, le c
 état d'avant, et le crawler refuse de démarrer. Le diagnostic et le remède sont dans
 [« Un conteneur redémarre en boucle »](troubleshooting-start.md#un-conteneur-redémarre-en-boucle).
 
+### Le premier démarrage qui réécrit le catalogue
+
+Les migrations `catalog/0006` à `0009` réécrivent tout le catalogue : chaque fichier change
+d'identifiant, et les observations passent à un stockage compact. Mesuré le 2026-10-09 sur une
+copie d'un catalogue réel de 11,65 millions d'observations (5,3 Go), avec l'image, la base sur un
+dossier monté de Docker Desktop et `--memory 2g` :
+
+| Étape | Durée | Mémoire au plus haut | Disque en plus, au plus haut |
+|---|---|---|---|
+| `0006` et `0007` | 170 à 235 s | 288 Mio | 0,44 Go |
+| `0008` | 10 s | 324 Mio | 0,24 Go |
+
+Comptez donc quelques minutes pendant lesquelles le crawler ne cherche rien. Le disque en plus se
+répartit entre le WAL, à côté du catalogue, et les fichiers temporaires dans le conteneur.
+
+Les trois premières laissent le fichier à sa taille d'avant : l'espace libéré reste à l'intérieur.
+`0009` le rend au disque (`VACUUM`), et le fichier retombe à la taille de ses données, 0,21 Go pour
+un catalogue synthétique de 11,5 millions d'observations (mesuré le 2026-10-08).
+
 ## Le durcissement du conteneur s'arrête assez bas
 
 Le premier processus du conteneur tourne en root : il crée l'utilisateur `amule` à partir de vos

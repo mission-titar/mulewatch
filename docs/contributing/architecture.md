@@ -232,7 +232,8 @@ sequenceDiagram
 ```
 
 - Un résultat devient une `FileObservation` via `adapters/mule_api/mapping.py` (capture
-  exhaustive : le hash MD4, le nom, la taille, le nombre de sources, plus chaque clé non mappée).
+  exhaustive : l'identité du fichier, une `FileKey` dont le hash MD4 est l'identifiant natif sur le
+  réseau `ed2k`, le nom, la taille, le nombre de sources, plus chaque clé non mappée).
   **La durée, le débit et le codec arrivent maintenant avec le résultat**, quand le serveur qui
   répond les annonce : c'est une déclaration du réseau, jamais une mesure locale, et le champ vaut
   `null` sur la plupart des résultats globaux et Kad. Rien n'ouvre jamais le fichier pour en savoir
@@ -243,7 +244,7 @@ sequenceDiagram
   `409 kad_more_exhausted`. Au premier tour, Kad n'a encore interrogé personne : relancer
   gaspillerait l'une de ses 4 relances. Un échec de cet appel n'arrête jamais la recherche : on
   cesse simplement de l'élargir.
-- L'observation est écrite (`files` + `file_observations`) **puis** matchée. La décision
+- L'observation est écrite (`files`, `observation_variants`, `observations`) **puis** matchée. La décision
   (`target_id`, `rule_name`, `tier`) va dans `match_decisions`. En mode téléchargement, un tier
   `download` *pousse* la boucle de téléchargement pour qu'elle réagisse sans attendre son intervalle.
 - Une opération que le démon refuse (`400 amuled_rejected`) met ce **canal** en **backoff**
@@ -367,7 +368,8 @@ est terminal ; `failed` n'est terminal que jusqu'à ce qu'amuled en décide autr
 flowchart LR
   subgraph cat["catalog.db · append-only"]
     f["files"]
-    fo["file_observations"]
+    ov["observation_variants"]
+    o["observations"]
     md["match_decisions"]
   end
   subgraph loc["local.db · per node"]
@@ -377,7 +379,7 @@ flowchart LR
   end
 ```
 
-- **`catalog.db`** (version de schéma 6) : la connaissance accumulée, **append-only** (triggers
+- **`catalog.db`** (version de schéma 9) : la connaissance accumulée, **append-only** (triggers
   `BEFORE UPDATE/DELETE -> ABORT`), pour que N nœuds fusionnent en un seul catalogue (`python -m
   mulewatch.merge`). Les insertions sont **idempotentes** (`INSERT OR IGNORE` /
   `ON CONFLICT DO NOTHING`), donc sans danger en cas de redémarrage en pleine écriture.
@@ -393,6 +395,14 @@ niveau ne soit condamnée au premier démarrage. `catalog/0006` a supprimé `sou
 `source_observations` et `file_observation_ranges`, que plus rien n'écrit ; un catalogue dont
 `file_observation_ranges` contient une ligne refuse de migrer, car un jour compacté ne redevient
 pas des observations.
+
+`catalog/0007` stocke les observations en variantes plus horodatages : une variante
+(`observation_variants`) porte ce qui se répète d'une observation à l'autre (nom, taille, durée,
+débit, `raw_meta`, mot-clé, nœud), et `observations` ne garde par ligne que l'instant, en
+microsecondes, et le nombre de sources. `codec`, `file_type` et `complete_source_count` sont
+repliés dans `raw_meta`. `catalog/0008` identifie un fichier par `(network, native_id)`, avec pour
+clé `file_id`, un UUID v5 de ce couple, identique sur tous les nœuds ; `aich_hash` disparaît.
+`catalog/0009` rend au disque, par un `VACUUM`, la place que ces réécritures ont libérée.
 
 ### 8.1 Écrire une migration
 

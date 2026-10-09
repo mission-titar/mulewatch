@@ -80,7 +80,8 @@ regarder. amuleapi fait exception : démarré par `amuled` plutôt que par s6, i
 
 Des ordres de grandeur, à ajuster selon votre trafic eMule réel et le nombre de cibles :
 
-- **`data/catalog.db`** grossit lentement, de l'ordre de 1 à 6 Go par an.
+- **`data/catalog.db`** grossit lentement, de l'ordre de 0,25 Go par trimestre au rythme d'un nœud
+  réel (estimation du 2026-10-09).
 - **`downloads/`** s'accumule sans borne, rien ne le purge. Le crawler mesure l'espace libre et
   refuse un nouveau candidat si cela passerait sous `download.min_free_bytes` (10 Gio par défaut).
   C'est un **plancher**, pas un ménage : il bloque les nouveaux téléchargements quand le disque se
@@ -100,8 +101,8 @@ le coupable, puis faites le ménage dans `downloads/incoming`.
 
 ## Outils de catalogue
 
-Ces deux outils sont ponctuels, jamais déclenchés par le crawler, et **ne modifient jamais une base
-en place** : ils lisent une source et écrivent un fichier neuf.
+Ces deux outils sont ponctuels et jamais déclenchés par le crawler. La fusion **n'écrit que dans sa
+destination** : un fichier neuf (`--output`), ou la source que vous désignez par `--into`.
 
 **Valider la configuration**, sans rien démarrer. À lancer avant un déploiement. Sort en erreur si
 l'un des trois fichiers de config est invalide.
@@ -117,6 +118,16 @@ Le cycle de partage est décrit sur la [page d'accueil](index.md#partage).
 ```bash
 docker compose exec --user amule mulewatch python -m mulewatch.merge \
   --output /data/catalog-merged.db /data/catalog.db /data/source-b.db
+```
+
+Une source doit être au même schéma que votre version : la fusion refuse une copie faite par une
+version plus ancienne (`has catalog schema version 5, expected 9`), car elle ne migre jamais une
+source. Migrez-la d'abord en la fusionnant dans elle-même, qui l'ouvre et la met à niveau sur place,
+de préférence sur une copie, puisqu'une version plus ancienne ne pourra plus la lire :
+
+```bash
+docker compose exec --user amule mulewatch python -m mulewatch.merge \
+  --into /data/source-b.db /data/source-b.db
 ```
 
 Pour valider en profondeur (suites d'intégration, smoke, CI), voyez
