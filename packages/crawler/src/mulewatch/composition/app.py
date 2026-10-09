@@ -177,8 +177,6 @@ def _build_policy(config: CrawlerConfig) -> WorkerPolicy:
         backoff_cap_seconds=config.backoff.cap_seconds,
         backoff_factor=config.backoff.factor,
         backoff_jitter_ratio=config.backoff.jitter_ratio,
-        poll_budget_seconds=config.search_poll_budget_seconds,
-        poll_interval_seconds=config.search_poll_interval_seconds,
         keyword_pause_min_seconds=config.keyword_pause_min_seconds,
         keyword_pause_max_seconds=config.keyword_pause_max_seconds,
     )

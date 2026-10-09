@@ -1,4 +1,4 @@
-"""Search worker: owns 1 ``MuleClient``, drains the queue (spec §4).
+"""Search worker: owns 1 ``SearchClient``, drains the queue (spec §4).
 
 APPLICATION layer. One worker per ``amuled`` instance (spec §3: N workers = N
 sessions = real parallelism; degenerates to a sequential loop at N=1). Per item
@@ -6,8 +6,7 @@ sessions = real parallelism; degenerates to a sequential loop at N=1). Per item
 
   consults the backoff (SKIPS the item if the instance OR the channel is backed off until its
   ``retry_after``) → ensures the connection (per-instance reconnection if down) →
-  ``start_search`` → bounded polling (config budget) → ``fetch_results`` →
-  ``record_observation`` for EACH obs.
+  ``search`` with the core's budget → ``record_observation`` for EACH obs.
 
 Error handling (spec §7, "the client signals, Plan C decides") - the application catches
 ONLY PORT exceptions (never an adapter's, dependency rule §4):
@@ -38,18 +37,20 @@ from mulewatch.domain.observability.events import (
     SearchFailed,
     SearchTaskDropped,
 )
+from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.search.backoff import backoff_delay
 from mulewatch.ports.catalog_repository import CatalogRepository
 from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
 from mulewatch.ports.clock import Clock, Rng
 from mulewatch.ports.decision_signal import DecisionSignal
-from mulewatch.ports.mule_client import MuleClient
 from mulewatch.ports.scheduler_state_repository import ChannelBackoff
+from mulewatch.ports.search_client import SearchClient
 from mulewatch.ports.telemetry import Telemetry
 
 _logger = logging.getLogger("mulewatch.application.search_worker")
 
-_PROGRESS_DONE = 100  # search_progress() at 100 % → we stop polling
+# A ceiling, not a duration: above Kad's 45 s and an ed2k sweep, it guards a search never ending.
+SEARCH_BUDGET_SECONDS = 120.0
 
 
 def _iso(moment: datetime) -> str:
@@ -90,8 +91,6 @@ class WorkerPolicy:
     backoff_cap_seconds: float
     backoff_factor: float
     backoff_jitter_ratio: float
-    poll_budget_seconds: float
-    poll_interval_seconds: float
     keyword_pause_min_seconds: float
     keyword_pause_max_seconds: float
 
@@ -173,7 +172,7 @@ class WorkerDeps:
 class SearchWorker:
     """Drives ONE ``amuled`` to drain ``SearchTask`` objects (spec §3/§4)."""
 
-    def __init__(self, instance_name: str, client: MuleClient, deps: WorkerDeps) -> None:
+    def __init__(self, instance_name: str, client: SearchClient, deps: WorkerDeps) -> None:
         self._instance = instance_name
         self._client = client
         self._deps = deps
@@ -183,6 +182,11 @@ class SearchWorker:
     def instance_name(self) -> str:
         """Logical name of the driven instance (backoff key + ``skipped_by`` identifier)."""
         return self._instance
+
+    @property
+    def channels(self) -> tuple[str, ...]:
+        """The channels its client declares."""
+        return self._client.channels
 
     def is_blocked_for(self, task: SearchTask) -> bool:
         """``True`` if the task's instance OR channel is backed off (skip+re-enqueue, §14)."""
@@ -222,27 +226,9 @@ class SearchWorker:
         _logger.info("instance %s connected", self._instance)
         return True
 
-    async def _poll_then_fetch(self, channel: str) -> int:
-        """Bounded polling (config budget) then ``fetch_results`` → per-obs pipeline.
-
-        Returns the number of CHANGED verdicts (logging). Polling stops at 100 % or when the
-        budget is exhausted; ``fetch_results`` returns the cumulative snapshot. A
-        ``RepositoryError`` per obs is ABSORBED (logged + counted) INSIDE
-        ``record_observation`` → the cycle continues (spec §7), a single corrupt obs does not
-        bring down the whole sweep. Emits ``SearchExecuted`` (network label + number of
-        results) then ``ObservationRecorded``/``DecisionsRecorded`` via ``record_observation``.
-        """
-        waited = 0.0
-        widen = channel == "kad"  # the four-call search's last aMule rule, gone with it
-        while waited < self._deps.policy.poll_budget_seconds:
-            progress = await self._client.search_progress()
-            if progress is not None and progress >= _PROGRESS_DONE:
-                break
-            if widen and waited > 0:  # tick 1: Kad has queried nobody yet, a reask is wasted
-                widen = await self._widen()
-            await self._deps.clock.sleep(self._deps.policy.poll_interval_seconds)
-            waited += self._deps.policy.poll_interval_seconds
-        results = await self._client.fetch_results()
+    async def _record(self, channel: str, results: tuple[FileObservation, ...]) -> int:
+        """Per-obs pipeline; returns the number of CHANGED verdicts (logging). A
+        ``RepositoryError`` per obs is ABSORBED inside ``record_observation`` (spec §7)."""
         await self._deps.telemetry.emit(SearchExecuted(network=channel, n_results=len(results)))
         changed = 0
         for observation in results:
@@ -256,15 +242,6 @@ class SearchWorker:
             ):
                 changed += 1
         return changed
-
-    async def _widen(self) -> bool:
-        """Re-asks Kad for more results; ``False`` once it is exhausted or failed (not retried).
-        A failure is absorbed: the search itself still stands."""
-        try:
-            return not await self._client.widen_search()
-        except (SearchFailedError, ClientUnreachableError) as error:
-            _logger.info("instance %s: widening the Kad search failed (%s)", self._instance, error)
-            return False
 
     async def run_task(self, task: SearchTask) -> None:
         """Runs ONE ``SearchTask`` (spec §4). Never raises: signals via backoff/log.
@@ -287,8 +264,7 @@ class SearchWorker:
         if not await self._ensure_connected():
             return
         try:
-            await self._client.start_search(task.keyword, task.channel)
-            changed = await self._poll_then_fetch(task.channel)
+            results = await self._client.search(task.keyword, task.channel, SEARCH_BUDGET_SECONDS)
         except SearchFailedError as error:
             delay = self._deps.backoff.record_failure(channel_key)
             _logger.warning(
@@ -311,6 +287,7 @@ class SearchWorker:
             )
             await self._deps.telemetry.emit(InstanceUnreachable())
             return
+        changed = await self._record(task.channel, results)
         self._deps.backoff.reset(channel_key)
         _logger.info(
             "instance %s: '%s'/%s → %d verdict(s) changed",

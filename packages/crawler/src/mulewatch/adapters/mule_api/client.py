@@ -65,6 +65,8 @@ class AmuleApiClient:
     """``skipped_entries_total`` counts discard EVENTS, not unique entries: the readout is
     cumulative, so one unusable entry re-seen every cycle counts every time."""
 
+    channels: tuple[str, ...] = tuple(_SEARCH_TYPES)
+
     def __init__(
         self,
         host: str,

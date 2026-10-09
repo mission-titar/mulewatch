@@ -6,6 +6,7 @@ import pytest
 from catalog_matching.engine import MatchingEngine
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
 from mulewatch.application.search_worker import (
+    SEARCH_BUDGET_SECONDS,
     BackoffRegistry,
     SearchTask,
     SearchWorker,
@@ -41,8 +42,6 @@ _POLICY = WorkerPolicy(
     backoff_cap_seconds=60.0,
     backoff_factor=2.0,
     backoff_jitter_ratio=0.0,
-    poll_budget_seconds=10.0,
-    poll_interval_seconds=5.0,
     keyword_pause_min_seconds=1.0,
     keyword_pause_max_seconds=3.0,
 )
@@ -300,7 +299,6 @@ async def test_search_failure_arms_channel_backoff(
     await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
     assert registry.is_in_backoff("amule-1:ed2k") is True  # channel in backoff
     assert registry.is_in_backoff("amule-1") is False  # but not the whole instance
-    assert client.fetch_calls == 0  # no fetch after the start_search failure
 
 
 @pytest.mark.asyncio
@@ -309,7 +307,7 @@ async def test_transport_failure_marks_instance_down(
 ) -> None:
     clock = FakeClock()
     registry = _registry(clock)
-    # start_search raises a transport failure (dead stream) → instance down + instance backoff.
+    # search raises a transport failure (dead stream) → instance down + instance backoff.
     client = FakeMuleClient(search_failures=[make_unreachable()], results=[(_obs(),)])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, registry))
     await worker.run_task(SearchTask(keyword="k1", channel="ed2k"))
@@ -321,126 +319,16 @@ async def test_transport_failure_marks_instance_down(
 
 
 @pytest.mark.asyncio
-async def test_poll_budget_is_respected_when_progress_never_completes(
+async def test_a_task_is_one_search_given_the_cores_budget(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
     clock = FakeClock()
-
-    class _NeverDone(FakeMuleClient):
-        async def search_progress(self) -> int | None:
-            return 10  # never 100% → we poll up to the budget
-
-    client = _NeverDone(results=[()])
+    client = FakeMuleClient(results=[(_obs(),)])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    # budget 10 / step 5 → two polling steps, then fetch.
-    assert clock.sleeps == [5.0, 5.0]
-    assert client.fetch_calls == 1
-
-
-@pytest.mark.asyncio
-async def test_poll_loops_once_then_completes(
-    catalog: SqliteCatalogRepository, engine: MatchingEngine
-) -> None:
-    clock = FakeClock()
-
-    class _ThenDone(FakeMuleClient):
-        def __init__(self, **kwargs: object) -> None:
-            super().__init__(**kwargs)  # type: ignore[arg-type]
-            self._calls = 0
-
-        async def search_progress(self) -> int | None:
-            self._calls += 1
-            return 100 if self._calls >= 2 else 10  # 1st read: not done; 2nd: done
-
-    client = _ThenDone(results=[()])
-    worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert clock.sleeps == [5.0]  # one polling step, then break on the 2nd read
-
-
-@pytest.mark.asyncio
-async def test_poll_stops_when_progress_is_none_but_budget_bounds_it(
-    catalog: SqliteCatalogRepository, engine: MatchingEngine
-) -> None:
-    clock = FakeClock()
-
-    class _NoProgress(FakeMuleClient):
-        async def search_progress(self) -> int | None:
-            return None  # EC does not expose progress → we poll up to the budget
-
-    client = _NoProgress(results=[()])
-    worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
-    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert clock.sleeps == [5.0, 5.0]
-
-
-class _NeverDone(FakeMuleClient):
-    """Never completes, and records on which poll tick (1-based) each widening was asked."""
-
-    def __init__(self, clock: FakeClock, **kwargs: object) -> None:
-        super().__init__(**kwargs)  # type: ignore[arg-type]
-        self._clock = clock
-        self.widened_on_ticks: list[int] = []
-
-    async def search_progress(self) -> int | None:
-        return 10
-
-    async def widen_search(self) -> bool:
-        self.widened_on_ticks.append(len(self._clock.sleeps) + 1)
-        return await super().widen_search()
-
-
-# budget 25 / step 5 → five polling ticks.
-_FIVE_TICKS = dataclasses.replace(_POLICY, poll_budget_seconds=25.0)
-
-
-@pytest.mark.asyncio
-async def test_a_kad_search_is_widened_from_the_second_tick_until_kad_refuses(
-    catalog: SqliteCatalogRepository, engine: MatchingEngine
-) -> None:
-    # Tick 1 comes right after POST /search: Kad has queried nobody yet, a reask would be wasted.
-    clock = FakeClock()
-    client = _NeverDone(clock, results=[()])
-    client.widen_answers = [False, True]
-    deps = _deps(catalog, engine, clock, _registry(clock), policy=_FIVE_TICKS)
-    worker = SearchWorker("amule-1", client, deps)
     await worker.run_task(SearchTask(keyword="keroro", channel="kad"))
-    assert len(clock.sleeps) == 5
-    assert client.widened_on_ticks == [2, 3]  # exhausted on tick 3: never asked on 4 and 5
-
-
-@pytest.mark.asyncio
-async def test_an_ed2k_search_is_never_widened(
-    catalog: SqliteCatalogRepository, engine: MatchingEngine
-) -> None:
-    clock = FakeClock()
-    client = _NeverDone(clock, results=[()])
-    deps = _deps(catalog, engine, clock, _registry(clock), policy=_FIVE_TICKS)
-    worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert len(clock.sleeps) == 5
-    assert client.widened_on_ticks == []
-
-
-@pytest.mark.parametrize("failure", [make_unreachable(), make_search_failed()])
-@pytest.mark.asyncio
-async def test_a_failed_widening_leaves_the_search_intact(
-    catalog: SqliteCatalogRepository, engine: MatchingEngine, failure: Exception
-) -> None:
-    clock = FakeClock()
-    telemetry = RecordingTelemetry()
-    registry = _registry(clock)
-    client = _NeverDone(clock, results=[(_obs(),)])
-    client.widen_answers = [failure]
-    deps = _deps(catalog, engine, clock, registry, policy=_FIVE_TICKS, telemetry=telemetry)
-    worker = SearchWorker("amule-1", client, deps)
-    await worker.run_task(SearchTask(keyword="keroro", channel="kad"))
-    assert client.widened_on_ticks == [2]  # not asked again after the failure
-    assert len(clock.sleeps) == 5
-    assert client.fetch_calls == 1
-    assert telemetry.events[0] == SearchExecuted(network="kad", n_results=1)
-    assert registry.snapshot() == {}
+    assert client.searches == [("keroro", "kad")]
+    assert client.budgets == [SEARCH_BUDGET_SECONDS] == [120.0]
+    assert clock.sleeps == []  # how to wait for the end is the client's business
 
 
 # --- observability event emission (Plan E.2) ---
@@ -496,7 +384,7 @@ async def test_connect_failure_emits_instance_unreachable(
 async def test_transport_failure_during_search_emits_instance_unreachable(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
-    # A transport failure during start_search (dead stream) emits InstanceUnreachable.
+    # A transport failure during search (dead stream) emits InstanceUnreachable.
     clock = FakeClock()
     telemetry = RecordingTelemetry()
     client = FakeMuleClient(search_failures=[make_unreachable()], results=[(_obs(),)])

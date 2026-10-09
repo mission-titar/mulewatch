@@ -27,6 +27,7 @@ from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
     SqliteSchedulerStateRepository,
 )
 from mulewatch.composition.app import CrawlerApp
+from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.mule_client import NetworkStatus
 from tests.integration.conftest import ApiEndpoint
 
@@ -52,18 +53,25 @@ class _ShutdownAfterFirstCycleClient:
     never advance (verified empirically). So we let the 1st cycle COMPLETE (it writes
     ``cycle_index=1``), then we trigger shutdown on the 2nd cycle's 1st poll. The index stays at
     1, proof that a full cycle actually ran. The ``cycle_interval`` is tiny → the 2nd cycle starts
-    right after the 1st (the run stays bounded, well under the 120 s ``wait_for``)."""
+    right after the 1st (the run stays bounded, under the 180 s ``wait_for``)."""
 
     def __init__(self, inner: object, app_holder: dict[str, CrawlerApp]) -> None:
         self._inner = inner
         self._app_holder = app_holder
         self._status_calls = 0
 
+    channels: tuple[str, ...] = ("ed2k", "kad")
+
     async def connect(self) -> None:
         await self._inner.connect()  # type: ignore[attr-defined]
 
     async def close(self) -> None:
         await self._inner.close()  # type: ignore[attr-defined]
+
+    async def search(
+        self, keyword: str, channel: str, budget_seconds: float
+    ) -> tuple[FileObservation, ...]:
+        return await self._inner.search(keyword, channel, budget_seconds)  # type: ignore[attr-defined,no-any-return]
 
     async def start_search(self, keyword: str, channel: object) -> None:
         await self._inner.start_search(keyword, channel)  # type: ignore[attr-defined]
@@ -99,12 +107,6 @@ async def test_real_loop_runs_one_cycle_and_stops(amuled: ApiEndpoint, tmp_path:
         # Tiny interval: the 2nd cycle starts right after the 1st (which wrote its index)
         # → the shutdown at the 2nd cycle's poll bounds the run, well under wait_for 120 s.
         cycle_interval_seconds=0.05,
-        # TINY polling budget/interval: against a real amuled, search_progress of Kad
-        # searches does not reach 100% → without this, EVERY Kad task would burn the whole
-        # budget (10 s) and the 1st cycle would exceed the shutdown_deadline. Here the 1st cycle
-        # completes in ~1 s → it writes its index BEFORE the shutdown (2nd poll) is set.
-        search_poll_budget_seconds=0.2,
-        search_poll_interval_seconds=0.05,
         keyword_pause_min_seconds=0.01,  # tiny pauses (the test does not measure spacing)
         keyword_pause_max_seconds=0.05,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=60.0, factor=2.0, jitter_ratio=0.3),
@@ -114,6 +116,9 @@ async def test_real_loop_runs_one_cycle_and_stops(amuled: ApiEndpoint, tmp_path:
         catalog_db_path=str(tmp_path / "catalog.db"),
         local_db_path=str(tmp_path / "local.db"),
         node_id=None,
+        # One keyword: a Kad search lasts 45 s and ed2k starts are 60 s apart, so the cycle
+        # takes about a minute.
+        search_keywords=("titar",),
         # The webui binds a FIXED 0.0.0.0:8080; off here so the test never collides with
         # whatever already listens there on the developer's machine.
         webui=WebuiConfig(enabled=False),
@@ -136,7 +141,7 @@ async def test_real_loop_runs_one_cycle_and_stops(amuled: ApiEndpoint, tmp_path:
         client_factory=factory,
     )
     app_holder["app"] = app
-    await asyncio.wait_for(app.run(), timeout=120.0)
+    await asyncio.wait_for(app.run(), timeout=180.0)
     # catalog.db AND local.db exist (open_catalog/open_local create them), BUT above all the
     # cycle COMPLETED: the cycle index advanced (write_cycle_state(cycle_index+1, …) only runs
     # at the END of a cycle). Without this assertion, the test passed before any cycle even ran.
