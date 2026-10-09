@@ -623,7 +623,6 @@ def build_app(
         display = FileDetailDisplay(
             ed2k_hash=detail.ed2k_hash,
             size_bytes=detail.size_bytes,
-            aich_hash_display=detail.aich_hash if detail.aich_hash is not None else "·",
             timeline=tuple(_timeline_row(sighting) for sighting in detail.sightings),
             decisions=detail.decisions,
             ed2k_link=link,
