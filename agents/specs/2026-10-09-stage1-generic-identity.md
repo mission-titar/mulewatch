@@ -479,7 +479,8 @@ Paths under `packages/crawler/` unless noted. Sizes are estimates from `wc -l` o
 | 150 | `refactor/file-key` | The catalog port speaks `FileKey` | `domain/file_key.py` and test, `ports/catalog_repository.py`, `catalog_repository.py`, `decisions.py` (D12), `reevaluate_catalog.py`, `record_observations.py`, the download loop's catalog seam (D10), tests (D9) | 250 / 16 |
 | 160 | `refactor/events-file-key` | Decision events carry the `FileKey` | `events.py`, `policy.py`, `decisions.py`, their tests | 40 / 6 |
 | 170 | `refactor/network-agnostic-observation` | `FileObservation` without eD2k-only fields | `domain/observation.py`, `adapters/mule_api/mapping.py`, `record_observations.py`, the 16 `FileObservation(` sites, `test_mapping.py`, the fold cross test (D11) | 180 / 16 |
-| 180 | `feat/file-id-identity` | Catalog 0008, files keyed by `file_id` | `0008_file_id.sql`, `file_id()` registration, `catalog_repository.py` (and `download_decisions`, D10), `sightings.py`, `merger.py`, webui `catalog_read.py` with aliases keeping its surface until 190, `test_migration_0008.py`, delete `test_migration_0003.py`, builders, merge helpers, `test_webui_sql_console.py` | **520** / 17 |
+| 175 | `test/file-id-prep` | Test preparation for 0008 (Corrected: block 180 split at its file bound) | The `file_id()` SQL function and its tests; `older_catalog.py` registers the SQL functions and holds `forcing_secure_delete`, so `test_migration_0007.py` stops at version 7; `test_append_only.py` and `test_reader.py` seed through `insert_file` | 60 / 6 |
+| 180 | `feat/file-id-identity` | Catalog 0008, files keyed by `file_id` | `0008_file_id.sql` (Corrected: the `file_id()` registration moved to block 175), `catalog_repository.py` (and `download_decisions`, D10), `sightings.py`, `merger.py`, webui `catalog_read.py` with aliases keeping its surface until 190, `test_migration_0008.py`, delete `test_migration_0003.py`, builders, merge helpers, `test_webui_sql_console.py` | **520** / 17 |
 | 190 | `feat/webui-file-id-urls` | File pages addressed by `file_id` | `/files/{file_id}`, views, detail labels, ed2k link from `native_id`, `coverage.py`, `format.py`, webui tests, `docs/operate.md` (D13) | 190 / 11 |
 | 200 | `feat/vacuum-after-migration` | Catalog 0009, `VACUUM` | `0009_vacuum.sql` (the directive's consumer), its test, `docs/limits.md` (first boot after the upgrade, with the duration measured in D18), `docs/contributing/architecture.md` (schema, version 9, MD4 and `file_observations` passages), `docs/operate.md` (merge of an older snapshot) | 130 / 5 |
 | 210 | `docs/stage1-closing` | Closing | Holistic findings, `BACKLOG.md` reconciled, handoff | n/a |
@@ -500,6 +501,7 @@ Surfaces whose consumer arrives in a later block:
 
 - the directive (block 10), consumed by 0009 (block 200);
 - the functions of block 130, consumed by 0007 and `record_observation` (block 140);
+- the `file_id()` SQL function of block 175, consumed by 0008 (block 180);
 - the webui aliases of block 180, removed by block 190.
 
 No migration file lands before its turn, since a catalog stamped higher skips the lower numbers added later;

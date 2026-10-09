@@ -56,6 +56,5 @@ def test_direct_delete_is_rejected_by_the_database(
 def test_insert_remains_allowed_on_every_table(seeded_catalog: sqlite3.Connection) -> None:
     # Append-only = you can ALWAYS add (the seed INSERT already succeeded);
     # here we prove a SECOND insert passes too (the triggers only block U/D).
-    _hash2 = "b" * 32
-    seeded_catalog.execute(f"INSERT INTO files (ed2k_hash, size_bytes) VALUES ('{_hash2}', 2)")
+    insert_file(seeded_catalog, "b" * 32, 2)
     assert seeded_catalog.execute("SELECT count(*) FROM files").fetchone()[0] == 2

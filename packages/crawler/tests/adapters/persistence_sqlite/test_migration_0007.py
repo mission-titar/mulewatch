@@ -6,11 +6,10 @@ from pathlib import Path
 import pytest
 
 from mulewatch.adapters.mule_api.mapping import map_search_results
-from mulewatch.adapters.persistence_sqlite import connection as connection_module
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.adapters.persistence_sqlite.variants import iso_to_micros
-from tests.adapters.persistence_sqlite.older_catalog import open_catalog_at
+from tests.adapters.persistence_sqlite.older_catalog import forcing_secure_delete, open_catalog_at
 
 _A, _B = "a" * 32, "b" * 32
 _T1 = "2026-06-11T12:00:00.000001+00:00"
@@ -58,17 +57,6 @@ def _with(row: tuple[object, ...], **changes: object) -> tuple[object, ...]:
     return tuple(changes.get(name, value) for name, value in zip(names, row, strict=True))
 
 
-def _forcing_secure_delete(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stands for the image's SQLite, which compiles ``SECURE_DELETE`` in."""
-    configure = connection_module._configure
-
-    def configure_then_force(connection: sqlite3.Connection) -> None:
-        configure(connection)
-        connection.execute("PRAGMA secure_delete = ON")
-
-    monkeypatch.setattr(connection_module, "_configure", configure_then_force)
-
-
 def test_observations_become_variants_with_their_timestamps_and_nothing_is_lost(
     tmp_path: Path,
 ) -> None:
@@ -80,7 +68,7 @@ def test_observations_become_variants_with_their_timestamps_and_nothing_is_lost(
         _with(_FULL, observed_at=_T3, complete_source_count=3),
         _BARE,
     )
-    connection = open_catalog(path)
+    connection = open_catalog_at(path, 7)
     try:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
         assert sorted(connection.execute(_REBUILT).fetchall()) == [
@@ -97,7 +85,7 @@ def test_observations_become_variants_with_their_timestamps_and_nothing_is_lost(
 def test_identical_old_rows_become_one_observation(tmp_path: Path) -> None:
     path = tmp_path / "catalog.db"
     _old_catalog(path, _BARE, _BARE)
-    connection = open_catalog(path)
+    connection = open_catalog_at(path, 7)
     try:
         assert connection.execute("SELECT count(*) FROM observations").fetchone()[0] == 1
     finally:
@@ -107,7 +95,7 @@ def test_identical_old_rows_become_one_observation(tmp_path: Path) -> None:
 def test_the_old_table_and_its_indexes_are_gone(tmp_path: Path) -> None:
     path = tmp_path / "catalog.db"
     _old_catalog(path, _BARE)
-    connection = open_catalog(path)
+    connection = open_catalog_at(path, 7)
     try:
         names = {row[0] for row in connection.execute("SELECT tbl_name FROM sqlite_schema")}
         assert "file_observations" not in names
@@ -149,8 +137,8 @@ def test_the_runner_restores_the_pragmas_0007_sets(
 ) -> None:
     path = tmp_path / "catalog.db"
     _old_catalog(path, _BARE)
-    _forcing_secure_delete(monkeypatch)
-    connection = open_catalog(path)
+    forcing_secure_delete(monkeypatch)
+    connection = open_catalog_at(path, 7)
     try:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
         assert connection.execute("PRAGMA secure_delete").fetchone()[0] == 1
@@ -170,8 +158,8 @@ def test_dropping_the_old_table_keeps_its_pages_out_of_the_wal(
     dropped = raw.execute("SELECT sum(pgsize) FROM dbstat WHERE name = 'file_observations'")
     dropped_bytes = int(dropped.fetchone()[0])
     raw.close()
-    _forcing_secure_delete(monkeypatch)
-    connection = open_catalog(path)
+    forcing_secure_delete(monkeypatch)
+    connection = open_catalog_at(path, 7)
     try:
         wal_bytes = (tmp_path / "catalog.db-wal").stat().st_size
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 7
