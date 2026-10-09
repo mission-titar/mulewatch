@@ -2,7 +2,7 @@
 
 Dedicated run: uv run pytest -m orchestration_integration --no-cov
 Validates that a real ``CrawlerApp`` (real ``AmuleApiClient`` + real SQLite DBs) runs
-ONE full cycle against the provided ``amuled`` then stops CLEANLY. The results may be
+ONE full search task against the provided ``amuled`` then stops CLEANLY. The results may be
 empty (no guaranteed eD2k network access): it is the LOOP (startup, search, cataloging,
 bounded shutdown) that is validated, not the richness of the results.
 """
@@ -22,10 +22,6 @@ from mulewatch.adapters.config.crawler_config import (
 )
 from mulewatch.adapters.config.yaml_loader import load_yaml
 from mulewatch.adapters.decision_signal_asyncio import AsyncioDecisionSignal
-from mulewatch.adapters.persistence_sqlite.connection import open_local
-from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
-    SqliteSchedulerStateRepository,
-)
 from mulewatch.composition.app import CrawlerApp
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
@@ -45,18 +41,17 @@ _TARGETS = (
 )
 
 
-class _ShutdownAfterFirstCycleClient:
-    """Wraps a real client and triggers shutdown on the 2nd cycle's first search.
+class _ShutdownAfterFirstSearchClient:
+    """Wraps a real client and triggers shutdown on the third call to ``search``.
 
-    A shutdown during the 1st cycle would cancel it BEFORE its final ``write_cycle_state``, and the
-    index would never advance. So the 1st cycle COMPLETES (it writes ``cycle_index=1``), and the
-    first search of the 2nd cycle triggers the shutdown: the index stays at 1, proof that a full
-    cycle ran. The ``cycle_interval`` is tiny → the 2nd cycle starts right after the 1st."""
+    One keyword on two channels makes two tasks: the third call comes from a task whose first
+    search returned and was recorded, so a whole task iteration ran."""
 
     def __init__(self, inner: object, app_holder: dict[str, CrawlerApp]) -> None:
         self._inner = inner
         self._app_holder = app_holder
         self._searches = 0
+        self.returned = 0
 
     channels: tuple[str, ...] = ("ed2k", "kad")
 
@@ -70,25 +65,24 @@ class _ShutdownAfterFirstCycleClient:
         self, keyword: str, channel: str, budget_seconds: float
     ) -> tuple[FileObservation, ...]:
         self._searches += 1
-        if self._searches == len(self.channels) + 1:  # one keyword: the 2nd cycle's first search
+        if self._searches == len(self.channels) + 1:
             self._app_holder["app"]._on_signal()
-        return await self._inner.search(keyword, channel, budget_seconds)  # type: ignore[attr-defined,no-any-return]
+        results = await self._inner.search(keyword, channel, budget_seconds)  # type: ignore[attr-defined]
+        self.returned += 1
+        return results  # type: ignore[no-any-return]
 
     async def status(self) -> ClientStatus:
         return await self._inner.status()  # type: ignore[attr-defined,no-any-return]
 
 
 @pytest.mark.asyncio
-async def test_real_loop_runs_one_cycle_and_stops(amuled: ApiEndpoint, tmp_path: Path) -> None:
+async def test_real_loop_runs_one_search_and_stops(amuled: ApiEndpoint, tmp_path: Path) -> None:
     import asyncio
 
     from mulewatch.adapters.mule_api.client import AmuleApiClient
 
     matcher_config = parse_matcher_config(load_yaml(_MATCHER))
     crawler_config = CrawlerConfig(
-        # Tiny interval: the 2nd cycle starts right after the 1st (which wrote its index)
-        # → the shutdown at the 2nd cycle's first search bounds the run, well under wait_for 120 s.
-        cycle_interval_seconds=0.05,
         keyword_pause_min_seconds=0.01,  # tiny pauses (the test does not measure spacing)
         keyword_pause_max_seconds=0.05,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=60.0, factor=2.0, jitter_ratio=0.3),
@@ -98,19 +92,21 @@ async def test_real_loop_runs_one_cycle_and_stops(amuled: ApiEndpoint, tmp_path:
         catalog_db_path=str(tmp_path / "catalog.db"),
         local_db_path=str(tmp_path / "local.db"),
         node_id=None,
-        # One keyword: a Kad search lasts 45 s and ed2k starts are 60 s apart, so the cycle
-        # takes about a minute.
+        # One keyword: a Kad search lasts 45 s and ed2k starts are 60 s apart, so the third
+        # search starts about a minute in.
         search_keywords=("titar",),
         # The webui binds a FIXED 0.0.0.0:8080; off here so the test never collides with
         # whatever already listens there on the developer's machine.
         webui=WebuiConfig(enabled=False),
     )
     app_holder: dict[str, CrawlerApp] = {}
+    clients: list[_ShutdownAfterFirstSearchClient] = []
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownAfterFirstCycleClient:
+    def factory(endpoint: AmuleEndpoint) -> _ShutdownAfterFirstSearchClient:
         # The endpoint is derived from code constants now: use the caller's daemon instead.
         inner = AmuleApiClient(amuled.host, amuled.port, endpoint.password, timeout=30.0)
-        return _ShutdownAfterFirstCycleClient(inner, app_holder)
+        clients.append(_ShutdownAfterFirstSearchClient(inner, app_holder))
+        return clients[-1]
 
     app = CrawlerApp(
         crawler_config=crawler_config,
@@ -124,14 +120,7 @@ async def test_real_loop_runs_one_cycle_and_stops(amuled: ApiEndpoint, tmp_path:
     )
     app_holder["app"] = app
     await asyncio.wait_for(app.run(), timeout=180.0)
-    # catalog.db AND local.db exist (open_catalog/open_local create them), BUT above all the
-    # cycle COMPLETED: the cycle index advanced (write_cycle_state(cycle_index+1, …) only runs
-    # at the END of a cycle). Without this assertion, the test passed before any cycle even ran.
     assert (tmp_path / "catalog.db").exists()
     assert (tmp_path / "local.db").exists()
-    local_conn = open_local(Path(crawler_config.local_db_path))
-    try:
-        scheduler_state = SqliteSchedulerStateRepository(local_conn)
-        assert scheduler_state.read_cycle_index() >= 1  # a full cycle advanced the index
-    finally:
-        local_conn.close()
+    # Without this, the test passed before any search even returned.
+    assert clients[0].returned >= 1

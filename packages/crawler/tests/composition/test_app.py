@@ -1,10 +1,11 @@
 import asyncio
+import json
 import logging
 import sqlite3
 import threading
+from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
-from typing import cast
 
 import pytest
 from prometheus_client import CollectorRegistry
@@ -25,12 +26,11 @@ from mulewatch.adapters.config.crawler_config import (
 )
 from mulewatch.adapters.config.yaml_loader import load_yaml
 from mulewatch.adapters.crawler_control_loop import LoopCrawlerControl
+from mulewatch.adapters.mule_api.client import AmuleApiClient
 from mulewatch.adapters.persistence_sqlite.connection import open_local
 from mulewatch.adapters.persistence_sqlite.local_state_repository import (
     SqliteLocalStateRepository,
 )
-from mulewatch.application.edge_state import EdgeState
-from mulewatch.application.search_worker import BackoffRegistry
 from mulewatch.composition.app import CrawlerApp, WebuiServer, default_client_factory
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
@@ -38,9 +38,10 @@ from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.port_sync import KadStatus, NetworkStatus
-from mulewatch.ports.telemetry import Telemetry
+from tests.adapters.mule_api.api_fakes import PASSWORD, FakeAmuleApi
 from tests.application.fakes import FakeClock, FakeMuleClient, RecordingSignal
 from tests.catalog_rows import observation_node_ids
+from tests.virtual_time import EPOCH, LoopClock, run_virtual
 
 _TARGETS = (
     TargetSegment(
@@ -88,7 +89,6 @@ def _crawler_config(
     webui: WebuiConfig = _WEBUI_OFF,
 ) -> CrawlerConfig:
     return CrawlerConfig(
-        cycle_interval_seconds=300.0,
         keyword_pause_min_seconds=1.0,
         keyword_pause_max_seconds=2.0,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=60.0, factor=2.0, jitter_ratio=0.0),
@@ -180,7 +180,7 @@ class _ShutdownOnStatusClient(FakeMuleClient):
 
 
 @pytest.mark.asyncio
-async def test_app_runs_one_cycle_then_shuts_down_cleanly(
+async def test_app_runs_then_shuts_down_cleanly(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
     created: list[_ShutdownOnStatusClient] = []
@@ -340,42 +340,6 @@ async def test_second_signal_forces_exit(tmp_path: Path, matcher_config: Matcher
         app._on_signal()  # 2nd signal: escalation → SystemExit
 
 
-class _ShutdownOnSleepClock(FakeClock):
-    """Clock that triggers the shutdown on the LONG inter-cycle sleep (≥ 100s), NOT on the
-    short inter-keyword pauses (1-2s) → the cycle COMPLETES, then the loop re-tests its
-    condition and EXITS on its own (without cancellation) on the next iteration."""
-
-    def __init__(self, app_holder: dict[str, CrawlerApp]) -> None:
-        super().__init__()
-        self._app_holder = app_holder
-
-    async def sleep(self, seconds: float) -> None:
-        await super().sleep(seconds)
-        if seconds >= 100.0:  # the inter-cycle sleep (cycle_interval − elapsed), not a pause
-            self._app_holder["app"]._shutdown.set()
-
-
-class _SilentStatusClient(FakeMuleClient):
-    """``status`` never answers: the status loop leaves the fake clock to the cycle loop."""
-
-    async def status(self) -> ClientStatus:
-        await asyncio.Event().wait()
-        return await super().status()
-
-
-@pytest.mark.asyncio
-async def test_loop_exits_cleanly_when_shutdown_set_during_sleep(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # The shutdown is set during the inter-cycle sleep: the loop re-tests its condition and
-    # EXITS on its own (without cancellation) → covers the normal exit of the `while`.
-    app_holder: dict[str, CrawlerApp] = {}
-    clock = _ShutdownOnSleepClock(app_holder)
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: _SilentStatusClient(), clock=clock)
-    app_holder["app"] = app
-    await asyncio.wait_for(app.run(), timeout=5.0)
-
-
 class _BlockingClient(FakeMuleClient):
     """Client whose ``search`` BLOCKS: the loop stays in flight → cancellation hits it."""
 
@@ -387,14 +351,14 @@ class _BlockingClient(FakeMuleClient):
 
 
 @pytest.mark.asyncio
-async def test_signal_cancels_an_in_flight_cycle(
+async def test_signal_cancels_an_in_flight_search(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
-    # A worker is BLOCKED in search; an external SIGINT cancels the TaskGroup →
+    # A task is BLOCKED in search; an external SIGINT cancels the TaskGroup →
     # covers the cancellation path (clean unwind + "Workers stopped" line).
     app = _make_app(tmp_path, matcher_config, factory=lambda e: _BlockingClient())
     run_task = asyncio.create_task(app.run())
-    for _ in range(20):  # let the cycle start and block in search
+    for _ in range(20):  # let the tasks start and block in search
         await asyncio.sleep(0)
     app._on_signal()
     await asyncio.wait_for(run_task, timeout=5.0)
@@ -501,9 +465,7 @@ async def test_shutdown_deadline_forces_exit(tmp_path: Path, matcher_config: Mat
 
 
 @pytest.mark.asyncio
-async def test_observations_are_catalogued_during_the_cycle(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
+async def test_observations_are_catalogued(tmp_path: Path, matcher_config: MatcherConfig) -> None:
     observation = FileObservation(
         file=FileKey(Network.ED2K, "31d6cfe0d16ae931b73c59d7e0c089c0"),
         filename=_DL_NAME,
@@ -527,6 +489,88 @@ async def test_observations_are_catalogued_during_the_cycle(
     assert count == 1
 
 
+class _KadNeverEndsClient(FakeMuleClient):
+    """Its ``kad`` searches never return; the third ``ed2k`` search of ``keroro`` shuts down."""
+
+    def __init__(self, app_holder: dict[str, CrawlerApp]) -> None:
+        super().__init__()
+        self._app_holder = app_holder
+
+    async def search(
+        self, keyword: str, channel: str, budget_seconds: float
+    ) -> tuple[FileObservation, ...]:
+        if channel == "kad":
+            await asyncio.Event().wait()
+        results = await super().search(keyword, channel, budget_seconds)
+        app = self._app_holder["app"]
+        if self.searches.count(("keroro", "ed2k")) == 3 and not app._shutdown.is_set():
+            app._on_signal()
+        return results
+
+
+@pytest.mark.asyncio
+async def test_a_channel_that_never_ends_does_not_hold_the_other_back(
+    tmp_path: Path, matcher_config: MatcherConfig
+) -> None:
+    app_holder: dict[str, CrawlerApp] = {}
+    client = _KadNeverEndsClient(app_holder)
+    app = _make_app(tmp_path, matcher_config, factory=lambda e: client)
+    app_holder["app"] = app
+    await asyncio.wait_for(app.run(), timeout=5.0)
+    assert ("titar", "ed2k") in client.searches
+
+
+# ed2k's `keroro` runs past 60 s, so both ed2k rules take turns binding (spec stage 2, section 4).
+_DURATIONS = {"keroro": 90.0, "keroro mission": 30.0, "titar": 30.0}
+_KAD_TARGETS = {"keroro": "keroro", "keroro mission": "keroro", "titar": "titar"}
+_HOUR = 3600.0
+
+
+def _starts(api: FakeAmuleApi, search_type: str) -> list[tuple[float, str]]:
+    """Every ``POST /search`` of one type: seconds since the start, and its query."""
+    bodies = [
+        ((moment - EPOCH).total_seconds(), json.loads(request.content))
+        for moment, request in api.calls
+        if request.method == "POST" and request.url.path == "/api/v1/search"
+    ]
+    return [(moment, body["query"]) for moment, body in bodies if body["type"] == search_type]
+
+
+def test_an_hour_of_the_running_app_keeps_to_the_networks_rules(
+    tmp_path: Path, matcher_config: MatcherConfig
+) -> None:
+    api = FakeAmuleApi(clock=LoopClock(), search_seconds=dict(_DURATIONS))
+
+    async def main() -> None:
+        app = CrawlerApp(
+            crawler_config=replace(_crawler_config(tmp_path), search_keywords=tuple(_DURATIONS)),
+            targets=_TARGETS,
+            matcher_config=matcher_config,
+            clock=api.clock,
+            rng=_NoopRng(),
+            signal_hub=RecordingSignal(),
+            policy_fingerprint=_FP,
+            client_factory=lambda e: AmuleApiClient(
+                e.host, e.port, PASSWORD, transport=api.transport(), clock=api.clock
+            ),
+        )
+        asyncio.get_running_loop().call_later(_HOUR, app._on_signal)
+        await app.run()
+
+    run_virtual(main())
+
+    ed2k = _starts(api, "global")
+    assert len(ed2k) > 30
+    for (previous, query), (start, _) in zip(ed2k, ed2k[1:], strict=False):
+        assert start >= previous + max(60.0, _DURATIONS[query]), (previous, query, start)
+    kad = _starts(api, "kad")
+    for target in ("keroro", "titar"):
+        times = [moment for moment, query in kad if _KAD_TARGETS[query] == target]
+        assert len(times) > 30
+        gaps = [later - earlier for earlier, later in zip(times, times[1:], strict=False)]
+        assert min(gaps) >= 60, target
+
+
 # ---------------------------------------------------------------------------
 # Task 6 - startup backfill wiring (policy-fingerprint gate)
 # ---------------------------------------------------------------------------
@@ -537,7 +581,7 @@ async def test_backfill_runs_and_stores_marker_when_policy_never_set(
     tmp_path: Path, matcher_config: MatcherConfig, caplog: pytest.LogCaptureFixture
 ) -> None:
     # Fresh local.db (never backfilled before) -> the gate RUNS the backfill (against an
-    # EMPTY catalog.db, since it runs BEFORE the first search cycle records anything) and
+    # EMPTY catalog.db, since it runs BEFORE the first search records anything) and
     # stores the fingerprint, so a LATER restart with the SAME policy would skip it.
     holder: dict[str, CrawlerApp] = {}
 
@@ -663,7 +707,7 @@ class _UnreachableDownloadClient(FakeDownloadClient):
 async def test_observer_mode_runs_without_the_download_loop(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
-    # download absent → observer: starts, runs one cycle, stops; no download client built.
+    # download absent → observer: starts, searches, stops; no download client built.
     holder: dict[str, CrawlerApp] = {}
     built: list[AmuleEndpoint] = []
 
@@ -759,9 +803,7 @@ class _BlockingPollClock(FakeClock):
     while it is blocked. If ``_supervise`` did NOT cancel it, the ``TaskGroup`` would wait
     forever and the armed ``shutdown_deadline`` would fire a ``TimeoutError`` (force-exit): the
     test would
-    fail fail-closed. The SHORT sleeps (search inter-keyword pauses) yield immediately
-    (determinism, no real time). The search inter-cycle sleep (≥ 5 s) also blocks → it is
-    exited by the cancellation of ``loop_task`` (already in place)."""
+    fail fail-closed. The SHORT sleeps yield immediately (determinism, no real time)."""
 
     def __init__(self, app_holder: dict[str, CrawlerApp]) -> None:
         super().__init__()
@@ -773,7 +815,7 @@ class _BlockingPollClock(FakeClock):
         if seconds < 5.0:
             await super().sleep(seconds)  # short pause: yields (instantaneous)
             return
-        # Long sleep (in-cycle poll of a loop, or search inter-cycle): we note the pace and,
+        # Long sleep (in-cycle poll of a loop): we note the pace and,
         # as soon as the download poll (30 s) is blocked, we request the shutdown WHILE it
         # sleeps, then we BLOCK for good.
         self._blocked_long_polls.add(seconds)
@@ -1305,37 +1347,6 @@ def test_default_webui_server_factory_builds_a_uvicorn_server() -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_loop_exits_when_shutdown_already_set(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # Deterministic cover of the ``while not self._shutdown.is_set()`` false-exit arc: with the
-    # shutdown already set, ``_run_loop`` reads the cycle index once then exits WITHOUT entering
-    # the body (no cycle runs), so the per-cycle deps are never touched (hence the casts of None).
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient())
-    app._shutdown.set()
-    reads: list[int] = []
-
-    class _SchedulerStub:
-        def read_cycle_index(self) -> int:
-            reads.append(1)
-            return 0
-
-    await asyncio.wait_for(
-        app._run_loop(
-            workers=(),
-            clients=(),
-            node_id="n",
-            scheduler_state=_SchedulerStub(),  # type: ignore[arg-type]
-            backoff=cast(BackoffRegistry, None),
-            telemetry=cast(Telemetry, None),
-            edge=cast(EdgeState, None),
-        ),
-        timeout=1.0,
-    )
-    assert reads == [1]  # read the cycle index once, then exited (the loop body never ran)
-
-
-@pytest.mark.asyncio
 async def test_app_starts_unpaused(tmp_path: Path, matcher_config: MatcherConfig) -> None:
     app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient())
     assert app._resumed.is_set()
@@ -1357,7 +1368,7 @@ async def test_resumed_gate_blocks_when_cleared_and_releases_when_set(
 
 
 class _ShutdownOnSearchClient(FakeMuleClient):
-    """Fires the shutdown on the first search (a cycle ran); its status never does."""
+    """Fires the shutdown on the first search."""
 
     def __init__(self, app_holder: dict[str, CrawlerApp]) -> None:
         super().__init__()
@@ -1372,26 +1383,26 @@ class _ShutdownOnSearchClient(FakeMuleClient):
 
 
 @pytest.mark.asyncio
-async def test_pause_gate_blocks_the_cycle_until_resumed(
+async def test_pause_gate_blocks_the_searches_until_resumed(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
-    # WIRING: a paused app (``_resumed`` cleared before run) blocks at the loop's gate BEFORE any
-    # cycle - the client is never searched and the run cannot self-shutdown. Resuming releases
-    # the gate → a cycle runs, searches, fires the shutdown, exits. Without the gate, the cycle
-    # would run immediately and the run would finish before resume.
+    # WIRING: a paused app (``_resumed`` cleared before run) blocks at the tasks' gate BEFORE any
+    # search - the client is never searched and the run cannot self-shutdown. Resuming releases
+    # the gate → a search runs, fires the shutdown, exits. Without the gate, the tasks would
+    # search immediately and the run would finish before resume.
     holder: dict[str, CrawlerApp] = {}
     client = _ShutdownOnSearchClient(holder)
     app = _make_app(tmp_path, matcher_config, factory=lambda e: client)
     holder["app"] = app
     app._resumed.clear()  # start paused
     run_task = asyncio.create_task(app.run())
-    for _ in range(100):  # ample ticks for the ungated cycle to have run + shut down
+    for _ in range(100):  # ample ticks for ungated tasks to have searched + shut down
         await asyncio.sleep(0)
-    assert client.searches == []  # paused: no cycle ran
+    assert client.searches == []  # paused: no search ran
     assert not run_task.done()  # blocked at the gate, no self-shutdown
-    app._resumed.set()  # resume → a cycle runs
+    app._resumed.set()  # resume → the tasks search
     await asyncio.wait_for(run_task, timeout=5.0)
-    assert client.searches  # a cycle ran after resume
+    assert client.searches  # a search ran after resume
 
 
 @pytest.mark.asyncio
@@ -1399,11 +1410,11 @@ async def test_restart_control_triggers_graceful_shutdown(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
     # Driving ``LoopCrawlerControl.restart()`` (bound to the app's own events + this loop) sets
-    # ``_shutdown`` on the loop thread → an in-flight cycle is cancelled and ``run()`` exits
+    # ``_shutdown`` on the loop thread → an in-flight search is cancelled and ``run()`` exits
     # cleanly, through the control path.
     app = _make_app(tmp_path, matcher_config, factory=lambda e: _BlockingClient())
     run_task = asyncio.create_task(app.run())
-    for _ in range(20):  # let the cycle start and block in search
+    for _ in range(20):  # let the tasks start and block in search
         await asyncio.sleep(0)
     control = LoopCrawlerControl(
         loop=asyncio.get_running_loop(),

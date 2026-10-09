@@ -179,9 +179,9 @@ seul le cycle add_link, file, statut est validé.
 ### 3.3 `orchestration_integration` (crawler, **Docker requis**)
 
 **Ce que ça prouve.** Une vraie `CrawlerApp` (vrai `AmuleApiClient` + vraies bases SQLite sur
-`tmp_path`) déroule **un cycle complet** face à l'`amuled` fourni puis **s'arrête proprement** dans
-un `wait_for` de 120 s. L'assertion clé : l'index de cycle a avancé (`read_cycle_index() >= 1`),
-prouvant qu'un cycle s'est réellement terminé.
+`tmp_path`) déroule **une recherche complète** face à l'`amuled` fourni puis **s'arrête
+proprement** dans un `wait_for` de 180 s. L'assertion clé : une recherche est revenue, et l'arrêt
+n'est demandé qu'au troisième appel, une fois cette recherche enregistrée.
 
 **Prérequis exacts.** Les mêmes que `api_integration` (§3.0). Le test charge la config du matcher
 depuis la source de vérité unique, `deploy/matcher.yml`, et tourne avec la webui désactivée (son bind
@@ -192,7 +192,7 @@ est un `0.0.0.0:8080` fixe, qui entrerait en collision avec ce qui écoute déj�
 ( cd packages/crawler && uv run pytest -m orchestration_integration --no-cov )
 ```
 
-**Attendu.** 1 test passé (`test_real_loop_runs_one_cycle_and_stops`). Les résultats de recherche
+**Attendu.** 1 test passé (`test_real_loop_runs_one_search_and_stops`). Les résultats de recherche
 peuvent tout à fait être vides : ce qui est validé, c'est la **boucle** (démarrage, recherche, mise
 au catalogue, arrêt borné).
 

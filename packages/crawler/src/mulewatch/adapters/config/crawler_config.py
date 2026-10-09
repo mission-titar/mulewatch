@@ -110,7 +110,11 @@ _DEFAULT_WEBUI = WebuiConfig(enabled=True)
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 # Keys no longer read: refused, so an operator never believes they still apply.
-_REMOVED_KEYS = ("search_poll_budget_seconds", "search_poll_interval_seconds")
+_REMOVED_KEYS = (
+    "cycle_interval_seconds",
+    "search_poll_budget_seconds",
+    "search_poll_interval_seconds",
+)
 
 
 @dataclass(frozen=True)
@@ -136,8 +140,7 @@ class ObservabilityConfig:
 class CrawlerConfig:
     """Unified crawler config (policy + wiring). All durations in SECONDS.
 
-    Policy (unchanged): ``cycle_interval_seconds`` (target cadence of a cycle),
-    ``keyword_pause_{min,max}_seconds`` (inter-keyword jitter),
+    Policy: ``keyword_pause_{min,max}_seconds`` (inter-keyword jitter),
     ``backoff``, ``decision_poll_interval_seconds`` (nudge safety net),
     ``shutdown_deadline_seconds`` (hard bound of the clean shutdown).
 
@@ -150,7 +153,6 @@ class CrawlerConfig:
     optional; default ``("keroro", "titar")`` if absent).
     """
 
-    cycle_interval_seconds: float
     keyword_pause_min_seconds: float
     keyword_pause_max_seconds: float
     backoff: BackoffConfig
@@ -422,7 +424,6 @@ def parse_crawler_config(raw: dict[str, Any], env: Mapping[str, str]) -> Crawler
             _require_mapping(raw["observability"], "section 'observability'"), env
         )
     return CrawlerConfig(
-        cycle_interval_seconds=_positive(raw, "cycle_interval_seconds", "crawler"),
         keyword_pause_min_seconds=pause_min,
         keyword_pause_max_seconds=pause_max,
         backoff=backoff,

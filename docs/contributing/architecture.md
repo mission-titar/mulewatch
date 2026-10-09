@@ -157,48 +157,45 @@ flowchart TB
 - **`composition/`** (`CrawlerApp`, `python -m mulewatch`) charge la config, la valide *fail-fast*,
   câble les adapters concrets et supervise les boucles.
 
-## 5. Le cycle de recherche
+## 5. Les tâches de recherche
 
 C'est le cœur du système et sa raison d'être : **être là 24/7** pour attraper un fichier rare à
-l'instant où une source le partage. Un cycle balaie chaque mot-clé sur chaque canal.
+l'instant où une source le partage. Une tâche par *(client, canal, mot-clé)* cherche en boucle,
+toutes en même temps (`application/search_tasks.py`).
 
 ```mermaid
 flowchart TD
-  start["Start · cycle_index"]
-  cov["Read coverage"]
-  kw["Keywords<br/>keroro · titar"]
-  shuf["Seeded order"]
-  q["LIFO queue<br/>keywords × channels"]
-  pool["Worker pool"]
-  persist["Persist progress<br/>+ backoff"]
+  gate["Wait while paused"]
+  backoff["Sleep until the backoff ends"]
+  search["search(keyword, channel, budget)"]
+  record["Record each observation"]
+  persist["Persist the backoff<br/>if it changed"]
 
-  start --> cov --> kw --> shuf --> q --> pool --> persist
-  cov -. "HEALTHY / DEGRADED / BLIND" .-> tel[["telemetry"]]
+  gate --> backoff --> search --> record --> persist --> gate
 ```
 
 Points clés en chemin :
 
-- **Deux canaux** par mot-clé : `ed2k` (multi-serveurs eD2k) et `kad`.
-  Une tâche = *(mot-clé, canal)*.
+- **Deux canaux** par mot-clé : `ed2k` (multi-serveurs eD2k) et `kad`. Les noms de canaux sont
+  opaques pour le cœur, qui ne teste jamais leur valeur.
+- **Pas d'intervalle dans le cœur** : un canal cherche aussi souvent que les règles de son réseau
+  le permettent, et c'est l'adaptateur qui les applique dans `search()`. Pour aMule : deux départs
+  `ed2k` à 60 s d'écart au moins, un seul en vol ; deux départs Kad sur une même cible (le premier
+  mot de 3 octets du mot-clé) à 60 s d'écart au moins. Un canal lent ne retient jamais un canal
+  rapide.
 - **Mots-clés minimaux, depuis la config** : `search.keywords` (défaut `keroro` + `titar`). `keroro`
   ratisse large ; `titar` est une **sentinelle française** rare et non saturable (voir le handoff de
   simplification de la recherche pour le *pourquoi* : les données réelles ont montré que chercher
   davantage n'aide pas). La génération de mots-clés par cible a été supprimée.
-- **Ordre tiré par nœud** (`node_id : cycle_index`) : deux nœuds divergent (pas d'angles morts
-  temporels communs), tandis qu'un même nœud rejoue le même ordre pour le même cycle.
-- **File LIFO + un seul worker** : le conteneur ne contient exactement qu'un `amuled`, donc le pool
-  qui répartissait autrefois les tâches sur plusieurs démons s'est réduit à un worker unique
-  (2026-09-16). La mécanique est inchangée (un worker dont le démon est en **backoff** remet la tâche
-  *au sommet* pour un pair) mais, sans pair restant, une tâche qui tombe sur un backoff est
-  *abandonnée* avec une trace de télémétrie et rejouée au cycle suivant. La redondance multi-nœuds
-  est désormais entièrement affaire de faire tourner plusieurs nœuds et de fusionner leurs
-  catalogues.
+- **Une tâche en backoff dort** jusqu'à la fin de son backoff (celui du client ou celui du canal),
+  elle ne boucle jamais à vide. La redondance multi-nœuds est entièrement affaire de faire tourner
+  plusieurs nœuds et de fusionner leurs catalogues.
 - **Le statut n'est pas la liveness** : « le processus est vivant » n'implique pas « on peut
   trouver quelque chose là, maintenant ». Une boucle lit le statut de chaque client toutes les
   minutes, par canal (`on_network`, `connectable`), et alerte sur un état dégradé qui dure : 5 min
   pour un canal, 2 min pour l'API injoignable, puis envoie son rétablissement.
-- **Résilience** : une `RepositoryError` en fin de cycle est absorbée, l'index n'avance pas, et le
-  cycle est rejoué au tour suivant (état append-only, pas de corruption).
+- **Résilience** : une `RepositoryError` à l'écriture du backoff est journalisée, et l'écriture
+  retentée après la recherche suivante.
 
 ### 5.1 Une tâche de recherche, de bout en bout
 
@@ -242,7 +239,7 @@ sequenceDiagram
   (`target_id`, `rule_name`, `tier`) va dans `match_decisions`. En mode téléchargement, un tier
   `download` *pousse* la boucle de téléchargement pour qu'elle réagisse sans attendre son intervalle.
 - Une opération que le démon refuse (`400 amuled_rejected`) met ce **canal** en **backoff**
-  (base × factor^échecs + jitter), persisté en fin de cycle.
+  (base × factor^échecs + jitter), persisté à chaque changement.
 
 ## 6. Du fichier à la décision : le moteur de matching
 
@@ -509,8 +506,8 @@ démon sont
 | Sous-système | Emplacement (sous `packages/crawler/src/mulewatch/` sauf mention) |
 |---|---|
 | Boucles et câblage | `composition/app.py` (`CrawlerApp`), `python -m mulewatch` |
-| Cas d'usage | `application/run_search_cycle.py`, `run_download_cycle.py`, `port_sync_loop.py` |
-| Recherche (pure) | `domain/search/` (`keywords`, `cycle`, `backoff`, `coverage`) |
+| Cas d'usage | `application/search_tasks.py`, `status_loop.py`, `run_download_cycle.py`, `port_sync_loop.py` |
+| Recherche (pure) | `domain/search/` (`keywords`, `backoff`) |
 | Matching | `packages/matching/src/catalog_matching/` (moteur + politique `deploy/matcher.yml`) |
 | Frontière amuleapi | `adapters/mule_api/` (client / mapping / erreurs) ; ports `ports/mule_client.py`, `ports/mule_download_client.py` |
 | Persistance | `adapters/persistence_sqlite/` (migrations `.sql`, repos) |

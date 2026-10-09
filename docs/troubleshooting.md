@@ -77,7 +77,7 @@ accumulé, mais vous redémarrez d'un état connu.
 - **Conséquence à garder en tête.** Un conteneur en `Up (healthy)` ne prouve **pas** que le crawler
   tourne : le healthcheck n'interroge qu'amuled, et le conteneur ne passe `unhealthy` que quand
   amuled est arrêté. Dans le doute, interrogez `s6-svstat` sur `/etc/services.d/mulewatch`, ou
-  cherchez des lignes `cycle ...` dans le journal.
+  cherchez des lignes `verdict(s) changed` dans le journal, une par recherche terminée.
 
 ### Le crawler refuse de démarrer : « environment variable '…' referenced but not set »
 

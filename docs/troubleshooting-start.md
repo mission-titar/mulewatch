@@ -128,7 +128,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
 ### amuled ne se connecte à rien
 
-- **Symptôme.** Le crawler boucle (lignes `cycle ...`) mais signale au bout de 5 minutes
+- **Symptôme.** Le crawler tourne (lignes `verdict(s) changed`) mais signale au bout de 5 minutes
   `amuled ed2k: off its network for 5 min` (ou `kad`), avec des avertissements d'injoignabilité.
 
 !!! tip "D'abord, patientez : au premier démarrage, c'est attendu"
@@ -160,8 +160,8 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
 - **La page se charge, mais le tableau est vide.** C'est normal les premières heures : le catalogue
   se remplit au fil des recherches, et les cibles rares peuvent mettre des jours à réapparaître.
-  Vérifiez plutôt que le nœud vit : `docker compose logs mulewatch` doit montrer des lignes
-  `cycle ...` jusqu'à `cycle 0 done`. S'il signale `off its network`, voir
+  Vérifiez plutôt que le nœud vit : `docker compose logs mulewatch` doit montrer une ligne
+  `verdict(s) changed` par recherche terminée. S'il signale `off its network`, voir
   [« amuled ne se connecte à rien »](#amuled-ne-se-connecte-à-rien).
 - **La page ne se charge pas du tout.** La webui est servie en intra-processus par le crawler, il
   n'y a pas de service `webui` séparé. Et un conteneur `Up (healthy)` ne prouve pas que le crawler

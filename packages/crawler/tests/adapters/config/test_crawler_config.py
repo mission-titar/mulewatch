@@ -21,7 +21,6 @@ from mulewatch.domain.observability.policy import Audience
 def _minimal_raw() -> dict[str, Any]:
     """Valid policy + minimal wiring (EC password without ${}, base paths) — observer mode."""
     return {
-        "cycle_interval_seconds": 300.0,
         "keyword_pause_min_seconds": 1.0,
         "keyword_pause_max_seconds": 4.0,
         "backoff": {
@@ -67,7 +66,6 @@ def _full_port_sync_section() -> dict[str, Any]:
 def test_parses_a_valid_config() -> None:
     config = parse_crawler_config(_minimal_raw(), _env())
     assert config == CrawlerConfig(
-        cycle_interval_seconds=300.0,
         keyword_pause_min_seconds=1.0,
         keyword_pause_max_seconds=4.0,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=300.0, factor=2.0, jitter_ratio=0.3),
@@ -98,33 +96,35 @@ def test_negative_jitter_ratio_is_fatal() -> None:
 
 def test_missing_key_is_fatal() -> None:
     raw = _minimal_raw()
-    del raw["cycle_interval_seconds"]
-    with pytest.raises(ConfigError, match="cycle_interval_seconds"):
+    del raw["decision_poll_interval_seconds"]
+    with pytest.raises(ConfigError, match="decision_poll_interval_seconds"):
         parse_crawler_config(raw, _env())
 
 
 def test_non_numeric_value_is_fatal() -> None:
     raw = _minimal_raw()
-    raw["cycle_interval_seconds"] = "souvent"
+    raw["decision_poll_interval_seconds"] = "souvent"
     with pytest.raises(ConfigError, match="number expected"):
         parse_crawler_config(raw, _env())
 
 
 def test_bool_is_not_accepted_as_a_number() -> None:
     raw = _minimal_raw()
-    raw["cycle_interval_seconds"] = True
+    raw["decision_poll_interval_seconds"] = True
     with pytest.raises(ConfigError, match="number expected"):
         parse_crawler_config(raw, _env())
 
 
 def test_non_positive_value_is_fatal() -> None:
     raw = _minimal_raw()
-    raw["cycle_interval_seconds"] = 0
+    raw["decision_poll_interval_seconds"] = 0
     with pytest.raises(ConfigError, match="strictly positive"):
         parse_crawler_config(raw, _env())
 
 
-@pytest.mark.parametrize("key", ["search_poll_budget_seconds", "search_poll_interval_seconds"])
+@pytest.mark.parametrize(
+    "key", ["cycle_interval_seconds", "search_poll_budget_seconds", "search_poll_interval_seconds"]
+)
 def test_a_removed_key_is_refused_by_name(key: str) -> None:
     raw = _minimal_raw() | {key: 5.0}
     with pytest.raises(ConfigError, match=key):
