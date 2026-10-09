@@ -511,7 +511,7 @@ async def test_search_returns_the_results_with_their_keyword_and_counts_what_it_
 
 @pytest.mark.asyncio
 async def test_search_returns_as_soon_as_amuled_reports_it_finished() -> None:
-    api = FakeAmuleApi(search_seconds=12)
+    api = FakeAmuleApi(search_seconds={"keroro": 12})
     client = await _connected(api)
 
     await client.search("keroro", "ed2k", 120)
