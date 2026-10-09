@@ -33,7 +33,8 @@ from mulewatch.application.search_worker import BackoffRegistry
 from mulewatch.composition.app import CrawlerApp, WebuiServer, default_client_factory
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.mule_client import KadStatus, MuleUnreachableError, NetworkStatus
+from mulewatch.ports.client_errors import ClientUnreachableError
+from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.telemetry import Telemetry
 from tests.application.fakes import FakeClock, FakeMuleClient, RecordingSignal
@@ -295,7 +296,7 @@ async def test_search_setup_connects_the_client_before_coverage(
 
 
 class _UnreachableAtStartupClient(_ShutdownOnStatusClient):
-    """Client whose 1st ``connect`` (at setup) raises ``MuleUnreachableError``.
+    """Client whose 1st ``connect`` (at setup) raises ``ClientUnreachableError``.
 
     Models a daemon down at startup: the composition root must CATCH, log, and
     CONTINUE (the worker's backoff will govern reconnections). Also triggers the shutdown on the
@@ -309,14 +310,14 @@ class _UnreachableAtStartupClient(_ShutdownOnStatusClient):
         self._connect_seen += 1
         self.connect_calls += 1
         if self._connect_seen == 1:
-            raise MuleUnreachableError("daemon unreachable at startup")
+            raise ClientUnreachableError("daemon unreachable at startup")
 
 
 @pytest.mark.asyncio
 async def test_unreachable_client_at_startup_does_not_crash_the_run(
     tmp_path: Path, matcher_config: MatcherConfig, caplog: pytest.LogCaptureFixture
 ) -> None:
-    # A client unreachable at setup (connect raises MuleUnreachableError) must NOT bring down
+    # A client unreachable at setup (connect raises ClientUnreachableError) must NOT bring down
     # run(): the composition root catches, warns, and CONTINUES. This matters MORE in one
     # container, not less: the crawler, amuled and amuleweb start simultaneously under s6, so
     # reaching EC before amuled listens is the normal cold start (design §4). The cycle phase
@@ -334,7 +335,7 @@ async def test_unreachable_client_at_startup_does_not_crash_the_run(
     with caplog.at_level(logging.WARNING, logger="mulewatch.composition.app"):
         await asyncio.wait_for(app.run(), timeout=5.0)  # does NOT raise (down instance tolerated)
     # The tolerance warning comes from the COMPOSITION ROOT (not the worker): it is the
-    # `except MuleUnreachableError` branch of the client setup.
+    # `except ClientUnreachableError` branch of the client setup.
     startup_warnings = [
         record
         for record in caplog.records
@@ -679,10 +680,10 @@ class _ShutdownOnQueueDownloadClient(FakeDownloadClient):
 
 
 class _UnreachableDownloadClient(FakeDownloadClient):
-    """Download client whose ``connect`` raises ``MuleUnreachableError`` (daemon down at start)."""
+    """Download client whose ``connect`` raises ``ClientUnreachableError`` (daemon down at boot)."""
 
     async def connect(self) -> None:
-        raise MuleUnreachableError("download daemon down")
+        raise ClientUnreachableError("download daemon down")
 
 
 @pytest.mark.asyncio
@@ -1142,7 +1143,7 @@ async def test_port_sync_tolerates_ec_daemon_unreachable_at_startup(
 
     class _UnreachableEcClient(_PortSyncCapableClient):
         async def connect(self) -> None:
-            raise MuleUnreachableError("port-sync daemon down")
+            raise ClientUnreachableError("port-sync daemon down")
 
     app = CrawlerApp(
         crawler_config=_port_sync_crawler_config(tmp_path),

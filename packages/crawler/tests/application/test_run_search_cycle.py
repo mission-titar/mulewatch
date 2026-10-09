@@ -230,7 +230,7 @@ async def test_unreachable_status_makes_instance_not_capable_and_logs_blind(
     engine: MatchingEngine,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # network_status raises MuleUnreachableError (instance unreachable, e.g. not connected at
+    # network_status raises ClientUnreachableError (instance unreachable, e.g. not connected at
     # the moment of the coverage readout) → the instance is treated as not search-capable
     # instead of taking down the whole cycle. A single instance, all unreachable → BLIND
     # logged, and the cycle ADVANCES anyway (resilience, spec §7).
@@ -302,13 +302,14 @@ async def test_channel_backoff_is_persisted_at_cycle_end(
     # A search fails (EC_OP_FAILED) → the channel enters backoff IN the shared registry;
     # the cycle PERSISTS the snapshot at cycle end (spec §3/§7). A fresh repo instance
     # (simulating a restart) re-reads this backoff.
-    from mulewatch.ports.mule_client import MuleSearchFailedError, SearchChannel
+    from mulewatch.ports.client_errors import SearchFailedError
+    from mulewatch.ports.mule_client import SearchChannel
 
     class _AlwaysFails(FakeMuleClient):
         """Fails on EVERY search → the channels STAY in backoff (never reset)."""
 
         async def start_search(self, keyword: str, channel: SearchChannel) -> None:
-            raise MuleSearchFailedError("EC_OP_FAILED")
+            raise SearchFailedError("EC_OP_FAILED")
 
     clock = FakeClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())

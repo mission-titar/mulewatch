@@ -1,7 +1,7 @@
 """Deterministic fakes for the application-layer tests (spec §8).
 
 ``FakeMuleClient``: results SCRIPTED per ``fetch_results`` call, injectable failures
-(``MuleUnreachableError``/``MuleSearchFailedError``) at ``connect``/``start_search``.
+(``ClientUnreachableError``/``SearchFailedError``) at ``connect``/``start_search``.
 ``FakeClock``: advanceable clock (``advance`` without I/O) + ``sleep`` that advances WITHOUT
 a real wait (determinism). ``FakeRng``: identity shuffle + FIXED jitter (determinism).
 ``RecordingSignal``: captures nudged subjects. The repos are the REAL SQLite repos
@@ -13,13 +13,8 @@ from datetime import UTC, datetime, timedelta
 
 from mulewatch.domain.observability.events import Event
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.mule_client import (
-    KadStatus,
-    MuleSearchFailedError,
-    MuleUnreachableError,
-    NetworkStatus,
-    SearchChannel,
-)
+from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
+from mulewatch.ports.mule_client import KadStatus, NetworkStatus, SearchChannel
 
 
 class FakeClock:
@@ -159,19 +154,19 @@ class FakeMuleClient:
 
 
 class UnreachableStatusClient(FakeMuleClient):
-    """Variant whose ``network_status`` raises ``MuleUnreachableError`` (unreachable instance).
+    """Variant whose ``network_status`` raises ``ClientUnreachableError`` (unreachable instance).
 
     Models the real adapter: a non-connected client raises ``ApiUnreachableError`` (which IS a
-    ``MuleUnreachableError``) on a status read. Serves to cover the tolerant branch of
+    ``ClientUnreachableError``) on a status read. Serves to cover the tolerant branch of
     ``_aggregate_coverage`` (unreachable instance → not search-capable, no crash)."""
 
     async def network_status(self) -> NetworkStatus:
-        raise MuleUnreachableError("client not connected (instance unreachable)")
+        raise ClientUnreachableError("client not connected (instance unreachable)")
 
 
-def make_unreachable(message: str = "down") -> MuleUnreachableError:
-    return MuleUnreachableError(message)
+def make_unreachable(message: str = "down") -> ClientUnreachableError:
+    return ClientUnreachableError(message)
 
 
-def make_search_failed(message: str = "EC_OP_FAILED") -> MuleSearchFailedError:
-    return MuleSearchFailedError(message)
+def make_search_failed(message: str = "EC_OP_FAILED") -> SearchFailedError:
+    return SearchFailedError(message)

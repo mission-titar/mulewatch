@@ -74,10 +74,11 @@ from mulewatch.application.search_worker import (
     WorkerPolicy,
 )
 from mulewatch.domain.observability.events import CrawlerStarted
+from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock, Rng
 from mulewatch.ports.crawler_control import CrawlerControl
 from mulewatch.ports.decision_signal import DecisionSignal
-from mulewatch.ports.mule_client import MuleClient, MuleUnreachableError
+from mulewatch.ports.mule_client import MuleClient
 from mulewatch.ports.mule_download_client import MuleDownloadClient
 from mulewatch.ports.mule_restarter import MuleRestarter
 from mulewatch.ports.port_forwarding import PortForwardingReader
@@ -323,7 +324,7 @@ class CrawlerApp:
         gluetun reader (factory, ``aclose`` pushed onto the stack) + restarter (factory; the s6
         restarter holds no resource, so there is nothing to close). DEDICATED port-sync
         session (R6: no contention with download/search) to the amuled endpoint, connected
-        TOLERATING ``MuleUnreachableError`` at boot. That tolerance matters MORE in one container,
+        TOLERATING ``ClientUnreachableError`` at boot. That tolerance matters MORE in one container,
         not less: the processes start at once, so the crawler routinely reaches amuleapi before
         amuled has started it (design §4). The loop's backoff governs the retries.
         """
@@ -335,12 +336,12 @@ class CrawlerApp:
         restarter = self._mule_restarter_factory()
 
         # DEDICATED port-sync session to the container's one amuleapi (127.0.0.1:4711).
-        # Tolerates MuleUnreachableError at boot, like the download session.
+        # Tolerates ClientUnreachableError at boot, like the download session.
         ports_client = self._client_factory(self._crawler_config.amule_endpoint)
         stack.push_async_callback(ports_client.close)
         try:
             await ports_client.connect()
-        except MuleUnreachableError as error:
+        except ClientUnreachableError as error:
             _logger.warning(
                 "port-sync daemon unreachable at startup (%s): tolerated, retry by the loop",
                 error,
@@ -370,14 +371,14 @@ class CrawlerApp:
 
         SHARED single repos (``catalog_repo`` already built; a ``SqliteDownloadRepository`` on
         the SAME ``local_conn`` - single writer on the event loop, no race). A 2nd session
-        to the same daemon (DECISION D3) connected tolerating ``MuleUnreachableError`` (a daemon
+        to the same daemon (DECISION D3) connected tolerating ``ClientUnreachableError`` (a daemon
         not yet listening at startup does not kill the crawler; the loop's backoff governs).
         """
         download_client = self._download_client_factory(self._crawler_config.amule_endpoint)
         stack.push_async_callback(download_client.close)
         try:
             await download_client.connect()
-        except MuleUnreachableError as error:
+        except ClientUnreachableError as error:
             _logger.warning(
                 "download daemon unreachable at startup (%s): tolerated, retry by the loop",
                 error,
@@ -596,13 +597,13 @@ class CrawlerApp:
             # the crawler down, and in one container that is the NORMAL case, not the exception:
             # the crawler and amuled start together under s6, and amuled starts amuleapi itself,
             # so the crawler routinely knocks first (design §4). We TOLERATE the
-            # MuleUnreachableError and CONTINUE - the worker's reconnection backoff governs the
+            # ClientUnreachableError and CONTINUE - the worker's reconnection backoff governs the
             # retries. connect() is idempotent → the worker's later _ensure_connected() stays a
             # no-op. We do NOT catch broader: ApiAuthError (wrong password) is NOT a
-            # MuleUnreachableError → it keeps propagating (fail-fast config, spec §14).
+            # ClientUnreachableError → it keeps propagating (fail-fast config, spec §14).
             try:
                 await client.connect()
-            except MuleUnreachableError as error:
+            except ClientUnreachableError as error:
                 _logger.warning(
                     "amuled unreachable at startup (%s): tolerated, backoff at cycle", error
                 )

@@ -339,8 +339,8 @@ async def test_ec_error_on_set_is_absorbed_and_sleeps() -> None:
 
 @pytest.mark.asyncio
 async def test_application_level_ec_failure_is_also_absorbed() -> None:
-    # ApiRejectedError (a MuleSearchFailedError — NOT a MuleUnreachableError) must
-    # ALSO be absorbed: the net catches MuleClientError, the ancestor of the port errors. Without
+    # ApiRejectedError (a SearchFailedError — NOT a ClientUnreachableError) must
+    # ALSO be absorbed: the net catches ClientError, the ancestor of the port errors. Without
     # this wide net, a set_listen_port replying EC_OP_FAILED would crash the loop.
     reader = FakePortForwardingReader(port=51820)
     ports = FakePortPreferences(current_port=4662, set_error=ApiRejectedError("pref refused"))

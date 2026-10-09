@@ -24,8 +24,9 @@ from mulewatch.domain.observability.events import (
     PortMismatchUnresolved,
     PortSyncTriggered,
 )
+from mulewatch.ports.client_errors import ClientError
 from mulewatch.ports.clock import Clock
-from mulewatch.ports.mule_client import MuleClientError, NetworkStatus
+from mulewatch.ports.mule_client import NetworkStatus
 from mulewatch.ports.mule_restarter import MuleRestarter, RestarterError
 from mulewatch.ports.port_forwarding import PortForwardingReader
 from mulewatch.ports.telemetry import Telemetry
@@ -98,7 +99,7 @@ async def run_port_sync_cycle(deps: PortSyncDeps, state: _PortSyncState) -> None
         # is a no-op when already connected), but ESSENTIAL after a restart: our own restart() - or
         # a VPN renegotiation - ends the session. Without this call the loop would stay stuck on
         # "client not connected" forever (the field deadlock). A failed reconnect (amuled still
-        # down) raises under ``MuleClientError`` → absorbed + backoff below, like any other one.
+        # down) raises under ``ClientError`` → absorbed + backoff below, like any other one.
         await deps.ports.connect()
         current = await deps.ports.get_listen_port()
         if live == current:
@@ -150,9 +151,9 @@ async def run_port_sync_cycle(deps: PortSyncDeps, state: _PortSyncState) -> None
                     first_occurrence=deps.edge.enter(_MISMATCH), live=live, configured=live
                 )
             )
-    except MuleClientError as error:
+    except ClientError as error:
         # get/set_listen_port / network_status failed (amuled down, amuleapi down, or the
-        # operation refused) → tolerated: we catch the port ANCESTOR ``MuleClientError``, which
+        # operation refused) → tolerated: we catch the port ANCESTOR ``ClientError``, which
         # covers unreachable AND application failure, without importing the adapter (dependency
         # rule §4). Backoff, no crash (top-level net §4.4).
         _logger.warning("amuleapi failed during port-sync (%s): tolerated, backoff", error)

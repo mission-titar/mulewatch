@@ -16,12 +16,8 @@ from mulewatch.domain.observability.events import (
     FreeSpaceSampled,
 )
 from mulewatch.ports.catalog_repository import ObservedFile
-from mulewatch.ports.mule_client import (
-    KadStatus,
-    MuleSearchFailedError,
-    MuleUnreachableError,
-    NetworkStatus,
-)
+from mulewatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
+from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.repository_errors import RepositoryError
 from tests.application.fakes import RecordingTelemetry
@@ -48,7 +44,7 @@ class FakeDownloadClient:
     """Scripted MuleDownloadClient: SCRIPTED download queue, captures added links.
 
     ``disconnected`` models the REAL adapter's state before a login: every I/O call raises
-    ``MuleUnreachableError`` until ``connect()`` succeeds.
+    ``ClientUnreachableError`` until ``connect()`` succeeds.
     """
 
     def __init__(
@@ -74,7 +70,7 @@ class FakeDownloadClient:
 
     def _require_connected(self) -> None:
         if self._disconnected:
-            raise MuleUnreachableError("EC client not connected (call connect() first)")
+            raise ClientUnreachableError("EC client not connected (call connect() first)")
 
     async def connect(self) -> None:
         self.connect_calls += 1
@@ -569,7 +565,7 @@ async def test_cycle_reconnects_a_dead_transport_before_any_io() -> None:
 @pytest.mark.asyncio
 async def test_reconnect_failure_skips_the_iteration_without_raising() -> None:
     client = FakeDownloadClient(
-        disconnected=True, connect_failures=[MuleUnreachableError("daemon still down")]
+        disconnected=True, connect_failures=[ClientUnreachableError("daemon still down")]
     )
     downloads = FakeDownloadRepo()
     deps = _deps(
@@ -585,7 +581,7 @@ async def test_reconnect_failure_skips_the_iteration_without_raising() -> None:
 
 @pytest.mark.asyncio
 async def test_unreachable_client_is_tolerated_and_iteration_skipped() -> None:
-    client = FakeDownloadClient(queue_failures=[MuleUnreachableError("daemon down")])
+    client = FakeDownloadClient(queue_failures=[ClientUnreachableError("daemon down")])
     downloads = FakeDownloadRepo()
     deps = _deps(
         client=client,
@@ -771,9 +767,9 @@ async def test_queued_download_without_observation_emits_no_link() -> None:
 
 @pytest.mark.asyncio
 async def test_add_link_unreachable_keeps_queued_and_is_tolerated() -> None:
-    # add_link raises MuleUnreachableError → tolerated at cycle level; the download stays QUEUED
+    # add_link raises ClientUnreachableError → tolerated at cycle level; the download stays QUEUED
     # (record_queued already happened) → caught up next round. write-before-network invariant.
-    client = FakeDownloadClient(add_failures=[MuleUnreachableError("down")])
+    client = FakeDownloadClient(add_failures=[ClientUnreachableError("down")])
     downloads = FakeDownloadRepo()
     catalog = FakeCatalogReads(
         candidates=(_candidate(_A, "062A"),),
@@ -791,9 +787,9 @@ async def test_add_link_unreachable_keeps_queued_and_is_tolerated() -> None:
 
 @pytest.mark.asyncio
 async def test_add_link_rejected_marks_failed_and_does_not_crash() -> None:
-    # add_link raises MuleSearchFailedError (the daemon replied EC_OP_FAILED — link rejected):
+    # add_link raises DownloadRejectedError (the daemon replied EC_OP_FAILED — link rejected):
     # THIS hash is marked FAILED (spec §9 "failed + log"), the loop continues, does not raise.
-    client = FakeDownloadClient(add_failures=[MuleSearchFailedError("rejected")])
+    client = FakeDownloadClient(add_failures=[DownloadRejectedError("rejected")])
     downloads = FakeDownloadRepo()
     catalog = FakeCatalogReads(
         candidates=(_candidate(_A, "062A"),),
@@ -813,7 +809,7 @@ async def test_add_link_rejected_marks_failed_and_does_not_crash() -> None:
 async def test_add_link_rejected_for_one_hash_does_not_block_the_next() -> None:
     # add_link rejected (EC_OP_FAILED) for _A, accepted for _B: _A → FAILED, _B → link emitted and
     # stays QUEUED. The break does not abort the loop (continues to the next hash).
-    client = FakeDownloadClient(add_failures=[MuleSearchFailedError("rejected")])
+    client = FakeDownloadClient(add_failures=[DownloadRejectedError("rejected")])
     downloads = FakeDownloadRepo()
     catalog = FakeCatalogReads(
         candidates=(_candidate(_A, "062A"), _candidate(_B, "062A")),
@@ -986,10 +982,10 @@ async def test_candidate_repo_failure_does_not_starve_completions() -> None:
 
 @pytest.mark.asyncio
 async def test_monitor_unreachable_aborts_subsequent_steps() -> None:
-    # MuleUnreachableError in _monitor (download_queue) = dead daemon → ABORT of the iteration:
+    # ClientUnreachableError in _monitor (download_queue) = dead daemon → ABORT of the iteration:
     # neither the completions (step 2) nor the new candidates (step 3) must run.
     # (Doctrine "a dead daemon fails everything" — distinct from RepositoryError isolation.)
-    client = FakeDownloadClient(queue_failures=[MuleUnreachableError("daemon down")])
+    client = FakeDownloadClient(queue_failures=[ClientUnreachableError("daemon down")])
     downloads = FakeDownloadRepo()
     downloads.states[_A] = DownloadState.COMPLETED  # a pending completion (step 2)
     downloads.sizes[_A] = 10
@@ -1046,7 +1042,7 @@ async def test_add_links_repo_failure_is_tolerated_and_does_not_raise() -> None:
 
     # add_link rejected (EC_OP_FAILED) → _add_links tries set_state(FAILED), which raises
     # RepositoryError.
-    client = FakeDownloadClient(add_failures=[MuleSearchFailedError("rejected")])
+    client = FakeDownloadClient(add_failures=[DownloadRejectedError("rejected")])
     downloads = _AddLinkSetStateFailRepo()
     catalog = FakeCatalogReads(
         candidates=(_candidate(_A, "062A"),),
@@ -1154,7 +1150,7 @@ async def test_monitor_moves_queued_to_downloading_not_completed() -> None:
 async def test_shared_files_unreachable_aborts_iteration_gracefully() -> None:
     downloads = FakeDownloadRepo()
     downloads.states[_A] = DownloadState.DOWNLOADING
-    client = FakeDownloadClient(shared_failures=[MuleUnreachableError("dead stream")])
+    client = FakeDownloadClient(shared_failures=[ClientUnreachableError("dead stream")])
     deps = _deps(
         client=client,
         downloads=downloads,

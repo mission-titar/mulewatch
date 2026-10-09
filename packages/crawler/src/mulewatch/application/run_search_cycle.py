@@ -41,13 +41,9 @@ from mulewatch.domain.observability.events import (
 from mulewatch.domain.search.coverage import Coverage, effective_coverage
 from mulewatch.domain.search.cycle import Rng, shuffle_for_cycle
 from mulewatch.domain.search.keywords import generate_keywords
+from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock
-from mulewatch.ports.mule_client import (
-    KadStatus,
-    MuleClient,
-    MuleUnreachableError,
-    SearchChannel,
-)
+from mulewatch.ports.mule_client import KadStatus, MuleClient, SearchChannel
 from mulewatch.ports.repository_errors import RepositoryError
 from mulewatch.ports.scheduler_state_repository import SchedulerStateRepository
 from mulewatch.ports.telemetry import Telemetry
@@ -83,7 +79,7 @@ async def _aggregate_coverage(
         # hammer a down daemon and short-circuit that backoff, spec §3/§7).
         try:
             status = await client.network_status()
-        except MuleUnreachableError as error:
+        except ClientUnreachableError as error:
             _logger.warning("instance unreachable at status readout (%s): not capable", error)
             capable.append(False)
             continue

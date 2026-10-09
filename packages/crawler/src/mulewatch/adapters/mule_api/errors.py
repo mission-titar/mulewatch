@@ -1,17 +1,19 @@
 """Adapter errors, inheriting the port contract so the application never imports this adapter.
 
-A refused operation backs off the channel, anything else marks the daemon unreachable, and a
-refused login stays outside both: it is a config problem, and the crawler must fail fast on it.
+A refused operation fails the search or the download, anything else marks the daemon
+unreachable, and a refused login stays outside both: it is a config problem, the crawler fails
+fast on it.
 """
 
 import json
 
 import httpx
 
-from mulewatch.ports.mule_client import (
-    MuleClientError,
-    MuleSearchFailedError,
-    MuleUnreachableError,
+from mulewatch.ports.client_errors import (
+    ClientError,
+    ClientUnreachableError,
+    DownloadRejectedError,
+    SearchFailedError,
 )
 
 # Error codes that report a failed OPERATION rather than a failed daemon: the request is dead,
@@ -19,11 +21,11 @@ from mulewatch.ports.mule_client import (
 _OPERATION_CODES = frozenset({"amuled_rejected", "not_found"})
 
 
-class ApiError(MuleClientError):
+class ApiError(ClientError):
     """Base of all amuleapi adapter errors (under the port contract)."""
 
 
-class ApiUnreachableError(ApiError, MuleUnreachableError):
+class ApiUnreachableError(ApiError, ClientUnreachableError):
     """Transport dead, amuleapi down, or its EC link to amuled down -> instance down."""
 
 
@@ -31,7 +33,7 @@ class ApiAuthError(ApiError):
     """Login refused (wrong admin password) - not a loop case, a config one."""
 
 
-class ApiRejectedError(ApiError, MuleSearchFailedError):
+class ApiRejectedError(ApiError, SearchFailedError, DownloadRejectedError):
     """The daemon refused the operation and said so cleanly; carries its message."""
 
 

@@ -13,7 +13,7 @@ Three things in it are not obvious and have each cost a field incident:
 - **Step 0 re-connects every iteration.** It is idempotent and nearly free, and it is what makes
   "the client reconnects next round" true (2026-09-04 to 09-11: 7 days of a dead loop).
 
-Errors: ``MuleUnreachableError`` and ``OSError`` on the disk measurement skip the iteration,
+Errors: ``ClientUnreachableError`` and ``OSError`` on the disk measurement skip the iteration,
 ``RepositoryError`` is logged and the cycle continues. A stalled download is never abandoned.
 """
 
@@ -38,10 +38,10 @@ from mulewatch.domain.observability.events import (
     FreeSpaceSampled,
 )
 from mulewatch.ports.catalog_repository import ObservedFile
+from mulewatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.decision_signal import DecisionSignal
 from mulewatch.ports.disk_space import DiskSpace
-from mulewatch.ports.mule_client import MuleSearchFailedError, MuleUnreachableError
 from mulewatch.ports.mule_download_client import (
     DownloadEntry,
     MuleDownloadClient,
@@ -282,14 +282,14 @@ async def _add_links(deps: DownloadDeps) -> None:
     """Emits the ``add_link`` calls for ``queued`` downloads with no link sent yet.
 
     Split from ``_queue_new_candidates`` so the (sync) DB write precedes the (async) network
-    I/O: a ``MuleUnreachableError`` at ``add_link`` leaves the download ``queued`` in the DB
+    I/O: a ``ClientUnreachableError`` at ``add_link`` leaves the download ``queued`` in the DB
     (the next round's monitor catches up). We re-emit the link for every known ``queued``.
 
     Two ``add_link`` failures to distinguish (spec §9):
-      - ``MuleSearchFailedError`` (the daemon answered ``EC_OP_FAILED`` - link explicitly
+      - ``DownloadRejectedError`` (the daemon answered ``EC_OP_FAILED`` - link explicitly
         REJECTED): we mark THIS hash ``failed`` (log + ``set_state``) and ``continue`` to the
         next. Retrying would only re-emit the same rejected link in a loop.
-      - ``MuleUnreachableError`` (daemon out of reach): we let it PROPAGATE - the top capture of
+      - ``ClientUnreachableError`` (daemon out of reach): we let it PROPAGATE - the top capture of
         ``run_download_cycle`` skips the whole iteration (a dead daemon makes everything fail).
     """
     # FRESH re-read of active_states: _queue_new_candidates wrote new QUEUED rows this cycle,
@@ -304,7 +304,7 @@ async def _add_links(deps: DownloadDeps) -> None:
         link = build_ed2k_link(observation.filename, observation.size_bytes, ed2k_hash)
         try:
             await deps.client.add_link(link)
-        except MuleSearchFailedError as error:
+        except DownloadRejectedError as error:
             deps.downloads.set_state(ed2k_hash, DownloadState.FAILED)
             _logger.warning(
                 "add_link rejected by amuled for hash=%s (%s): marked failed", ed2k_hash, error
@@ -316,7 +316,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
 
     Two distinct error DOCTRINES (item I2 - anti-starvation):
 
-    - ``MuleUnreachableError`` (daemon out of reach, from step 0, ``_handle_completions`` or
+    - ``ClientUnreachableError`` (daemon out of reach, from step 0, ``_handle_completions`` or
       ``_add_links``) = dead daemon → ABORT the iteration ("a dead daemon makes everything
       fail", cf. ``_add_links``). We skip the rest; the next iteration retries (amuled persists
       the downloads).
@@ -329,14 +329,14 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
 
     The repos are sync → cancellation (shutdown) lands at the network ``await``, never mid-write.
 
-    DECISION (audit 2026-06-23 / observability#5): a ``MuleUnreachableError`` here does NOT
+    DECISION (audit 2026-06-23 / observability#5): a ``ClientUnreachableError`` here does NOT
     emit ``InstanceUnreachable`` (unlike ``run_search_cycle``). The E-D5 taxonomy files this
     event under SEARCH only; the download loop is single-instance and the label
     ``instance=...`` would be meaningless (counter shared with the search workers). The
     unavailability is handled by the next cycle's retry + the warning log. Intentional
     asymmetry.
     """
-    # Step 0 - CONNECT + QUEUE SNAPSHOT: client I/O → MuleUnreachableError = dead daemon = ABORT.
+    # Step 0 - CONNECT + QUEUE SNAPSHOT: client I/O → ClientUnreachableError = dead daemon = ABORT.
     # ``connect()`` is IDEMPOTENT (the adapter no-ops when its transport is live) and is the ONLY
     # thing that re-arms a stream the adapter discarded after a failed read. SKIPPING IT WEDGES
     # THE LOOP: amuled is restarted by the port-sync on every VPN renegotiation, and nothing else
@@ -345,7 +345,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     try:
         await deps.client.connect()
         queue = await deps.client.download_queue()
-    except MuleUnreachableError as error:
+    except ClientUnreachableError as error:
         _logger.warning("download daemon unreachable (%s): iteration skipped, retry", error)
         return
     queued = frozenset(entry.ed2k_hash for entry in queue)
@@ -370,7 +370,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     # a repo failure in one must NOT prevent the other from running.
     try:
         shared = await deps.client.shared_files()
-    except MuleUnreachableError as error:
+    except ClientUnreachableError as error:
         _logger.warning("download daemon unreachable (%s): iteration skipped, retry", error)
         return
     try:
@@ -393,11 +393,11 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
         # A missing or unreadable output mount: refuse to admit anything rather than take down
         # the crawler, which also catalogues. Conservative, loud, and retried next cycle.
         _logger.error("output directory unmeasurable (%s): no candidate admitted, retry", error)
-    # Step 4 - ADD_LINKS: client I/O → MuleUnreachableError = dead daemon = ABORT. Re-reads
+    # Step 4 - ADD_LINKS: client I/O → ClientUnreachableError = dead daemon = ABORT. Re-reads
     # ``active_states`` FRESHLY, so it runs even if step 3 partially failed.
     try:
         await _add_links(deps)
-    except MuleUnreachableError as error:
+    except ClientUnreachableError as error:
         _logger.warning("download daemon unreachable (%s): iteration skipped, retry", error)
     except RepositoryError as error:
         _logger.error("add_link download repo failure (%s): step skipped, retry", error)
