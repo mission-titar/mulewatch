@@ -16,6 +16,7 @@ This module also carries the repositories' shared clock (``Clock``/``utc_now``/
 order IS chronological order (the FIFO claim sorts on ``enqueued_at``).
 """
 
+import logging
 import sqlite3
 from collections.abc import Callable
 from contextlib import suppress
@@ -34,6 +35,8 @@ from mulewatch.adapters.persistence_sqlite.errors import (
 from mulewatch.adapters.persistence_sqlite.variants import register_functions
 
 type Clock = Callable[[], datetime]
+
+_logger = logging.getLogger("mulewatch.adapters.persistence_sqlite.connection")
 
 _MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations"
 
@@ -151,6 +154,7 @@ def _apply_migrations(connection: sqlite3.Connection, scripts: tuple[Migration, 
     try:
         for migration in scripts:
             if migration.version > current:
+                _logger.info("migration %d: applying", migration.version)
                 _run_restoring_pragmas(connection, migration)
     finally:
         connection.execute("PRAGMA temp_store=DEFAULT")

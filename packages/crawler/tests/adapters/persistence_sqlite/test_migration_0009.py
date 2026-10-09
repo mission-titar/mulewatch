@@ -49,3 +49,17 @@ def test_0009_is_safe_to_replay(tmp_path: Path) -> None:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
     finally:
         connection.close()
+
+
+def test_0009_leaves_the_wal_truncated(tmp_path: Path) -> None:
+    """The crawler keeps its connection open, so a WAL the VACUUM grew would stay on disk."""
+    path = tmp_path / "catalog.db"
+    _catalog_at_8_with_free_pages(path)
+
+    connection = open_catalog(path)
+    try:
+        page_size = connection.execute("PRAGMA page_size").fetchone()[0]
+        # The WAL header, then the one frame of the user_version stamp that follows 0009.
+        assert Path(f"{path}-wal").stat().st_size <= 32 + 24 + page_size
+    finally:
+        connection.close()

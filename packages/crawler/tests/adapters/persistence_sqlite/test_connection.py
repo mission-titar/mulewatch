@@ -197,6 +197,25 @@ def test_failed_script_is_rolled_back_and_version_unchanged(tmp_path: Path) -> N
         connection.close()
 
 
+def test_each_applied_script_logs_one_line_before_it_runs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A long first boot shows which script runs, so a silent wait is not taken for a hang."""
+    connection = sqlite3.connect(tmp_path / "log.db", autocommit=True)
+    scripts = (
+        Migration(1, "CREATE TABLE a (x INTEGER);"),
+        Migration(2, "CREATE TABLE b (x INTEGER);"),
+    )
+    try:
+        _apply_migrations(connection, scripts[:1])
+        caplog.clear()
+        with caplog.at_level("INFO"):
+            _apply_migrations(connection, scripts)
+        assert caplog.messages == ["migration 2: applying"]
+    finally:
+        connection.close()
+
+
 def test_load_scripts_orders_by_name_and_skips_non_sql(tmp_path: Path) -> None:
     (tmp_path / "0002_second.sql").write_text("B", encoding="utf-8")
     (tmp_path / "0001_premier.sql").write_text("A", encoding="utf-8")
