@@ -14,6 +14,7 @@ from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import CatalogRepository, ReevalRow
+from tests.catalog_rows import count_observations, insert_file
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 _HASH_B = "b" * 32
@@ -160,7 +161,7 @@ def test_record_observation_is_one_transaction(
     # The repository stays USABLE: rollback done, connection out of transaction.
     assert not connection.in_transaction
     repository.record_observation(_observation())
-    assert connection.execute("SELECT count(*) FROM file_observations").fetchone()[0] == 1
+    assert count_observations(connection) == 1
 
 
 def test_record_observation_rejects_non_canonical_hash(
@@ -174,7 +175,7 @@ def test_record_observation_rejects_non_canonical_hash(
     with pytest.raises(PersistenceError, match="non-canonical eD2k hash"):
         repository.record_observation(upper)
     assert connection.execute("SELECT count(*) FROM files").fetchone()[0] == 0
-    assert connection.execute("SELECT count(*) FROM file_observations").fetchone()[0] == 0
+    assert count_observations(connection) == 0
 
 
 def test_rollback_on_non_sqlite_error_keeps_connection_usable(
@@ -188,7 +189,7 @@ def test_rollback_on_non_sqlite_error_keeps_connection_usable(
         repository.record_observation(_observation(filename="a\ud800"))
     assert not connection.in_transaction
     repository.record_observation(_observation())
-    assert connection.execute("SELECT count(*) FROM file_observations").fetchone()[0] == 1
+    assert count_observations(connection) == 1
 
 
 def test_outer_transaction_survives_record_observation_failure(
@@ -198,9 +199,7 @@ def test_outer_transaction_survives_record_observation_failure(
     # transaction within a transaction") BEFORE the try → NO rollback is attempted,
     # the OUTER transaction and its pending rows SURVIVE.
     connection.execute("BEGIN")
-    connection.execute(
-        "INSERT INTO files (ed2k_hash, size_bytes, aich_hash) VALUES (?, 1, NULL)", (_HASH,)
-    )
+    insert_file(connection, _HASH, 1)
     with pytest.raises(PersistenceError, match="cannot start a transaction within a transaction"):
         repository.record_observation(_observation())
     assert connection.in_transaction  # the outer transaction is INTACT
@@ -375,22 +374,15 @@ def test_count_files_counts_catalogued_hashes_not_observations(
     assert repository.count_files() == 2
 
 
-def _insert_file(connection: sqlite3.Connection, ed2k_hash: str, size_bytes: int) -> None:
-    connection.execute(
-        "INSERT INTO files (ed2k_hash, size_bytes, aich_hash) VALUES (?, ?, NULL)",
-        (ed2k_hash, size_bytes),
-    )
-
-
 def test_iter_reevaluation_rows_skips_a_file_never_observed(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
-    _insert_file(connection, _HASH, 1)
+    insert_file(connection, _HASH, 1)
     assert list(repository.iter_reevaluation_rows()) == []
 
 
 def test_last_observation_of_a_file_never_observed_is_none(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
-    _insert_file(connection, _HASH, 1)
+    insert_file(connection, _HASH, 1)
     assert repository.last_observation(_HASH) is None

@@ -19,6 +19,7 @@ from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
+from tests.catalog_rows import decision_tiers
 
 _HASH_DL = "31d6cfe0d16ae931b73c59d7e0c089c0"
 _HASH_CAT = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -64,9 +65,7 @@ async def test_two_changed_rows_are_all_evaluated_and_written(
         catalog=catalog, engine=engine, signal=signal, telemetry=telemetry
     )
     assert summary == ReevalSummary(evaluated=2, written=2)
-    tiers = dict(
-        catalog_connection.execute("SELECT ed2k_hash, tier FROM match_decisions").fetchall()
-    )
+    tiers = dict(decision_tiers(catalog_connection))
     assert tiers == {_HASH_DL: "download", _HASH_CAT: "catalog"}
     assert len(telemetry.events) == 2
     # Iteration is ORDER BY ed2k_hash: "31d6..." sorts before "aaaa..." (ASCII '3' < 'a').
@@ -116,8 +115,7 @@ async def test_repository_error_on_one_row_is_absorbed_and_sweep_continues(
         catalog=catalog, engine=engine, signal=signal, telemetry=telemetry
     )
     assert summary == ReevalSummary(evaluated=2, written=1)
-    rows = catalog_connection.execute("SELECT ed2k_hash, tier FROM match_decisions").fetchall()
-    assert rows == [(_HASH_CAT, "catalog")]
+    assert decision_tiers(catalog_connection) == [(_HASH_CAT, "catalog")]
     assert catalog.last_decisions(_HASH_DL) == {}
 
 

@@ -36,6 +36,7 @@ from mulewatch.ports.mule_client import KadStatus, MuleUnreachableError, Network
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.telemetry import Telemetry
 from tests.application.fakes import FakeClock, FakeMuleClient, RecordingSignal
+from tests.catalog_rows import observation_node_ids
 
 _TARGETS = (
     TargetSegment(
@@ -364,10 +365,10 @@ async def test_node_id_override_is_used(tmp_path: Path, matcher_config: MatcherC
     await asyncio.wait_for(app.run(), timeout=5.0)
     catalog = sqlite3.connect(tmp_path / "catalog.db")
     try:
-        rows = catalog.execute("SELECT DISTINCT node_id FROM file_observations").fetchall()
+        node_ids = observation_node_ids(catalog)
     finally:
         catalog.close()
-    assert rows == [("forced-node",)]
+    assert node_ids == {"forced-node"}
 
 
 @pytest.mark.asyncio

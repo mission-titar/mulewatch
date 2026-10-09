@@ -29,6 +29,7 @@ from tests.application.fakes import (
     make_search_failed,
     make_unreachable,
 )
+from tests.catalog_rows import count_observations
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 _DL_NAME = "Keroro N°062A Les demoiselles cambrioleuses.avi"
@@ -217,7 +218,7 @@ async def test_multiple_observations_some_unchanged_are_all_processed(
     client = FakeMuleClient(results=[(discarded, _obs())])
     worker = SearchWorker("amule-1", client, _deps(catalog, engine, clock, _registry(clock)))
     await worker.run_task(SearchTask(keyword="keroro", channel=SearchChannel.GLOBAL))
-    assert catalog_connection.execute("SELECT count(*) FROM file_observations").fetchone()[0] == 2
+    assert count_observations(catalog_connection) == 2
     assert catalog_connection.execute("SELECT count(*) FROM match_decisions").fetchone()[0] == 1
 
 

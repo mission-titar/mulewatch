@@ -15,6 +15,7 @@ from mulewatch.adapters.persistence_sqlite.connection import (
     utc_now,
 )
 from mulewatch.adapters.persistence_sqlite.errors import MigrationError, PersistenceError
+from tests.catalog_rows import insert_decision, insert_file
 
 _CATALOG_TABLES = {"files", "file_observations", "match_decisions"}
 _LOCAL_TABLES = {
@@ -80,11 +81,7 @@ def test_foreign_keys_are_enforced(tmp_path: Path) -> None:
     connection = open_catalog(tmp_path / "catalog.db")
     try:
         with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
-            connection.execute(
-                "INSERT INTO match_decisions"
-                " (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
-                " VALUES ('absent', 't', 'r', 'catalog', 'now', 'n')"
-            )
+            insert_decision(connection, "absent", "t", "catalog")
     finally:
         connection.close()
 
@@ -92,7 +89,7 @@ def test_foreign_keys_are_enforced(tmp_path: Path) -> None:
 def test_reopen_is_idempotent_and_keeps_data(tmp_path: Path) -> None:
     path = tmp_path / "catalog.db"
     first = open_catalog(path)
-    first.execute("INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, 1)", (_CANONICAL_HASH,))
+    insert_file(first, _CANONICAL_HASH, 1)
     first.close()
     second = open_catalog(path)  # versions already applied: NO script replays
     try:
@@ -219,9 +216,7 @@ def test_insert_or_replace_on_existing_hash_raises_integrity_error(tmp_path: Pat
     that REPLACE performs internally, surfacing as sqlite3.IntegrityError."""
     connection = open_catalog(tmp_path / "catalog.db")
     try:
-        connection.execute(
-            "INSERT INTO files (ed2k_hash, size_bytes) VALUES (?, 1)", (_CANONICAL_HASH,)
-        )
+        insert_file(connection, _CANONICAL_HASH, 1)
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
                 "INSERT OR REPLACE INTO files (ed2k_hash, size_bytes) VALUES (?, 2)",

@@ -28,6 +28,7 @@ from mulewatch.webui.domain.views import (
     FileRow,
     HiddenInput,
 )
+from tests.catalog_rows import SEEN_AT, insert_decision, insert_file, insert_observation
 
 # ---------------------------------------------------------------------------
 # Parsed-config helpers (since P4a build_app takes already-parsed config)
@@ -101,39 +102,22 @@ rules:
 def populated_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """Insert test data and build the Starlette app."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(
+            conn,
+            TEST_HASH,
+            "keroro_s2e62a_vf.avi",
+            size_bytes=100_000_000,
+            source_count=5,
         )
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_s2e62a_vf.avi",
-                100_000_000,
-                5,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "062A", "catalog", "catalog", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
+        insert_decision(conn, TEST_HASH, "062A", "catalog", rule_name="catalog")
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-test-001"))
         conn.execute(
             "INSERT INTO node_runtime VALUES (?, ?)", ("created_at", "2024-01-01T00:00:00")
         )
+        conn.commit()
         conn.execute(
             "INSERT INTO scheduler_state VALUES (?, ?)",
             ("last_search_cycle", "2024-01-01T00:00:00"),
@@ -165,30 +149,15 @@ def populated_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
 def app_no_decision(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """File without a match decision (decision=None branch)."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
-        )
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_s2e62a_vf.avi",
-                100_000_000,
-                5,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(
+            conn,
+            TEST_HASH,
+            "keroro_s2e62a_vf.avi",
+            size_bytes=100_000_000,
+            source_count=5,
         )
         # No decision
-        conn.commit()
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-no-dec"))
@@ -224,39 +193,25 @@ def app_retracted_decision(catalog_db: Path, local_db: Path) -> tuple[Starlette,
     (``target_id="062A", rule_name="", tier="retracted"``): must be treated exactly like
     ``app_no_decision`` (unmatched), never like a real decision."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
-        )
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_s2e62a_vf.avi",
-                100_000_000,
-                5,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(
+            conn,
+            TEST_HASH,
+            "keroro_s2e62a_vf.avi",
+            size_bytes=100_000_000,
+            source_count=5,
         )
         # First a real decision (was matched)...
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "062A", "high_confidence", "download", "2024-01-01T00:00:00", "node1"),
-        )
+        insert_decision(conn, TEST_HASH, "062A", "download", rule_name="high_confidence")
         # ...then the per-target retraction sentinel, now the LATEST row for 062A.
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (2, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "062A", "", "retracted", "2024-01-02T00:00:00", "node1"),
+        insert_decision(
+            conn,
+            TEST_HASH,
+            "062A",
+            "retracted",
+            rule_name="",
+            decided_at="2026-06-23T10:00:00.000000+00:00",
         )
-        conn.commit()
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-retracted"))
@@ -290,12 +245,8 @@ def app_retracted_decision(catalog_db: Path, local_db: Path) -> tuple[Starlette,
 def app_no_observations(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """File without observations (last_obs=None branch → link='')."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
-        )
+        insert_file(conn, TEST_HASH, 100_000_000)
         # No observations
-        conn.commit()
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-no-obs"))
@@ -329,34 +280,16 @@ def app_no_observations(catalog_db: Path, local_db: Path) -> tuple[Starlette, st
 def app_unknown_target(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """File with a decision for a target_id unknown to the current config."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
-        )
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_s2e62a_vf.avi",
-                100_000_000,
-                5,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(
+            conn,
+            TEST_HASH,
+            "keroro_s2e62a_vf.avi",
+            size_bytes=100_000_000,
+            source_count=5,
         )
         # target_id unknown to the current YAML config
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "S9E999Z", "catalog", "catalog", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
+        insert_decision(conn, TEST_HASH, "S9E999Z", "catalog", rule_name="catalog")
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-unk"))
@@ -391,33 +324,15 @@ def app_download_tier_known_target(catalog_db: Path, local_db: Path) -> tuple[St
     """A non-catalog decision (tier=download) on a target_id resolvable in the current
     targets.yaml. Task 3 resolution rule: the "resolvable id" case."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(
+            conn,
+            TEST_HASH,
+            "keroro_s2e62a_vf.avi",
+            size_bytes=100_000_000,
+            source_count=5,
         )
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_s2e62a_vf.avi",
-                100_000_000,
-                5,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "062A", "high_confidence", "download", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
+        insert_decision(conn, TEST_HASH, "062A", "download", rule_name="high_confidence")
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-dl"))
@@ -452,33 +367,15 @@ def app_download_tier_unknown_target(catalog_db: Path, local_db: Path) -> tuple[
     """A non-catalog decision (tier=download) on a target_id NOT in the current
     targets.yaml. Task 3 resolution rule: the "unknown id" case."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(
+            conn,
+            TEST_HASH,
+            "keroro_s9e999z_vf.avi",
+            size_bytes=100_000_000,
+            source_count=5,
         )
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_s9e999z_vf.avi",
-                100_000_000,
-                5,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "999Z", "high_confidence", "download", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
+        insert_decision(conn, TEST_HASH, "999Z", "download", rule_name="high_confidence")
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-dl-unk"))
@@ -656,32 +553,12 @@ async def test_file_detail_with_decision_returns_200(
 def app_vetoed_alias(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """One file seen under a clean name and a foreign alias, with a veto on the alias."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files VALUES (?, ?, ?)", (TEST_HASH, 100_000_000, None))
-        for obs_id, name in ((1, "keroro_s2e62a_vf.avi"), (2, "keroro ITA.avi")):
-            conn.execute(
-                "INSERT INTO file_observations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    obs_id,
-                    TEST_HASH,
-                    name,
-                    100_000_000,
-                    5,
-                    3,
-                    None,
-                    None,
-                    None,
-                    None,
-                    "{}",
-                    "keroro",
-                    f"2024-01-0{obs_id}T00:00:00",
-                    "node1",
-                ),
-            )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "062A", "catalog", "catalog", "2024-01-01T00:00:00", "node1"),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(conn, TEST_HASH, "keroro_s2e62a_vf.avi")
+        insert_observation(
+            conn, TEST_HASH, "keroro ITA.avi", observed_at="2026-06-23T10:00:00.000000+00:00"
         )
-        conn.commit()
+        insert_decision(conn, TEST_HASH, "062A", "catalog", rule_name="catalog")
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-veto"))
         conn.execute(
@@ -743,7 +620,7 @@ async def test_file_detail_timeline_shows_each_observation_as_one_plain_line(
     app, hash_ = populated_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         resp = await client.get(f"/files/{hash_}")
-    cells = ("keroro_s2e62a_vf.avi", "100000000", "5", "keroro", "2024-01-01T00:00:00")
+    cells = ("keroro_s2e62a_vf.avi", "100000000", "5", "keroro", SEEN_AT)
     line = "<tr>" + "".join(f"<td>{cell}</td>" for cell in cells) + "</tr>"
     assert line in re.sub(r">\s+<", "><", resp.text)
     assert "Times seen" not in resp.text
@@ -895,33 +772,17 @@ async def test_node_page_renders_scheduler_state(
 def app_with_media_obs(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """File with an observation having non-null media_length_sec and bitrate_kbps."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute(
-            "INSERT INTO files VALUES (?, ?, ?)",
-            (TEST_HASH, 100_000_000, None),
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(
+            conn,
+            TEST_HASH,
+            "keroro_s2e62a_vf.avi",
+            size_bytes=100_000_000,
+            source_count=5,
+            media_length_sec=1320,
+            bitrate_kbps=192,
         )
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_s2e62a_vf.avi",
-                100_000_000,
-                5,
-                3,
-                1320,  # media_length_sec = 22 minutes
-                192,  # bitrate_kbps
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "062A", "catalog", "catalog", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
+        insert_decision(conn, TEST_HASH, "062A", "catalog", rule_name="catalog")
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-media"))
@@ -983,26 +844,8 @@ def app_with_hostile_filename(catalog_db: Path, local_db: Path) -> tuple[Starlet
     link points elsewhere."""
     hostile = "weird|name.avi"
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files VALUES (?, ?, ?)", (TEST_HASH, 100_000_000, None))
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                hostile,
-                100_000_000,
-                5,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
-        )
-        conn.commit()
+        insert_file(conn, TEST_HASH, 100_000_000)
+        insert_observation(conn, TEST_HASH, hostile, size_bytes=100_000_000)
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-hostile"))
         conn.execute(
@@ -1076,31 +919,9 @@ async def test_files_page_shows_pagination_navigation(catalog_db: Path, local_db
     with sqlite3.connect(catalog_db) as conn:
         for i in range(50):
             ed2k = f"{i:032d}"
-            conn.execute("INSERT INTO files VALUES (?, ?, ?)", (ed2k, 100, None))
-            conn.execute(
-                "INSERT INTO file_observations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    i + 1,
-                    ed2k,
-                    f"file-{i}.bin",
-                    100,
-                    1,
-                    1,
-                    None,
-                    None,
-                    None,
-                    None,
-                    "{}",
-                    "kw",
-                    "2024-01-01T00:00:00",
-                    "node1",
-                ),
-            )
-            conn.execute(
-                "INSERT INTO match_decisions VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (i + 1, ed2k, "062A", "catalog", "catalog", "2024-01-01T00:00:00", "node1"),
-            )
-        conn.commit()
+            insert_file(conn, ed2k)
+            insert_observation(conn, ed2k, f"file-{i}.bin")
+            insert_decision(conn, ed2k, "062A", "catalog", rule_name="catalog")
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-paged"))
         conn.execute(
@@ -1409,34 +1230,12 @@ def app_whole_episode(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]
     """One file matched to BOTH 072A and 072B (two current decisions, tier download) against a
     two-segment targets.yaml: the core multi-target end-to-end fixture (spec §9)."""
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files VALUES (?, ?, ?)", (TEST_HASH, 170_000_000, None))
-        conn.execute(
-            "INSERT INTO file_observations VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                TEST_HASH,
-                "keroro_072_vf.avi",
-                170_000_000,
-                7,
-                3,
-                None,
-                None,
-                None,
-                None,
-                "{}",
-                "keroro",
-                "2024-01-01T00:00:00",
-                "node1",
-            ),
+        insert_file(conn, TEST_HASH, 170_000_000)
+        insert_observation(
+            conn, TEST_HASH, "keroro_072_vf.avi", size_bytes=170_000_000, source_count=7
         )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (1, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "072A", "numero_nu_confirmed", "download", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.execute(
-            "INSERT INTO match_decisions VALUES (2, ?, ?, ?, ?, ?, ?)",
-            (TEST_HASH, "072B", "numero_nu_confirmed", "download", "2024-01-01T00:00:00", "node1"),
-        )
-        conn.commit()
+        insert_decision(conn, TEST_HASH, "072A", "download", rule_name="numero_nu_confirmed")
+        insert_decision(conn, TEST_HASH, "072B", "download", rule_name="numero_nu_confirmed")
 
     with sqlite3.connect(local_db) as conn:
         conn.execute("INSERT INTO node_runtime VALUES (?, ?)", ("node_id", "node-whole"))
@@ -1726,31 +1525,9 @@ def sortable_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, list[str]
     big, mid, small = "a" * 32, "b" * 32, "c" * 32
     with sqlite3.connect(catalog_db) as conn:
         for h, size, name in ((big, 300, "x.avi"), (mid, 200, "y.avi"), (small, 100, "z.avi")):
-            conn.execute("INSERT INTO files VALUES (?, ?, ?)", (h, size, None))
-            conn.execute(
-                "INSERT INTO file_observations VALUES"
-                " (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    h,
-                    name,
-                    size,
-                    1,
-                    0,
-                    None,
-                    None,
-                    None,
-                    None,
-                    "{}",
-                    "keroro",
-                    "2024-01-01T00:00:00",
-                    "n",
-                ),
-            )
-            conn.execute(
-                "INSERT INTO match_decisions VALUES (NULL, ?, ?, ?, ?, ?, ?)",
-                (h, "062A", "rule", "download", "2024-01-01T00:00:00", "n"),
-            )
-        conn.commit()
+            insert_file(conn, h, size)
+            insert_observation(conn, h, name, size_bytes=size)
+            insert_decision(conn, h, "062A", "download")
     import mulewatch.webui
 
     templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"

@@ -20,6 +20,7 @@ from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.webui.adapters.sql_console import ConsoleOutcome, run_query
 from mulewatch.webui.composition.app import build_app
 from mulewatch.webui.domain.views import ConsoleResult, ConsoleRow, DbOption
+from tests.catalog_rows import insert_file
 
 _HASH_A = "a" * 32
 
@@ -45,10 +46,7 @@ def _seed_catalog(path: Path) -> None:
     ``SELECT aich_hash`` exercises the ``None -> 'NULL'`` rendering."""
     writer = open_catalog(path)
     try:
-        writer.execute(
-            "INSERT INTO files (ed2k_hash, size_bytes, aich_hash) VALUES (?, ?, ?)",
-            (_HASH_A, 10, None),
-        )
+        insert_file(writer, _HASH_A, 10)
     finally:
         writer.close()
 
@@ -284,8 +282,7 @@ def console_app(catalog_db: Path, local_db: Path) -> Starlette:
     import sqlite3
 
     with sqlite3.connect(catalog_db) as conn:
-        conn.execute("INSERT INTO files VALUES (?, ?, ?)", (_HASH_A, 10, None))
-        conn.commit()
+        insert_file(conn, _HASH_A, 10)
     with sqlite3.connect(local_db) as conn:
         conn.execute(
             "INSERT INTO scheduler_state VALUES (?, ?)", ("last_search_cycle", "2024-01-01")
