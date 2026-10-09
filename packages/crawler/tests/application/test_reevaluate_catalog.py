@@ -68,7 +68,7 @@ async def test_two_changed_rows_are_all_evaluated_and_written(
     tiers = dict(decision_tiers(catalog_connection))
     assert tiers == {_HASH_DL: "download", _HASH_CAT: "catalog"}
     assert len(telemetry.events) == 2
-    # Iteration is ORDER BY ed2k_hash: "31d6..." sorts before "aaaa..." (ASCII '3' < 'a').
+    # Iteration is ORDER BY native_id: "31d6..." sorts before "aaaa..." (ASCII '3' < 'a').
     assert signal.signalled == [DOWNLOAD_NUDGE_SUBJECT]
 
 
@@ -107,7 +107,7 @@ async def test_repository_error_on_one_row_is_absorbed_and_sweep_continues(
     # helper call raises RepositoryError, the other row must still be processed.
     catalog_connection.execute(
         "CREATE TRIGGER boom BEFORE INSERT ON match_decisions"
-        f" WHEN NEW.ed2k_hash = '{_HASH_DL}'"
+        f" WHEN NEW.file_id = x'{FileKey(Network.ED2K, _HASH_DL).file_id.hex()}'"
         " BEGIN SELECT RAISE(ABORT, 'injected failure'); END"
     )
     telemetry = RecordingTelemetry()

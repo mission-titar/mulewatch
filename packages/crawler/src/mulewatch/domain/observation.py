@@ -77,7 +77,7 @@ class FileObservation:
 class Sighting:
     """A file seen once: one observation."""
 
-    ed2k_hash: str
+    file: FileKey
     names: tuple[str, ...]
     observation_count: int
     first_seen: str

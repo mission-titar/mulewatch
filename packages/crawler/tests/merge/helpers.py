@@ -11,33 +11,21 @@ from pathlib import Path
 from typing import Any
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from tests.catalog_rows import insert_observation
+from tests.catalog_rows import insert_decision, insert_file, insert_observation
 
-# Columns excluding id, in schema order: for direct INSERTs.
-FILE_COLUMNS = ("ed2k_hash", "size_bytes", "aich_hash")
-MATCH_DECISION_COLUMNS = (
-    "ed2k_hash",
-    "target_id",
-    "rule_name",
-    "tier",
-    "decided_at",
-    "node_id",
-)
-
-_COLUMNS_BY_TABLE: Mapping[str, Sequence[str]] = {
-    "files": FILE_COLUMNS,
-    "match_decisions": MATCH_DECISION_COLUMNS,
-}
-
-# Natural-key reads; an observation is read with its variant's columns, as the readers do.
+# Natural-key reads, a file named by its native id; an observation with its variant's columns.
 _ROWS_BY_TABLE: Mapping[str, str] = {
-    "files": "SELECT ed2k_hash, size_bytes, aich_hash FROM files",
+    "files": "SELECT native_id, size_bytes FROM files",
     "observations": (
-        "SELECT v.ed2k_hash, v.filename, v.size_bytes, v.media_length_sec, v.bitrate_kbps,"
+        "SELECT f.native_id, v.filename, v.size_bytes, v.media_length_sec, v.bitrate_kbps,"
         " v.raw_meta, v.keyword, v.node_id, o.observed_at, o.source_count"
-        " FROM observation_variants AS v JOIN observations AS o USING (variant_id)"
+        " FROM files AS f JOIN observation_variants AS v USING (file_id)"
+        " JOIN observations AS o USING (variant_id)"
     ),
-    "match_decisions": f"SELECT {', '.join(MATCH_DECISION_COLUMNS)} FROM match_decisions",
+    "match_decisions": (
+        "SELECT f.native_id, d.target_id, d.rule_name, d.tier, d.decided_at, d.node_id"
+        " FROM match_decisions AS d JOIN files AS f USING (file_id)"
+    ),
 }
 
 # One canonical eD2k hash (32 lowercase hex chars) per letter; satisfies the CHECK on files.
@@ -50,32 +38,23 @@ def hash_for(letter: str) -> str:
     return letter * 32
 
 
-def insert_rows(
-    connection: sqlite3.Connection, table: str, rows: Sequence[Mapping[str, object]]
-) -> None:
-    """Direct INSERT of ``rows`` into ``table`` (explicit columns, schema order)."""
-    columns = _COLUMNS_BY_TABLE[table]
-    placeholders = ", ".join("?" for _ in columns)
-    statement = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})"
-    for row in rows:
-        connection.execute(statement, tuple(row.get(column) for column in columns))
-
-
 def make_catalog(
     path: Path, content: Mapping[str, Sequence[Mapping[str, Any]]] | None = None
 ) -> Path:
     """Create a real ``catalog.db`` at ``path`` and insert ``content`` (per table, FK order).
 
-    ``content`` maps a table name → rows (dict column→value); an ``observations`` row holds
-    ``insert_observation``'s arguments. Returns ``path`` for chaining.
+    ``content`` maps a table name → rows, each holding its ``tests.catalog_rows`` builder's
+    arguments. Returns ``path`` for chaining.
     """
     connection = open_catalog(path)
     try:
         if content is not None:
-            insert_rows(connection, "files", content.get("files", ()))
+            for row in content.get("files", ()):
+                insert_file(connection, **row)
             for row in content.get("observations", ()):
                 insert_observation(connection, **row)
-            insert_rows(connection, "match_decisions", content.get("match_decisions", ()))
+            for row in content.get("match_decisions", ()):
+                insert_decision(connection, **row)
     finally:
         connection.close()
     return path

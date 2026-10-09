@@ -10,11 +10,16 @@ import pytest
 
 from mulewatch.adapters.persistence_sqlite import sightings
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import Sighting
 from tests.catalog_rows import insert_file, insert_observation
 
 _A, _B, _C = "a" * 32, "b" * 32, "c" * 32
 _TIE = "2026-06-01T10:00:00.000000+00:00"
+
+
+def _key(ed2k_hash: str) -> FileKey:
+    return FileKey(Network.ED2K, ed2k_hash)
 
 
 @pytest.fixture
@@ -46,7 +51,7 @@ def _raw(
 
 def _raw_sighting(name: str, at: str, *, media: int | None = None) -> Sighting:
     return Sighting(
-        ed2k_hash=_A,
+        file=_key(_A),
         names=(name,),
         observation_count=1,
         first_seen=at,
@@ -66,7 +71,7 @@ def test_latest_sighting_is_the_latest_raw_observation(connection: sqlite3.Conne
     _raw(connection, _A, "new.avi", "2026-06-02T10:00:00.000000+00:00", media=60)
     _raw(connection, _A, "older.avi", "2026-05-01T10:00:00.000000+00:00")
     latest = _raw_sighting("new.avi", "2026-06-02T10:00:00.000000+00:00", media=60)
-    assert sightings.latest_sighting(connection, _A) == latest
+    assert sightings.latest_sighting(connection, _key(_A)) == latest
 
 
 def test_latest_sighting_breaks_an_observed_at_tie_on_the_newest_variant_then_the_sources(
@@ -76,7 +81,7 @@ def test_latest_sighting_breaks_an_observed_at_tie_on_the_newest_variant_then_th
     _raw(connection, _A, "first.avi", _TIE, sources=9)
     _raw(connection, _A, "second.avi", _TIE, sources=1)
     _raw(connection, _A, "second.avi", _TIE, sources=4)
-    latest = sightings.latest_sighting(connection, _A)
+    latest = sightings.latest_sighting(connection, _key(_A))
     assert latest is not None
     assert (latest.names, latest.source_count_max) == (("second.avi",), 4)
 
@@ -85,8 +90,8 @@ def test_latest_sighting_of_a_file_never_seen_or_unknown_is_none(
     connection: sqlite3.Connection,
 ) -> None:
     insert_file(connection, _A)
-    assert sightings.latest_sighting(connection, _A) is None
-    assert sightings.latest_sighting(connection, _B) is None
+    assert sightings.latest_sighting(connection, _key(_A)) is None
+    assert sightings.latest_sighting(connection, _key(_B)) is None
 
 
 def test_iter_latest_sightings_yields_one_per_seen_file_sorted_by_hash(
@@ -100,7 +105,7 @@ def test_iter_latest_sightings_yields_one_per_seen_file_sorted_by_hash(
     assert list(sightings.iter_latest_sightings(connection)) == [
         _raw_sighting("new.avi", "2026-06-02T10:00:00.000000+00:00"),
         dataclasses.replace(
-            _raw_sighting("c.avi", "2026-05-01T10:00:00.000000+00:00"), ed2k_hash=_C
+            _raw_sighting("c.avi", "2026-05-01T10:00:00.000000+00:00"), file=_key(_C)
         ),
     ]
 
@@ -114,27 +119,27 @@ def test_known_names_are_every_distinct_name_of_the_file_sorted(
     _raw(connection, _A, "raw.avi", "2026-06-02T10:00:00.000000+00:00")
     _raw(connection, _A, "old [ES].avi", "2026-05-01T10:00:00.000000+00:00")
     _raw(connection, _B, "other.avi", "2026-05-01T10:00:00.000000+00:00")
-    assert sightings.known_names(connection, _A) == ("old [ES].avi", "raw.avi")
-    assert sightings.known_names(connection, _C) == ()
+    assert sightings.known_names(connection, _key(_A)) == ("old [ES].avi", "raw.avi")
+    assert sightings.known_names(connection, _key(_C)) == ()
 
 
 def test_best_name_of_raw_rows_is_the_most_sourced(connection: sqlite3.Connection) -> None:
     insert_file(connection, _A)
     _raw(connection, _A, "clean.avi", "2026-06-01T10:00:00.000000+00:00", sources=8)
     _raw(connection, _A, "mojibake.avi", "2026-06-02T10:00:00.000000+00:00", sources=3)
-    assert sightings.best_name(connection, _A) == ("clean.avi", 100)
+    assert sightings.best_name(connection, _key(_A)) == ("clean.avi", 100)
 
 
 def test_best_name_takes_the_latest_seen_on_a_source_tie(connection: sqlite3.Connection) -> None:
     insert_file(connection, _A)
     _raw(connection, _A, "later.avi", "2026-06-02T10:00:00.000000+00:00")
     _raw(connection, _A, "earlier.avi", "2026-06-01T10:00:00.000000+00:00")
-    assert sightings.best_name(connection, _A) == ("later.avi", 100)
+    assert sightings.best_name(connection, _key(_A)) == ("later.avi", 100)
 
 
 def test_best_name_of_a_file_never_seen_is_none(connection: sqlite3.Connection) -> None:
     insert_file(connection, _A)
-    assert sightings.best_name(connection, _A) is None
+    assert sightings.best_name(connection, _key(_A)) is None
 
 
 def test_sightings_are_the_timeline_oldest_first(connection: sqlite3.Connection) -> None:
@@ -145,13 +150,13 @@ def test_sightings_are_the_timeline_oldest_first(connection: sqlite3.Connection)
     _raw(connection, _A, "tie 1.avi", "2026-05-15T10:00:00.000000+00:00")
     _raw(connection, _A, "tie 2.avi", "2026-05-15T10:00:00.000000+00:00")
     _raw(connection, _B, "other.avi", "2026-05-20T10:00:00.000000+00:00")
-    assert sightings.sightings(connection, _A) == (
+    assert sightings.sightings(connection, _key(_A)) == (
         _raw_sighting("early.avi", "2026-05-01T10:00:00.000000+00:00"),
         _raw_sighting("tie 1.avi", "2026-05-15T10:00:00.000000+00:00"),
         _raw_sighting("tie 2.avi", "2026-05-15T10:00:00.000000+00:00"),
         _raw_sighting("late.avi", "2026-06-02T10:00:00.000000+00:00"),
     )
-    assert sightings.sightings(connection, _C) == ()
+    assert sightings.sightings(connection, _key(_C)) == ()
 
 
 @pytest.mark.parametrize(
@@ -187,5 +192,5 @@ def test_known_names_read_the_variants_alone(connection: sqlite3.Connection) -> 
         return sqlite3.SQLITE_OK
 
     connection.set_authorizer(record)
-    sightings.known_names(connection, _A)
+    sightings.known_names(connection, _key(_A))
     assert tables == {"observation_variants"}

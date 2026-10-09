@@ -4,7 +4,7 @@
 
 - ``target_coverage()``: per ``target_id``, the list of ``(ed2k_hash, tier)`` from each
   file's LATEST match decision **per target** (ROW_NUMBER window PARTITION BY
-  ``(ed2k_hash, target_id)``), so a whole-episode file contributes to every target it
+  ``(file_id, target_id)``), so a whole-episode file contributes to every target it
   matches. The legacy ``target_id=''`` sentinel and per-target ``retracted`` rows are
   excluded.
 - ``list_files()``: filtered paginated explorer (files ⨝ latest observation ⨝
@@ -12,7 +12,10 @@
 - ``count_files()``: ``(matched, total)`` counts over the same filtered source, for the
   /files summary line.
 - ``file_detail()``: the timeline of sightings, the latest one, known names + current
-  decisions for a given hash; ``None`` if the hash is unknown.
+  decisions for a given eD2k hash; ``None`` if the hash is unknown.
+
+Rows still name a file by its eD2k hash (``native_id AS ed2k_hash``) until the routes take a
+``file_id`` (stage 1, block 190).
 
 All SQL lives in module constants, parameterized (no value interpolation).
 """
@@ -26,6 +29,7 @@ from mulewatch.adapters.persistence_sqlite.sightings import (
     latest_sighting,
     sightings,
 )
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.webui.domain.views import (
     DecisionView,
     FileDecision,
@@ -73,24 +77,25 @@ _TIER_RANK_CASE = _tier_rank_case("ld.tier")
 # (retracted == unmatched for that target) is dropped too.
 _SQL_COVERAGE = """\
 SELECT
-    ed2k_hash,
-    target_id,
-    tier
+    f.native_id AS ed2k_hash,
+    ld.target_id,
+    ld.tier
 FROM (
     SELECT
-        md.ed2k_hash,
+        md.file_id,
         md.target_id,
         md.tier,
         ROW_NUMBER() OVER (
-            PARTITION BY md.ed2k_hash, md.target_id
+            PARTITION BY md.file_id, md.target_id
             ORDER BY md.decided_at DESC, md.id DESC
         ) AS rn
     FROM match_decisions AS md
-)
-WHERE rn = 1
-AND target_id != ''
-AND tier != 'retracted'
-ORDER BY target_id, ed2k_hash
+) AS ld
+JOIN files AS f ON f.file_id = ld.file_id
+WHERE ld.rn = 1
+AND ld.target_id != ''
+AND ld.tier != 'retracted'
+ORDER BY ld.target_id, f.native_id
 """
 
 # The "latest per group" CTEs shared by the explorer list + counter, each folding an
@@ -107,14 +112,14 @@ ORDER BY target_id, ed2k_hash
 # ordered by target_id so the two lists stay index-aligned (spec §9, rendering A).
 _SQL_CTES = f"""\
 WITH latest_dec AS (
-    SELECT ed2k_hash, target_id, tier
+    SELECT file_id, target_id, tier
     FROM (
         SELECT
-            md.ed2k_hash,
+            md.file_id,
             md.target_id,
             md.tier,
             ROW_NUMBER() OVER (
-                PARTITION BY md.ed2k_hash, md.target_id
+                PARTITION BY md.file_id, md.target_id
                 ORDER BY md.decided_at DESC, md.id DESC
             ) AS rn
         FROM match_decisions AS md
@@ -125,27 +130,27 @@ WITH latest_dec AS (
 ),
 dec_agg AS (
     SELECT
-        ld.ed2k_hash,
+        ld.file_id,
         group_concat(ld.target_id, char(31) ORDER BY ld.target_id) AS target_ids,
         group_concat(ld.tier, char(31) ORDER BY ld.target_id) AS tiers,
         MAX({_TIER_RANK_CASE}) AS best_tier_rank
     FROM latest_dec AS ld
-    GROUP BY ld.ed2k_hash
+    GROUP BY ld.file_id
 ),
 {LATEST_SIGHTING_CTE}
 """
 
 # The shared source, files ⨝ latest observation ⨝ current decisions (aggregated), all pre-folded
 # by the CTEs above, so it is a plain star-join driven by ``files``.
-_JOIN_LATEST_SIGHTING = "LEFT JOIN latest_sighting AS obs ON obs.ed2k_hash = f.ed2k_hash\n"
-_JOIN_DECISIONS = "LEFT JOIN dec_agg AS dec ON dec.ed2k_hash = f.ed2k_hash\n"
+_JOIN_LATEST_SIGHTING = "LEFT JOIN latest_sighting AS obs ON obs.file_id = f.file_id\n"
+_JOIN_DECISIONS = "LEFT JOIN dec_agg AS dec ON dec.file_id = f.file_id\n"
 
 # Explorer: files + latest joins, driven by files. Optional filters added in list_files().
 _SQL_LIST_FILES_BASE = (
     _SQL_CTES
     + """\
 SELECT
-    f.ed2k_hash,
+    f.native_id AS ed2k_hash,
     f.size_bytes,
     obs.name AS filename,
     obs.source_count_max AS source_count,
@@ -166,26 +171,26 @@ _SQL_COUNT_FILES_BASE = (
     _SQL_CTES
     + """\
 SELECT
-    COUNT(DISTINCT f.ed2k_hash) AS total,
-    COUNT(DISTINCT CASE WHEN dec.target_ids IS NOT NULL THEN f.ed2k_hash END) AS matched
+    COUNT(DISTINCT f.file_id) AS total,
+    COUNT(DISTINCT CASE WHEN dec.target_ids IS NOT NULL THEN f.file_id END) AS matched
 FROM files AS f
 """
 )
 
-# Tier facet counts (webui spec §3.3): one row per tier, ``COUNT(DISTINCT ed2k_hash)`` files that
+# Tier facet counts (webui spec §3.3): one row per tier, ``COUNT(DISTINCT file_id)`` files that
 # have at least one CURRENT decision of that tier. Grouped over ``latest_dec`` (per-decision), so
 # a multi-tier file counts once under each of its tiers. The tier filter itself is NEVER applied
 # here (a facet shows the count you would get by choosing each option).
 _SQL_TIER_COUNTS_BASE = (
     _SQL_CTES
     + """\
-SELECT ld.tier AS tier, COUNT(DISTINCT ld.ed2k_hash) AS n
+SELECT ld.tier AS tier, COUNT(DISTINCT ld.file_id) AS n
 FROM latest_dec AS ld
-JOIN files AS f ON f.ed2k_hash = ld.ed2k_hash
+JOIN files AS f ON f.file_id = ld.file_id
 """
 )
 
-# All current decisions of a file: latest per (ed2k_hash, target_id), excluding the legacy
+# All current decisions of a file: latest per (file_id, target_id), excluding the legacy
 # ``target_id == ''`` sentinel and any target whose latest row is a ``retracted`` marker.
 _SQL_FILE_DECISIONS = """\
 SELECT target_id, rule_name, tier, decided_at, node_id
@@ -201,7 +206,7 @@ FROM (
             ORDER BY md.decided_at DESC, md.id DESC
         ) AS rn
     FROM match_decisions AS md
-    WHERE md.ed2k_hash = ?
+    WHERE md.file_id = ?
 )
 WHERE rn = 1
 AND target_id != ''
@@ -211,9 +216,9 @@ ORDER BY target_id
 
 # Basic lookup on files (for file_detail).
 _SQL_FILE = """\
-SELECT ed2k_hash, size_bytes
+SELECT native_id AS ed2k_hash, size_bytes
 FROM files
-WHERE ed2k_hash = ?
+WHERE file_id = ?
 """
 
 
@@ -235,13 +240,13 @@ def _filter_clauses(
     if target is not None:
         clauses.append(
             "EXISTS (SELECT 1 FROM latest_dec AS fdt"
-            " WHERE fdt.ed2k_hash = f.ed2k_hash AND fdt.target_id = ? AND fdt.tier != 'catalog')"
+            " WHERE fdt.file_id = f.file_id AND fdt.target_id = ? AND fdt.tier != 'catalog')"
         )
         params.append(target)
     if tier is not None:
         clauses.append(
             "EXISTS (SELECT 1 FROM latest_dec AS fdt"
-            " WHERE fdt.ed2k_hash = f.ed2k_hash AND fdt.tier = ?)"
+            " WHERE fdt.file_id = f.file_id AND fdt.tier = ?)"
         )
         params.append(tier)
     if query is not None:
@@ -341,7 +346,7 @@ class CatalogReader:
         # maps, never from the raw param, so the f-string is injection-safe.
         column_expr = SORT_COLUMNS.get(sort, SORT_COLUMNS[DEFAULT_SORT])
         dir_sql = SORT_DIRECTIONS.get(direction, SORT_DIRECTIONS[DEFAULT_DIR])
-        sql += f"ORDER BY {column_expr} {dir_sql}, f.ed2k_hash\n"
+        sql += f"ORDER BY {column_expr} {dir_sql}, f.native_id\n"
         sql += "LIMIT ? OFFSET ?\n"
         params.append(_PAGE_SIZE)
         params.append((page - 1) * _PAGE_SIZE)
@@ -414,11 +419,12 @@ class CatalogReader:
 
     def file_detail(self, ed2k_hash: str) -> FileDetail | None:
         """Return the full detail of a file, or ``None`` if unknown."""
-        file_row = self._conn.execute(_SQL_FILE, (ed2k_hash,)).fetchone()
+        file = FileKey(Network.ED2K, ed2k_hash)
+        file_row = self._conn.execute(_SQL_FILE, (file.file_id,)).fetchone()
         if file_row is None:
             return None
 
-        dec_rows = self._conn.execute(_SQL_FILE_DECISIONS, (ed2k_hash,)).fetchall()
+        dec_rows = self._conn.execute(_SQL_FILE_DECISIONS, (file.file_id,)).fetchall()
 
         decisions = tuple(
             DecisionView(
@@ -434,8 +440,8 @@ class CatalogReader:
         return FileDetail(
             ed2k_hash=file_row["ed2k_hash"],
             size_bytes=file_row["size_bytes"],
-            sightings=sightings(self._conn, ed2k_hash),
-            latest=latest_sighting(self._conn, ed2k_hash),
+            sightings=sightings(self._conn, file),
+            latest=latest_sighting(self._conn, file),
             decisions=decisions,
-            known_filenames=known_names(self._conn, ed2k_hash),
+            known_filenames=known_names(self._conn, file),
         )

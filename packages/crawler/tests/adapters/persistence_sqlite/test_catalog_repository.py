@@ -80,10 +80,10 @@ def test_record_observation_round_trip(
     repository: SqliteCatalogRepository, connection: sqlite3.Connection
 ) -> None:
     repository.record_observation(_observation())
-    file_row = connection.execute("SELECT ed2k_hash, size_bytes, aich_hash FROM files").fetchone()
-    assert file_row == (_HASH, 234567890, None)
+    file_row = connection.execute("SELECT * FROM files").fetchone()
+    assert file_row == (_KEY.file_id, "ed2k", _HASH, 234567890)
     variant = (
-        _HASH,
+        _KEY.file_id,
         "Keroro 062A.avi",
         234567890,
         None,
@@ -94,7 +94,7 @@ def test_record_observation_round_trip(
         _NODE,
     )
     row = connection.execute(
-        "SELECT ed2k_hash, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta,"
+        "SELECT file_id, filename, size_bytes, media_length_sec, bitrate_kbps, raw_meta,"
         " keyword, node_id, content_hash FROM observation_variants"
     ).fetchone()
     assert row == (*variant, content_hash(*variant))
@@ -243,9 +243,9 @@ def test_record_decision_round_trip(
     repository.record_observation(_observation())
     repository.record_decision(_KEY, _decision())
     row = connection.execute(
-        "SELECT ed2k_hash, target_id, rule_name, tier, decided_at, node_id FROM match_decisions"
+        "SELECT file_id, target_id, rule_name, tier, decided_at, node_id FROM match_decisions"
     ).fetchone()
-    assert row == (_HASH, "062A", "exact_062a", "download", _FROZEN_ISO, _NODE)
+    assert row == (_KEY.file_id, "062A", "exact_062a", "download", _FROZEN_ISO, _NODE)
 
 
 def test_explanation_is_never_persisted(
@@ -256,7 +256,7 @@ def test_explanation_is_never_persisted(
     columns = {
         row[1] for row in connection.execute("PRAGMA table_info(match_decisions)").fetchall()
     }
-    assert columns == {"id", "ed2k_hash", "target_id", "rule_name", "tier", "decided_at", "node_id"}
+    assert columns == {"id", "file_id", "target_id", "rule_name", "tier", "decided_at", "node_id"}
 
 
 def test_record_decision_for_unknown_file_raises_persistence_error(
@@ -290,9 +290,9 @@ def test_record_retraction_round_trip(
     repository.record_observation(_observation())
     repository.record_retraction(_KEY, "062A")
     row = connection.execute(
-        "SELECT ed2k_hash, target_id, rule_name, tier, decided_at, node_id FROM match_decisions"
+        "SELECT file_id, target_id, rule_name, tier, decided_at, node_id FROM match_decisions"
     ).fetchone()
-    assert row == (_HASH, "062A", "", RETRACTED_TIER, _FROZEN_ISO, _NODE)
+    assert row == (_KEY.file_id, "062A", "", RETRACTED_TIER, _FROZEN_ISO, _NODE)
     assert repository.last_decisions(_KEY) == {
         "062A": DecisionRecord(target_id="062A", rule_name="", tier=RETRACTED_TIER)
     }

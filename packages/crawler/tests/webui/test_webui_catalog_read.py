@@ -27,7 +27,7 @@ from tests.catalog_rows import insert_decision, insert_file, insert_observation
 
 # Selects the CTE under test on its own: SQLite drops the CTEs a query does not reference, so
 # the resulting plan is exactly how ``latest_sighting`` is resolved.
-LATEST_SIGHTING_PROBE = "SELECT ed2k_hash, name, source_count_max, last_seen FROM latest_sighting"
+LATEST_SIGHTING_PROBE = "SELECT file_id, name, source_count_max, last_seen FROM latest_sighting"
 
 # ---------------------------------------------------------------------------
 # Seed helpers
