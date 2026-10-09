@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the webui: DDL schemas without importing mulewatch."""
+"""Shared pytest fixtures for the webui: a migrated catalog.db, a hand-written local.db."""
 
 import contextlib
 import sqlite3
@@ -8,66 +8,11 @@ from typing import Any
 
 import pytest
 
+from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+
 # ---------------------------------------------------------------------------
 # DDL helpers (module-level, not exported)
 # ---------------------------------------------------------------------------
-
-
-def _apply_catalog_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
-        CREATE TABLE files (
-            ed2k_hash TEXT PRIMARY KEY,
-            size_bytes INTEGER NOT NULL,
-            aich_hash TEXT,
-            CHECK (LENGTH(ed2k_hash) = 32 AND ed2k_hash NOT GLOB '*[^0-9a-f]*')
-        );
-
-        CREATE TABLE file_observations (
-            id INTEGER PRIMARY KEY,
-            ed2k_hash TEXT NOT NULL,
-            filename TEXT NOT NULL,
-            size_bytes INTEGER NOT NULL,
-            source_count INTEGER NOT NULL,
-            complete_source_count INTEGER NOT NULL,
-            media_length_sec INTEGER,
-            bitrate_kbps INTEGER,
-            codec TEXT,
-            file_type TEXT,
-            raw_meta TEXT NOT NULL,
-            keyword TEXT NOT NULL,
-            observed_at TEXT NOT NULL,
-            node_id TEXT NOT NULL
-        );
-
-        CREATE TABLE file_observation_ranges (
-            id INTEGER PRIMARY KEY,
-            ed2k_hash TEXT NOT NULL,
-            bucket TEXT NOT NULL,
-            filenames TEXT NOT NULL,
-            node_ids TEXT NOT NULL,
-            observation_count INTEGER NOT NULL,
-            first_observed_at TEXT NOT NULL,
-            last_observed_at TEXT NOT NULL,
-            source_count_min INTEGER NOT NULL,
-            source_count_max INTEGER NOT NULL,
-            source_count_sum INTEGER NOT NULL,
-            complete_source_count_min INTEGER NOT NULL,
-            complete_source_count_max INTEGER NOT NULL,
-            complete_source_count_sum INTEGER NOT NULL
-        );
-
-        CREATE TABLE match_decisions (
-            id INTEGER PRIMARY KEY,
-            ed2k_hash TEXT NOT NULL,
-            target_id TEXT NOT NULL,
-            rule_name TEXT NOT NULL,
-            tier TEXT NOT NULL,
-            decided_at TEXT NOT NULL,
-            node_id TEXT NOT NULL
-        );
-
-        PRAGMA journal_mode=WAL;
-    """)
 
 
 def _apply_local_schema(conn: sqlite3.Connection) -> None:
@@ -102,11 +47,9 @@ def _apply_local_schema(conn: sqlite3.Connection) -> None:
 
 @pytest.fixture
 def catalog_db(tmp_path: Path) -> Path:
-    """Create a catalog.db with the realistic schema (WAL, empty), return the Path."""
+    """An empty catalog.db migrated by the crawler's own migrations."""
     path = tmp_path / "catalog.db"
-    with sqlite3.connect(path) as conn:
-        _apply_catalog_schema(conn)
-        conn.commit()
+    open_catalog(path).close()
     return path
 
 
