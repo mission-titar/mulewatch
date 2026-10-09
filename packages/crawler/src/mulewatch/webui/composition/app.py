@@ -363,8 +363,7 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
 # strings avoid em/en-dashes (project UI rule). A ``done`` code absent from this mapping (or no
 # ``done`` at all) renders NO banner.
 _CONTROL_MESSAGES: dict[str, str] = {
-    "force-cycle": "Cycle forced. A new search cycle starts shortly.",
-    "paused": "Crawl paused. The current cycle finishes, then the crawler idles.",
+    "paused": "Crawl paused. Searches in flight finish, then the crawler idles.",
     "resumed": "Crawl resumed.",
     "restart": "Restart requested. The service goes offline briefly, then returns.",
 }
@@ -703,10 +702,6 @@ def build_app(
         messages: tuple[str, ...] = (message,) if message is not None else ()
         return templates.TemplateResponse(request, "controls.html", {"messages": messages})
 
-    async def handle_force_cycle(request: Request) -> Response:
-        control.force_cycle()
-        return RedirectResponse("/controls?done=force-cycle", status_code=303)
-
     async def handle_pause(request: Request) -> Response:
         control.pause()
         return RedirectResponse("/controls?done=paused", status_code=303)
@@ -821,7 +816,6 @@ def build_app(
             Route("/targets/{target_id}", handle_target),
             Route("/node", handle_node),
             Route("/controls", handle_controls),
-            Route("/controls/force-cycle", handle_force_cycle, methods=["POST"]),
             Route("/controls/pause", handle_pause, methods=["POST"]),
             Route("/controls/resume", handle_resume, methods=["POST"]),
             Route("/controls/restart", handle_restart, methods=["POST"]),

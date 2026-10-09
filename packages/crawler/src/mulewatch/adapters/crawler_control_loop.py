@@ -20,34 +20,27 @@ import asyncio
 class LoopCrawlerControl:
     """Forwards each control intent onto the crawler loop via ``call_soon_threadsafe``.
 
-    The four events are the crawler's own (``CrawlerApp``): ``force_cycle`` interrupts the
-    inter-cycle sleep, ``resumed`` is the pause gate (set = running, clear = paused), and
-    ``shutdown`` is the graceful-shutdown signal.
+    The two events are the crawler's own (``CrawlerApp``): ``resumed`` is the pause gate (set =
+    running, clear = paused), and ``shutdown`` is the graceful-shutdown signal.
     """
 
     def __init__(
         self,
         *,
         loop: asyncio.AbstractEventLoop,
-        force_cycle: asyncio.Event,
         resumed: asyncio.Event,
         shutdown: asyncio.Event,
     ) -> None:
         self._loop = loop
-        self._force_cycle = force_cycle
         self._resumed = resumed
         self._shutdown = shutdown
 
-    def force_cycle(self) -> None:
-        """Interrupt the inter-cycle sleep so the next search cycle starts immediately."""
-        self._loop.call_soon_threadsafe(self._force_cycle.set)
-
     def pause(self) -> None:
-        """Clear the run gate: the current cycle finishes, then the crawler idles."""
+        """Clear the run gate: searches in flight finish, then the crawler idles."""
         self._loop.call_soon_threadsafe(self._resumed.clear)
 
     def resume(self) -> None:
-        """Set the run gate: the crawler continues cycling."""
+        """Set the run gate: the crawler searches again."""
         self._loop.call_soon_threadsafe(self._resumed.set)
 
     def restart(self) -> None:

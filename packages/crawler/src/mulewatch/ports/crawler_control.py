@@ -10,9 +10,8 @@ webui makes; the concrete adapter (``adapters/crawler_control_loop.py``) forward
 onto the crawler loop thread via ``loop.call_soon_threadsafe``.
 
 Methods (all called from the webui thread, all return immediately):
-- ``force_cycle`` interrupts the inter-cycle sleep so the next search cycle starts now.
-- ``pause`` clears the run gate: the current cycle finishes, then the crawler idles.
-- ``resume`` sets the run gate: the crawler continues cycling.
+- ``pause`` clears the run gate: searches in flight finish, then the crawler idles.
+- ``resume`` sets the run gate: the crawler searches again.
 - ``restart`` requests the crawler's graceful shutdown (the container's ``restart:
   unless-stopped`` brings it back).
 
@@ -27,8 +26,6 @@ class CrawlerControl(Protocol):
     non-blocking, fire-and-forget: it schedules a mutation on the crawler loop and returns at
     once. Stub bodies are ONE line (a two-line ``...`` body is a branch-coverage gotcha, see
     CLAUDE.md)."""
-
-    def force_cycle(self) -> None: ...
 
     def pause(self) -> None: ...
 

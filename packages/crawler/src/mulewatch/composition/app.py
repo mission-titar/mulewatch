@@ -225,11 +225,8 @@ class CrawlerApp:
         self._metrics_server = metrics_server
         self._webui_server_factory = webui_server_factory
         self._shutdown = asyncio.Event()
-        # Runtime-control events (phase P6a), constructed here (before the loop runs) like
-        # ``_shutdown`` - the established pattern. ``_force_cycle`` interrupts the inter-cycle
-        # sleep; ``_resumed`` is the pause gate, armed (set = un-paused) so the crawler starts
-        # running. The webui mutates both thread-safely via ``LoopCrawlerControl`` (spec §10).
-        self._force_cycle = asyncio.Event()
+        # The pause gate (phase P6a), armed (set = un-paused) so the crawler starts running. The
+        # webui mutates it thread-safely via ``LoopCrawlerControl`` (spec §10).
         self._resumed = asyncio.Event()
         self._resumed.set()
         self._signal_count = 0
@@ -282,27 +279,7 @@ class CrawlerApp:
             cycle_index += 1
             elapsed = (self._clock.now() - started).total_seconds()
             remaining = max(0.0, self._crawler_config.cycle_interval_seconds - elapsed)
-            await self._sleep_or_forced(remaining)
-
-    async def _sleep_or_forced(self, seconds: float) -> None:
-        """Waits ``seconds`` OR the force-cycle event, whichever comes FIRST (spec §10, P6a).
-
-        Modeled EXACTLY on ``run_download_cycle._sleep_or_nudge``: race the clock sleep against
-        ``_force_cycle.wait()`` with ``asyncio.wait(FIRST_COMPLETED)``, cancel the loser in the
-        ``finally``, then CLEAR ``_force_cycle`` so a single force triggers exactly one immediate
-        cycle. A shutdown cancels this await cleanly (the repos are sync, never mid-write).
-        """
-        sleep_task = asyncio.ensure_future(self._clock.sleep(seconds))
-        force_task = asyncio.ensure_future(self._force_cycle.wait())
-        try:
-            await asyncio.wait({sleep_task, force_task}, return_when=asyncio.FIRST_COMPLETED)
-        finally:
-            for task in (sleep_task, force_task):
-                if not task.done():
-                    task.cancel()
-                    with suppress(asyncio.CancelledError):
-                        await task
-            self._force_cycle.clear()
+            await self._clock.sleep(remaining)
 
     def _port_sync_enabled(self) -> bool:
         """Port-sync activates IFF the ``port_sync`` section is present (``enabled: true``).
@@ -477,7 +454,6 @@ class CrawlerApp:
         # PORT (``CrawlerControl``); this concrete adapter holds no DB connection.
         control: CrawlerControl = LoopCrawlerControl(
             loop=asyncio.get_running_loop(),
-            force_cycle=self._force_cycle,
             resumed=self._resumed,
             shutdown=self._shutdown,
         )
