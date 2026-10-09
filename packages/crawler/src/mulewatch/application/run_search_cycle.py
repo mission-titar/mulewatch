@@ -29,8 +29,8 @@ import asyncio
 import logging
 from collections.abc import Sequence
 
+from mulewatch.application.channels import ED2K, KAD
 from mulewatch.application.edge_state import EdgeState
-from mulewatch.application.networks import ED2K, KAD
 from mulewatch.application.search_worker import BackoffRegistry, SearchTask, SearchWorker
 from mulewatch.domain.observability.events import (
     AllInstancesBlind,
