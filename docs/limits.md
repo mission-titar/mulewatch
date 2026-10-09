@@ -21,15 +21,17 @@ Effet secondaire sur un nœud ancien : la liste des fichiers partagés d'aMule e
 cycle de téléchargement, et elle grossit avec chaque fichier terminé. Après des centaines de
 téléchargements, attendez-vous à une détection de complétion plus lente.
 
-## Une montée d'image peut tuer le conteneur, sur un gros catalogue
+## Une montée d'image demande de la place sur le disque, sur un gros catalogue
 
 Au premier démarrage qui suit une mise à jour, le crawler applique les migrations de base en
-attente. Une migration qui construit un index **trie en mémoire**, sans plafond : le pic grandit
-avec le nombre de lignes, et sur un gros catalogue il peut dépasser la limite mémoire du conteneur.
+attente. Une migration qui construit un index ou réécrit une table **trie dans des fichiers
+temporaires**, dans le dossier temporaire du conteneur : sur le disque où Docker range ses
+conteneurs, pas dans `data/`. Ce premier démarrage demande donc de la place libre sur ce disque, en
+plus du catalogue.
 
-Le conteneur est alors tué par le noyau et **son journal est vide**, ce qui ne ressemble pas à une
-panne applicative. Le diagnostic et le remède, qui consiste à relever temporairement `mem_limit`,
-sont dans [« Un conteneur redémarre en boucle »](troubleshooting-start.md#un-conteneur-redémarre-en-boucle).
+S'il en manque, la migration échoue sans rien abîmer : elle est annulée, le catalogue reste dans son
+état d'avant, et le crawler refuse de démarrer. Le diagnostic et le remède sont dans
+[« Un conteneur redémarre en boucle »](troubleshooting-start.md#un-conteneur-redémarre-en-boucle).
 
 ## Le durcissement du conteneur s'arrête assez bas
 

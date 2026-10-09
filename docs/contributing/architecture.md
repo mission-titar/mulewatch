@@ -392,6 +392,51 @@ survivante (cette valeur a quitté `DownloadState`, et la relire lèverait une e
 ajouté `downloads.last_seen_at`, rempli avec `queued_at` pour qu'aucune ligne antérieure à la mise à
 niveau ne soit condamnée au premier démarrage.
 
+### 8.1 Écrire une migration
+
+Au démarrage, le runner (`adapters/persistence_sqlite/connection.py`) applique dans l'ordre chaque
+script `NNNN_*.sql` de `migrations/catalog/` ou `migrations/local/` dont le numéro dépasse le
+`PRAGMA user_version` de la base, puis y inscrit ce numéro. Une base plus récente que le code est
+refusée. Les règles d'écriture :
+
+- **Le nom.** Un préfixe à quatre chiffres, strictement croissant ; les trous sont permis. Une
+  migration ne s'insère jamais sous un numéro déjà livré : une base inscrite plus haut ne la verrait
+  pas.
+- **Une transaction par script.** Le runner ouvre la transaction, inscrit la version dedans et la
+  valide : un échec annule le script entier et laisse la version inchangée. Le script n'écrit donc ni
+  `BEGIN`, ni `COMMIT`, ni `ROLLBACK` ; un `COMMIT` égaré lève `MigrationError`.
+- **Pas de `CREATE TEMP TABLE`.** Le runner change `temp_store` autour des migrations, ce qui
+  détruit toute table temporaire.
+- **`foreign_keys` reste actif.** `PRAGMA foreign_keys = OFF` est ignoré dans une transaction, sans
+  erreur : la recette ci-dessous s'en passe.
+- **Remplacer une table**, dans cet ordre :
+    1. supprimer les triggers et les index des anciennes tables ;
+    2. renommer les anciennes tables ;
+    3. créer les nouvelles sous leur nom définitif ;
+    4. copier ;
+    5. supprimer les anciens enfants avant l'ancien parent ;
+    6. recréer les triggers append-only.
+
+    Trois comportements de SQLite dictent cet ordre. Renommer une table réécrit les `REFERENCES` de
+    ses enfants vers le nouveau nom : un enfant qui doit désigner la nouvelle table est donc
+    reconstruit lui aussi. Un index garde son nom quand sa table est renommée, et entrerait en
+    collision avec celui de la nouvelle table. Enfin, chaque enfant d'un parent supprimé doit être
+    supprimé aussi, même vide : il garderait un `REFERENCES` vers une table absente, et toute
+    insertion échouerait ensuite sur `no such table`.
+- **Les grosses réécritures** posent en tête de script `PRAGMA secure_delete = OFF` et
+  `PRAGMA cache_size = -262144` (256 Mo). Là où SQLite est compilé avec `SECURE_DELETE`, comme dans
+  l'image, le `DROP` d'une grosse table garde tout son contenu dans le journal de l'instruction, en
+  mémoire, jusqu'au manque de mémoire ; le cache plus grand accélère une copie limitée par les
+  entrées-sorties. Le runner relit ces deux pragmas avant chaque script et les rétablit après : un
+  script règle ce dont il a besoin et ne remet jamais rien en place.
+- **Les tris passent par des fichiers temporaires** (`temp_store = FILE`) dans le dossier temporaire
+  du conteneur, pas dans `/data` : un tri en mémoire n'a pas de plafond.
+- **La directive `-- migration: no-transaction`**, seule et exacte en première ligne, fait exécuter
+  le script hors transaction, pour ce qui l'exige comme `VACUUM` ; la version est inscrite après son
+  succès. Le script doit alors pouvoir être rejoué, car un arrêt entre sa fin et l'inscription le
+  relance au démarrage suivant. Toute autre première ligne commençant par `-- migration:` est refusée
+  au chargement des scripts.
+
 ## 9. Port-sync High-ID (optionnel)
 
 Derrière un VPN, le port entrant change ; sans High-ID, la connectabilité (et donc la couverture) se
