@@ -23,9 +23,6 @@ _SEED = (
     f"INSERT INTO file_observations (ed2k_hash, filename, size_bytes, source_count,"
     f" complete_source_count, raw_meta, keyword, observed_at, node_id)"
     f" VALUES ('{_HASH}', 'f', 1, 0, 0, '[]', 'k', 't', 'n')",
-    "INSERT INTO sources (user_hash) VALUES ('u')",
-    f"INSERT INTO source_observations (user_hash, ed2k_hash, raw_meta, observed_at, node_id)"
-    f" VALUES ('u', '{_HASH}', '[]', 't', 'n')",
     f"INSERT INTO match_decisions (ed2k_hash, target_id, rule_name, tier, decided_at, node_id)"
     f" VALUES ('{_HASH}', '062A', 'r', 'download', 't', 'n')",
 )
@@ -33,8 +30,6 @@ _SEED = (
 _UPDATES = {
     "files": "UPDATE files SET size_bytes = 2",
     "file_observations": "UPDATE file_observations SET filename = 'autre'",
-    "sources": "UPDATE sources SET client_name = 'autre'",
-    "source_observations": "UPDATE source_observations SET nickname = 'autre'",
     "match_decisions": "UPDATE match_decisions SET tier = 'notify'",
 }
 
