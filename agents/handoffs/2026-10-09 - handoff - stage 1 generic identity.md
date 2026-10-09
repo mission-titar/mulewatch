@@ -110,7 +110,7 @@ MAJOR, 13 MINOR (its header counts 12). Each exit:
 | MINOR | Two catalog log lines lost the `key=value` form | Fixed: `file=%s:%s`, asserted in both failure tests (watched failing) |
 | MINOR | Three repository docstrings say "hash" | Fixed, with a fourth ("Every seen hash's") |
 | MINOR | The memoized SQL functions stay on the crawler's connection | Fixed by the comment, the smaller change: re-registering uncached needs a test of the uncached state for one memo of about 13.5k keys |
-| MINOR | The reader keeps `temp_store = MEMORY`, the runner moved to `FILE` | PENDING: the operator's answer |
+| MINOR | The reader keeps `temp_store = MEMORY`, the runner moved to `FILE` | Fixed on the operator's answer: the webui reader sorts through files too, test watched failing (2 for 1) |
 | MINOR | The handoff's pull request count | Fixed |
 
 Class 1 fixes found on the way: the merger's module docstring still said migration `0001` lays the schema;
