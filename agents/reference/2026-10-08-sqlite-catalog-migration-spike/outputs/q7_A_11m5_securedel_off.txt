@@ -1,0 +1,12 @@
+extra pragma secure_delete=OFF [(0,)]
+sqlite 3.53.4 start: db=6.12GB
+[DDL + files + match_decisions] 0.0s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=20MB
+[INSERT OR IGNORE variants (no DISTINCT)] 194.1s peak db-files=6.12GB wal=0.00GB tmp=0.00GB all=6.12GB rss=22MB
+[INSERT observations JOIN on content_hash] 299.5s peak db-files=6.12GB wal=0.53GB tmp=0.00GB all=6.64GB rss=25MB
+[DROP old tables + new triggers] 157.4s peak db-files=6.12GB wal=0.53GB tmp=0.00GB all=6.65GB rss=31MB
+[COMMIT] 3.6s peak db-files=6.64GB wal=0.53GB tmp=0.00GB all=7.17GB rss=31MB
+[whole transaction] 654.6s peak db-files=6.64GB wal=0.53GB tmp=0.00GB all=7.17GB rss=31MB
+after COMMIT: db=6641082368 wal=533078592
+checkpoint(TRUNCATE): (0, 0, 0) 0.1s peak db-files=6.64GB wal=0.00GB tmp=0.00GB all=6.64GB rss=31MB
+after checkpoint: db=6641082368 wal=0 page_count=1621358 freelist=1493454
+variants: 12846 observations: 11500000 foreign_key_check: []

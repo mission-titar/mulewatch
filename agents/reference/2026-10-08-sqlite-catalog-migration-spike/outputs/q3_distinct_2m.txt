@@ -1,0 +1,3 @@
+sqlite 3.53.4 mode=distinct [] baseline rss=13MB
+  SQL DISTINCT (temp_store=MEMORY): 12427 keys 1.1s peak rss 20MB
+  Python streaming dict (cursor iteration): 12427 keys 2.5s peak rss 27MB

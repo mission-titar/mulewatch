@@ -1,0 +1,52 @@
+== Q7_PRAGMAS=[]
+sqlite 3.53.4 start: db=1.06GB
+[DDL + files + match_decisions] 0.0s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=20MB
+[INSERT OR IGNORE variants (no DISTINCT)] 33.6s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=22MB
+[INSERT observations JOIN on content_hash] 39.2s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.15GB rss=24MB
+[DROP old tables + new triggers] 5.6s peak db-files=1.06GB wal=1.16GB tmp=0.00GB all=2.22GB rss=1111MB
+[COMMIT] 3.3s peak db-files=1.15GB wal=1.16GB tmp=0.00GB all=2.31GB rss=1111MB
+[whole transaction] 81.6s peak db-files=1.15GB wal=1.16GB tmp=0.00GB all=2.31GB rss=1111MB
+after COMMIT: db=1152856064 wal=1159606992
+checkpoint(TRUNCATE): (0, 0, 0) 0.2s peak db-files=1.15GB wal=0.00GB tmp=0.00GB all=1.15GB rss=1111MB
+after checkpoint: db=1152856064 wal=0 page_count=281459 freelist=258656
+variants: 12427 observations: 2000000 foreign_key_check: []
+== Q7_PRAGMAS=[secure_delete=OFF]
+extra pragma secure_delete=OFF [(0,)]
+sqlite 3.53.4 start: db=1.06GB
+[DDL + files + match_decisions] 0.0s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=20MB
+[INSERT OR IGNORE variants (no DISTINCT)] 33.5s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=22MB
+[INSERT observations JOIN on content_hash] 36.0s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.15GB rss=24MB
+[DROP old tables + new triggers] 0.3s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.15GB rss=24MB
+[COMMIT] 0.2s peak db-files=1.15GB wal=0.10GB tmp=0.00GB all=1.25GB rss=24MB
+[whole transaction] 70.0s peak db-files=1.15GB wal=0.10GB tmp=0.00GB all=1.25GB rss=24MB
+after COMMIT: db=1152856064 wal=95060792
+checkpoint(TRUNCATE): (0, 0, 0) 0.0s peak db-files=0.00GB wal=0.00GB tmp=0.00GB all=0.00GB rss=0MB
+after checkpoint: db=1152856064 wal=0 page_count=281459 freelist=258656
+variants: 12427 observations: 2000000 foreign_key_check: []
+== Q7_PRAGMAS=[temp_store=FILE]
+extra pragma temp_store=FILE []
+sqlite 3.53.4 start: db=1.06GB
+[DDL + files + match_decisions] 0.0s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=20MB
+[INSERT OR IGNORE variants (no DISTINCT)] 32.5s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=22MB
+[INSERT observations JOIN on content_hash] 35.3s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.16GB rss=22MB
+[DROP old tables + new triggers] 5.2s peak db-files=1.06GB wal=1.16GB tmp=1.06GB all=3.28GB rss=25MB
+[COMMIT] 3.2s peak db-files=1.15GB wal=1.16GB tmp=1.06GB all=3.28GB rss=25MB
+[whole transaction] 76.2s peak db-files=1.15GB wal=1.16GB tmp=1.06GB all=3.28GB rss=25MB
+after COMMIT: db=1152856064 wal=1159606992
+checkpoint(TRUNCATE): (0, 0, 0) 0.2s peak db-files=1.15GB wal=0.00GB tmp=0.00GB all=1.15GB rss=25MB
+after checkpoint: db=1152856064 wal=0 page_count=281459 freelist=258656
+variants: 12427 observations: 2000000 foreign_key_check: []
+== Q7_PRAGMAS=[secure_delete=OFF;temp_store=FILE]
+extra pragma secure_delete=OFF [(0,)]
+extra pragma temp_store=FILE []
+sqlite 3.53.4 start: db=1.06GB
+[DDL + files + match_decisions] 0.0s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=20MB
+[INSERT OR IGNORE variants (no DISTINCT)] 32.9s peak db-files=1.06GB wal=0.00GB tmp=0.00GB all=1.06GB rss=22MB
+[INSERT observations JOIN on content_hash] 37.1s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.16GB rss=22MB
+[DROP old tables + new triggers] 0.3s peak db-files=1.06GB wal=0.09GB tmp=0.00GB all=1.16GB rss=22MB
+[COMMIT] 0.2s peak db-files=1.15GB wal=0.10GB tmp=0.00GB all=1.25GB rss=23MB
+[whole transaction] 70.5s peak db-files=1.15GB wal=0.10GB tmp=0.00GB all=1.25GB rss=23MB
+after COMMIT: db=1152856064 wal=95060792
+checkpoint(TRUNCATE): (0, 0, 0) 0.0s peak db-files=1.15GB wal=0.00GB tmp=0.00GB all=1.15GB rss=23MB
+after checkpoint: db=1152856064 wal=0 page_count=281459 freelist=258656
+variants: 12427 observations: 2000000 foreign_key_check: []

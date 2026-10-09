@@ -1,0 +1,14 @@
+sqlite 3.53.4 mode=fill ['500000'] baseline rss=13MB
+  filled 500000: rss 18MB hwm 18MB
+  filled 1500000: rss 18MB hwm 18MB
+  filled 2500000: rss 18MB hwm 18MB
+  filled 3500000: rss 18MB hwm 18MB
+  filled 4500000: rss 18MB hwm 18MB
+  filled 5500000: rss 18MB hwm 18MB
+  filled 6500000: rss 18MB hwm 18MB
+  filled 7500000: rss 18MB hwm 18MB
+  filled 8500000: rss 18MB hwm 18MB
+  filled 9500000: rss 18MB hwm 18MB
+  filled 10500000: rss 18MB hwm 18MB
+  filled 11500000: rss 18MB hwm 18MB
+  final hwm 18MB (cache_size -2000)

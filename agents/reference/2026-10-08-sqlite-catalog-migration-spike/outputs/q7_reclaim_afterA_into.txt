@@ -1,0 +1,6 @@
+sqlite 3.53.4 into start: db=6.64GB pages=1621358 freelist=1493454 (92%) SQLITE_TMPDIR=/home/geoffrey/.cache/mulewatch-spike-db
+[VACUUM INTO] 1.4s peak db-files=7.13GB wal=0.00GB tmp=0.00GB all=7.13GB rss=24MB
+  right after: db=6641082368 wal=0 new=491597824
+  after close: wal exists=False shm exists=False
+final: db=491597824 wal=0 header journal_mode=delete header bytes 18/19=0101 (0202 = WAL, 0101 = rollback)
+  quick_check: ok foreign_key_check: [] observations: 11500000 triggers: 4 user_version: 5

@@ -1,0 +1,9 @@
+sqlite 3.53.4 python 3.14.7
+  baseline: INSERT..SELECT copy, no function                   0.54 s per 1M rows (  1850 k rows/s)
+  file_id('ed2k', h) uuid5                                     1.48 s per 1M rows (   674 k rows/s)
+  content_hash JSON + blake2b-128 (10 cols)                    3.16 s per 1M rows (   316 k rows/s)
+  content_hash JSON + sha256[:16] (10 cols)                    2.98 s per 1M rows (   335 k rows/s)
+  content_hash len-prefix + blake2b-128 (10 cols)              3.07 s per 1M rows (   326 k rows/s)
+  file_id + content_hash(JSON, blake2b) together               4.69 s per 1M rows (   213 k rows/s)
+  pure Python stream + hash (no SQL function)                  3.55 s per 1M rows
+  deterministic file_id example: b0ddd181bce15158bd5bfcd8568bd48c NS 7d16bb87-5b2f-5aa5-9262-c007b2ab0db4
