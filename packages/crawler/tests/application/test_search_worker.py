@@ -468,7 +468,7 @@ async def test_successful_search_emits_search_executed_with_network_and_count(
 async def test_search_failure_emits_search_failed(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
-    # An application-level channel failure (MuleSearchFailedError) emits
+    # An application-level channel failure (SearchFailedError) emits
     # SearchFailed(network).
     clock = FakeClock()
     telemetry = RecordingTelemetry()

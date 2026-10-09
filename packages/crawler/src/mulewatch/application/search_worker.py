@@ -11,10 +11,10 @@ sessions = real parallelism; degenerates to a sequential loop at N=1). Per item
 
 Error handling (spec §7, "the client signals, Plan C decides") - the application catches
 ONLY PORT exceptions (never an adapter's, dependency rule §4):
-- ``MuleUnreachableError`` (the daemon is out of reach: refused, timed out, or degraded) →
+- ``ClientUnreachableError`` (the daemon is out of reach: refused, timed out, or degraded) →
   instance DOWN: we drop the client, PER-INSTANCE reconnection BACKOFF (``retry_after``
   set); the other workers continue; the item is ABANDONED.
-- ``MuleSearchFailedError`` (application failure of a channel) → BACKOFF PER (instance, channel).
+- ``SearchFailedError`` (application failure of a channel) → BACKOFF PER (instance, channel).
 - ``RepositoryError`` on an obs → logged and counted by ``record_observations``.
 
 The backoff is exponential + jitter (spec §3), REMEMBERED in a SHARED ``BackoffRegistry``
@@ -41,14 +41,10 @@ from mulewatch.domain.observability.events import (
 )
 from mulewatch.domain.search.backoff import backoff_delay
 from mulewatch.ports.catalog_repository import CatalogRepository
+from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
 from mulewatch.ports.clock import Clock, Rng
 from mulewatch.ports.decision_signal import DecisionSignal
-from mulewatch.ports.mule_client import (
-    MuleClient,
-    MuleSearchFailedError,
-    MuleUnreachableError,
-    SearchChannel,
-)
+from mulewatch.ports.mule_client import MuleClient, SearchChannel
 from mulewatch.ports.scheduler_state_repository import ChannelBackoff
 from mulewatch.ports.telemetry import Telemetry
 
@@ -212,7 +208,7 @@ class SearchWorker:
             return True
         try:
             await self._client.connect()
-        except MuleUnreachableError as error:
+        except ClientUnreachableError as error:
             delay = self._deps.backoff.record_failure(self._instance)
             _logger.warning(
                 "instance %s unreachable (%s): reconnect backoff %.1fs",
@@ -268,7 +264,7 @@ class SearchWorker:
         A failure is absorbed: the search itself still stands."""
         try:
             return not await self._client.widen_search()
-        except (MuleSearchFailedError, MuleUnreachableError) as error:
+        except (SearchFailedError, ClientUnreachableError) as error:
             _logger.info("instance %s: widening the Kad search failed (%s)", self._instance, error)
             return False
 
@@ -295,7 +291,7 @@ class SearchWorker:
         try:
             await self._client.start_search(task.keyword, task.channel)
             changed = await self._poll_then_fetch(task.channel)
-        except MuleSearchFailedError as error:
+        except SearchFailedError as error:
             delay = self._deps.backoff.record_failure(channel_key)
             _logger.warning(
                 "instance %s channel %s failed (%s): backoff %.1fs",
@@ -306,7 +302,7 @@ class SearchWorker:
             )
             await self._deps.telemetry.emit(SearchFailed(network=network_label(task.channel)))
             return
-        except MuleUnreachableError as error:
+        except ClientUnreachableError as error:
             self._connected = False
             delay = self._deps.backoff.record_failure(self._instance)
             _logger.warning(

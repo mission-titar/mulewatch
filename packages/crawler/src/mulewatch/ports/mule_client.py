@@ -1,9 +1,6 @@
-"""What the crawler expects from an eMule client, plus the error contract it decides on.
+"""What the crawler expects from an eMule client; its errors are in ``client_errors``.
 
-``MuleUnreachableError`` means the instance is down (reconnect), ``MuleSearchFailedError`` that
-one channel failed (backoff). The adapter's errors inherit them, so the application never
-imports an adapter. Protocol stubs stay on ONE line: a body on a second one is an uncovered
-branch.
+Protocol stubs stay on ONE line: a body on a second one is an uncovered branch.
 """
 
 from dataclasses import dataclass
@@ -11,18 +8,6 @@ from enum import StrEnum
 from typing import Protocol
 
 from mulewatch.domain.observation import FileObservation
-
-
-class MuleClientError(Exception):
-    """Base of the eMule client's error contract (spec orchestration §7)."""
-
-
-class MuleUnreachableError(MuleClientError):
-    """The daemon is unreachable, at either hop → reconnection by the caller (§7)."""
-
-
-class MuleSearchFailedError(MuleClientError):
-    """Application failure of a search reported by the daemon → channel backoff (§7)."""
 
 
 class SearchChannel(StrEnum):
