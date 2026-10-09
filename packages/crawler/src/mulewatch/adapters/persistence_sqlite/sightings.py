@@ -91,12 +91,9 @@ LIMIT 1
 def _sighting(row: Any) -> Sighting:
     return Sighting(
         file=FileKey(Network(row[0]), row[1]),
-        names=(row[2],),
-        observation_count=1,
-        first_seen=row[3],
-        last_seen=row[3],
-        source_count_min=row[4],
-        source_count_max=row[4],
+        name=row[2],
+        observed_at=row[3],
+        source_count=row[4],
         size_bytes=row[5],
         media_length_sec=row[6],
         bitrate_kbps=row[7],

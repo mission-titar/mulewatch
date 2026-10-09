@@ -78,13 +78,10 @@ class Sighting:
     """A file seen once: one observation."""
 
     file: FileKey
-    names: tuple[str, ...]
-    observation_count: int
-    first_seen: str
-    last_seen: str
-    source_count_min: int
-    source_count_max: int
+    name: str
+    observed_at: str
+    source_count: int
     size_bytes: int
     media_length_sec: int | None
     bitrate_kbps: int | None
-    keyword: str | None
+    keyword: str

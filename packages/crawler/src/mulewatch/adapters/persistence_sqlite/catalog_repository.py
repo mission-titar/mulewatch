@@ -190,7 +190,7 @@ class SqliteCatalogRepository:
             )
 
     def last_decisions(self, file: FileKey) -> dict[str, DecisionRecord]:
-        """Latest verdict per target for this hash (set-diff anti-redundancy, spec §7) — READ.
+        """Latest verdict per target for this file (set-diff anti-redundancy, spec §7) — READ.
 
         Maps ``target_id`` → its latest :class:`DecisionRecord`. INCLUDES a target whose latest
         tier is ``retracted`` (the application's set-diff skips re-retracting it); EXCLUDES the
@@ -219,7 +219,7 @@ class SqliteCatalogRepository:
             latest = sightings.latest_sighting(self._connection, file)
         if latest is None:
             return None
-        return ObservedFile(filename=latest.names[0], size_bytes=latest.size_bytes)
+        return ObservedFile(filename=latest.name, size_bytes=latest.size_bytes)
 
     def best_observation(self, file: FileKey) -> ObservedFile | None:
         """The clean name (most sources, then latest) and size, or ``None`` (read)."""
@@ -228,23 +228,23 @@ class SqliteCatalogRepository:
         return None if best is None else ObservedFile(filename=best[0], size_bytes=best[1])
 
     def known_filenames(self, file: FileKey) -> tuple[str, ...]:
-        """Every distinct name this hash was observed under, sorted (read)."""
+        """Every distinct name this file was observed under, sorted (read)."""
         with wrap_sqlite_errors():
             return sightings.known_names(self._connection, file)
 
     def count_files(self) -> int:
-        """Number of catalogued hashes, the re-evaluation progress total (read)."""
+        """Number of catalogued files, the re-evaluation progress total (read)."""
         with wrap_sqlite_errors():
             row = self._connection.execute(_COUNT_FILES).fetchone()
         return int(row[0])
 
     def iter_reevaluation_rows(self) -> Iterator[ReevalRow]:
-        """Every seen hash's latest sighting, streamed (backfill spec §6)."""
+        """Every seen file's latest sighting, streamed (backfill spec §6)."""
         with wrap_sqlite_errors():
             for latest in sightings.iter_latest_sightings(self._connection):
                 yield ReevalRow(
                     file=latest.file,
-                    filename=latest.names[0],
+                    filename=latest.name,
                     size_bytes=latest.size_bytes,
                     media_length_sec=latest.media_length_sec,
                     bitrate_kbps=latest.bitrate_kbps,

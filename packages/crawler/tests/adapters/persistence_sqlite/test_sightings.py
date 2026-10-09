@@ -52,12 +52,9 @@ def _raw(
 def _raw_sighting(name: str, at: str, *, media: int | None = None) -> Sighting:
     return Sighting(
         file=_key(_A),
-        names=(name,),
-        observation_count=1,
-        first_seen=at,
-        last_seen=at,
-        source_count_min=5,
-        source_count_max=5,
+        name=name,
+        observed_at=at,
+        source_count=5,
         size_bytes=100,
         media_length_sec=media,
         bitrate_kbps=None if media is None else 900,
@@ -83,7 +80,7 @@ def test_latest_sighting_breaks_an_observed_at_tie_on_the_newest_variant_then_th
     _raw(connection, _A, "second.avi", _TIE, sources=4)
     latest = sightings.latest_sighting(connection, _key(_A))
     assert latest is not None
-    assert (latest.names, latest.source_count_max) == (("second.avi",), 4)
+    assert (latest.name, latest.source_count) == ("second.avi", 4)
 
 
 def test_latest_sighting_of_a_file_never_seen_or_unknown_is_none(
