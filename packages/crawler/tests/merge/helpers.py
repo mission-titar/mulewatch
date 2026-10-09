@@ -13,7 +13,7 @@ from pathlib import Path
 
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 
-# Columns excluding id, in schema order (0001_initial.sql) — for direct INSERTs and
+# Columns excluding id, in schema order (0001_initial.sql): for direct INSERTs and
 # natural-key reads in the assertions.
 FILE_COLUMNS = ("ed2k_hash", "size_bytes", "aich_hash")
 SOURCE_COLUMNS = ("user_hash", "client_name", "client_version")
@@ -56,21 +56,6 @@ MATCH_DECISION_COLUMNS = (
     "decided_at",
     "node_id",
 )
-FILE_OBSERVATION_RANGE_COLUMNS = (
-    "ed2k_hash",
-    "bucket",
-    "filenames",
-    "node_ids",
-    "observation_count",
-    "first_observed_at",
-    "last_observed_at",
-    "source_count_min",
-    "source_count_max",
-    "source_count_sum",
-    "complete_source_count_min",
-    "complete_source_count_max",
-    "complete_source_count_sum",
-)
 
 _COLUMNS_BY_TABLE: Mapping[str, Sequence[str]] = {
     "files": FILE_COLUMNS,
@@ -78,10 +63,9 @@ _COLUMNS_BY_TABLE: Mapping[str, Sequence[str]] = {
     "file_observations": FILE_OBSERVATION_COLUMNS,
     "source_observations": SOURCE_OBSERVATION_COLUMNS,
     "match_decisions": MATCH_DECISION_COLUMNS,
-    "file_observation_ranges": FILE_OBSERVATION_RANGE_COLUMNS,
 }
 
-# One canonical eD2k hash (32 lowercase hex chars) per letter — satisfies the CHECK on files.
+# One canonical eD2k hash (32 lowercase hex chars) per letter; satisfies the CHECK on files.
 HASH_A = "a" * 32
 HASH_B = "b" * 32
 HASH_C = "c" * 32
@@ -121,7 +105,6 @@ def make_catalog(
                 "file_observations",
                 "source_observations",
                 "match_decisions",
-                "file_observation_ranges",
             ):
                 rows = content.get(table)
                 if rows:
