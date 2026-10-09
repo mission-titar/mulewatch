@@ -46,12 +46,13 @@ dossier monté de Docker Desktop et `--memory 2g` :
 | `0008` | 10 à 13 s | 333 Mio | 0,24 Go |
 | `0009` | 9 s | 296 Mio | 0,44 Go |
 
-Comptez donc trois à quatre minutes pendant lesquelles le crawler ne cherche rien et l'interface web ne
-répond pas. Le journal annonce chaque migration par une ligne comme `migration 7: applying`. Ne
-redémarrez pas le conteneur avant la fin : la migration en cours serait annulée, puis reprise à
-zéro. Le disque en plus se répartit entre le WAL, à côté du catalogue, et les fichiers temporaires
-dans le `/var/tmp` du conteneur, donc sur le disque de Docker : `0009` y écrit une copie du catalogue
-réécrit (0,2 Go). Prévoyez de la place libre sur les deux, pas seulement dans `data/`.
+Comptez donc trois à cinq minutes en tout (de 196 à 295 s sur la même copie), pendant lesquelles le
+crawler ne cherche rien et l'interface web ne répond pas. Le journal annonce chaque migration par
+une ligne comme `migration 7: applying`. Ne redémarrez pas le conteneur avant la fin : la migration
+en cours serait annulée, puis reprise à zéro. Le disque en plus se répartit entre le WAL, à côté du
+catalogue, et les fichiers temporaires dans le `/var/tmp` du conteneur, donc sur le disque de
+Docker : `0009` y écrit une copie du catalogue réécrit (0,2 Go). Prévoyez de la place libre sur
+les deux, pas seulement dans `data/`.
 
 Les trois premières laissent le fichier à sa taille d'avant : l'espace libéré reste à l'intérieur.
 `0009` le rend au disque (`VACUUM`) puis vide le WAL, et le fichier retombe à la taille de ses
