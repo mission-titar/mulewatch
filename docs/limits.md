@@ -42,18 +42,20 @@ dossier monté de Docker Desktop et `--memory 2g` :
 
 | Étape | Durée | Mémoire au plus haut | Disque en plus, au plus haut |
 |---|---|---|---|
-| `0006` et `0007` | 170 à 235 s | 288 Mio | 0,44 Go |
-| `0008` | 10 s | 324 Mio | 0,24 Go |
+| `0006` et `0007` | 166 à 235 s | 288 Mio | 0,45 Go |
+| `0008` | 10 à 13 s | 333 Mio | 0,24 Go |
+| `0009` | 9 s | 296 Mio | 0,44 Go |
 
-Comptez donc quelques minutes pendant lesquelles le crawler ne cherche rien et l'interface web ne
+Comptez donc trois à quatre minutes pendant lesquelles le crawler ne cherche rien et l'interface web ne
 répond pas. Le journal annonce chaque migration par une ligne comme `migration 7: applying`. Ne
 redémarrez pas le conteneur avant la fin : la migration en cours serait annulée, puis reprise à
 zéro. Le disque en plus se répartit entre le WAL, à côté du catalogue, et les fichiers temporaires
-dans le conteneur.
+dans le `/var/tmp` du conteneur, donc sur le disque de Docker : `0009` y écrit une copie du catalogue
+réécrit (0,2 Go). Prévoyez de la place libre sur les deux, pas seulement dans `data/`.
 
 Les trois premières laissent le fichier à sa taille d'avant : l'espace libéré reste à l'intérieur.
-`0009` le rend au disque (`VACUUM`) puis vide le WAL, et le fichier retombe à la taille de ses données, 0,21 Go pour
-un catalogue synthétique de 11,5 millions d'observations (mesuré le 2026-10-08).
+`0009` le rend au disque (`VACUUM`) puis vide le WAL, et le fichier retombe à la taille de ses
+données : 0,21 Go pour ce catalogue de 5,3 Go.
 
 ## Le durcissement du conteneur s'arrête assez bas
 
