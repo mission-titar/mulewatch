@@ -8,12 +8,8 @@ and is therefore refused outright; the tests use real files (spec §8) -
 ``foreign_keys=ON``, and ``recursive_triggers=ON`` (without which ``INSERT OR REPLACE``
 crosses the append-only triggers, spec §3 post-review amendment).
 
-The runner reads the ``NNNN_*.sql`` scripts embedded in the package (``importlib.
-resources``), applies them in ascending order EACH in ITS OWN transaction (failure →
-best-effort ROLLBACK, version unchanged - same spirit as the EC transport's best-effort
-``close()``), and tracks state in ``PRAGMA user_version``. A database NEWER than the
-code → outright refusal (``MigrationError``, fail-fast MVP spec §14). The scripts
-contain NO ``BEGIN``/``COMMIT``: it is the runner that wraps.
+The migration runner applies the ``NNNN_*.sql`` scripts embedded in the package and tracks
+them in ``PRAGMA user_version`` (see ``_apply_migrations``).
 
 This module also carries the repositories' shared clock (``Clock``/``utc_now``/
 ``utc_iso``): ISO-8601 UTC as TEXT (spec §3), FIXED microseconds so that lexicographic
@@ -23,6 +19,7 @@ order IS chronological order (the FIFO claim sorts on ``enqueued_at``).
 import sqlite3
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
 from importlib.resources.abc import Traversable
@@ -38,6 +35,18 @@ from mulewatch.adapters.persistence_sqlite.errors import (
 type Clock = Callable[[], datetime]
 
 _MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations"
+
+_DIRECTIVE = "-- migration:"
+_NO_TRANSACTION = "-- migration: no-transaction"
+# Index = the value ``PRAGMA secure_delete`` reads; ``= 2`` would set ON, not FAST.
+_SECURE_DELETE_MODES = ("OFF", "ON", "FAST")
+
+
+@dataclass(frozen=True)
+class Migration:
+    version: int
+    script: str
+    transactional: bool = True
 
 
 def utc_now() -> datetime:
@@ -90,25 +99,19 @@ def _configure(connection: sqlite3.Connection) -> None:
     connection.execute("PRAGMA recursive_triggers=ON")
 
 
-def _load_scripts(directory: Traversable) -> tuple[tuple[int, str], ...]:
-    """Migration discovery: ``NNNN_*.sql`` sorted by name (lexicographic order).
-
-    A non-``.sql`` file is ignored; a ``.sql`` without a numeric prefix is a packaging
-    BUG → ``MigrationError`` (fail-fast, no migration silently skipped). The versions must
-    be STRICTLY increasing in the lexicographic order of the names: a duplicate
-    (``0001_a`` + ``0001_b``) or a non-zero-padded prefix that inverts the order
-    (``10_b`` sorted before ``2_a``) → ``MigrationError`` (otherwise a migration is skipped
-    or replayed silently). Gaps (0001 then 0003) stay allowed.
-    """
-    scripts: list[tuple[int, str]] = []
+def _load_scripts(directory: Traversable) -> tuple[Migration, ...]:
+    """The ``NNNN_*.sql`` scripts by name; a bad name, a misordered version or an unknown
+    directive raises ``MigrationError`` (non-``.sql`` files are ignored, gaps allowed)."""
+    scripts: list[Migration] = []
     for entry in sorted(directory.iterdir(), key=lambda item: item.name):
         if not entry.name.endswith(".sql"):
             continue
         prefix = entry.name.partition("_")[0]
         if not prefix.isdigit():
             raise MigrationError(f"invalid script name (NNNN_*.sql expected): {entry.name}")
-        scripts.append((int(prefix), entry.read_text(encoding="utf-8")))
-    for (left, _), (right, _) in pairwise(scripts):
+        script = entry.read_text(encoding="utf-8")
+        scripts.append(Migration(int(prefix), script, _is_transactional(entry.name, script)))
+    for left, right in pairwise(script.version for script in scripts):
         if right <= left:
             raise MigrationError(
                 f"migration versions not strictly increasing: {left} then {right} "
@@ -117,73 +120,70 @@ def _load_scripts(directory: Traversable) -> tuple[tuple[int, str], ...]:
     return tuple(scripts)
 
 
-def _apply_migrations(connection: sqlite3.Connection, scripts: tuple[tuple[int, str], ...]) -> None:
-    """Applies the scripts with version > ``user_version``, each in ITS OWN transaction.
+def _is_transactional(name: str, script: str) -> bool:
+    first_line = script.partition("\n")[0]
+    if first_line == _NO_TRANSACTION:
+        return False
+    if first_line.startswith(_DIRECTIVE):
+        raise MigrationError(f"{name}: unknown directive {first_line!r}, only {_NO_TRANSACTION!r}")
+    return True
 
-    Wrapper LAID BY THE RUNNER, piece by piece: explicit ``BEGIN``, then
-    ``executescript(script)`` (verified empirically under ``autocommit=True``, SQLite
-    3.47.1: it does NOT commit the current transaction), then GUARDS ``in_transaction``
-    - a script that contains a stray ``COMMIT`` closes the wrapper and would otherwise be
-    stamped/committed partially → ``MigrationError`` BEFORE the stamp - then ``PRAGMA
-    user_version = N`` INSIDE the transaction (the pragma is transactional: a ROLLBACK
-    undoes it), then ``COMMIT``. PRAGMA accepts no bound parameter: ``version``
-    comes from ``int()``, the interpolation is safe.
 
-    Migrations sort in memory (``temp_store=MEMORY``), restored afterwards. A ``CREATE INDEX``
-    over a large table spills to the temp directory through SQLite's external sorter (0004's
-    index over ``file_observations``: ~85MiB on the real catalogue). Sorting in memory keeps the
-    remedy IN THE IMAGE: nothing depends on how the operator sized temp space in a compose file
-    that drifts from ``deploy/``. Historically that sizing was not even reachable — a 64m tmpfs
-    under ``read_only: true`` raised SQLITE_FULL at startup (confinement dropped 2026-09-16).
-
-    KNOW THE TRADE-OFF before adding a migration that sorts. In-memory, SQLite's sorter never
-    flushes (``mxPmaSize`` stays 0, so ``sqlite3VdbeSorterWrite`` never spills) and ``cache_size``
-    does NOT bound it: it holds every record, growing linearly at ~116 bytes per row of the
-    table being sorted. Measured in the shipped image: 1.19M rows -> ~150MiB peak RSS of the
-    512m limit, i.e. a ceiling near 4.5M rows. Past it the container is OOM-killed: SIGKILL,
-    exit 137, no traceback and no MigrationError, which is far harder to diagnose than the
-    SQLITE_FULL this replaces (see docs/troubleshooting.md). 0004 is one-shot (an index
-    is maintained incrementally once built), but ``file_observations`` grows without bound, so a
-    LATER migration sorting that table is the one to think twice about.
-
-    Migration scripts must not ``CREATE TEMP TABLE``: switching ``temp_store`` drops existing
-    temp tables, so the restore below would silently destroy one that outlived its script (none
-    do today).
-    """
+def _apply_migrations(connection: sqlite3.Connection, scripts: tuple[Migration, ...]) -> None:
+    """Applies the scripts above ``user_version`` in order, each stamped once it succeeds; the
+    rules for writing one: ``docs/contributing/architecture.md``, "Écrire une migration"."""
     current = int(connection.execute("PRAGMA user_version").fetchone()[0])
-    latest = scripts[-1][0] if scripts else 0
+    latest = scripts[-1].version if scripts else 0
     if current > latest:
         raise MigrationError(
             f"db at version {current}, code at version {latest}: "
             "db newer than the code, refusing to start (spec §3)"
         )
-    connection.execute("PRAGMA temp_store=MEMORY")
+    # On disk: an in-memory sort is unbounded (+697 MB for one index at 11.5M rows).
+    connection.execute("PRAGMA temp_store=FILE")
     try:
-        _run_scripts(connection, scripts, current)
+        for migration in scripts:
+            if migration.version > current:
+                _run_restoring_pragmas(connection, migration)
     finally:
         connection.execute("PRAGMA temp_store=DEFAULT")
 
 
-def _run_scripts(
-    connection: sqlite3.Connection, scripts: tuple[tuple[int, str], ...], current: int
-) -> None:
-    """Applies each pending script in its own transaction. See ``_apply_migrations``."""
-    # Race between two concurrent runners: the loser fails cleanly (sqlite3.Error
-    # → MigrationError), never corruption - single writer by doctrine (spec §3).
-    for version, script in scripts:
-        if version <= current:
-            continue
-        try:
-            connection.execute("BEGIN")
-            connection.executescript(script)
-            if not connection.in_transaction:
-                raise MigrationError(
-                    f"migration {version}: the script closed the runner's transaction "
-                    "(COMMIT/ROLLBACK forbidden inside a migration script)"
-                )
-            connection.execute(f"PRAGMA user_version = {version}")
-            connection.execute("COMMIT")
-        except sqlite3.Error as error:
-            with suppress(sqlite3.Error):
-                connection.execute("ROLLBACK")
-            raise MigrationError(f"migration {version} failed: {error}") from error
+def _run_restoring_pragmas(connection: sqlite3.Connection, migration: Migration) -> None:
+    secure_delete = int(connection.execute("PRAGMA secure_delete").fetchone()[0])
+    cache_size = int(connection.execute("PRAGMA cache_size").fetchone()[0])
+    try:
+        if migration.transactional:
+            _run_in_transaction(connection, migration)
+        else:
+            _run_outside_transaction(connection, migration)
+    finally:
+        connection.execute(f"PRAGMA secure_delete = {_SECURE_DELETE_MODES[secure_delete]}")
+        connection.execute(f"PRAGMA cache_size = {cache_size}")
+
+
+def _run_in_transaction(connection: sqlite3.Connection, migration: Migration) -> None:
+    # Two concurrent runners: the loser fails cleanly, single writer by doctrine (spec §3).
+    try:
+        connection.execute("BEGIN")
+        connection.executescript(migration.script)
+        if not connection.in_transaction:
+            raise MigrationError(
+                f"migration {migration.version}: the script closed the runner's transaction "
+                "(COMMIT/ROLLBACK forbidden inside a migration script)"
+            )
+        connection.execute(f"PRAGMA user_version = {migration.version}")
+        connection.execute("COMMIT")
+    except sqlite3.Error as error:
+        with suppress(sqlite3.Error):
+            connection.execute("ROLLBACK")
+        raise MigrationError(f"migration {migration.version} failed: {error}") from error
+
+
+def _run_outside_transaction(connection: sqlite3.Connection, migration: Migration) -> None:
+    # A stop between the script and the stamp replays the script: it must be safe to replay.
+    try:
+        connection.executescript(migration.script)
+        connection.execute(f"PRAGMA user_version = {migration.version}")
+    except sqlite3.Error as error:
+        raise MigrationError(f"migration {migration.version} failed: {error}") from error

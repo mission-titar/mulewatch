@@ -79,20 +79,21 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
     - **Journal d'une ligne, sans Python** : voir
       [« Une variable obligatoire manque »](#une-variable-obligatoire-manque).
 
-!!! bug "Journal entièrement vide, juste après une montée d'image"
+!!! bug "`database or disk is full`, juste après une montée d'image"
 
-    Le noyau a tué le conteneur, donc rien n'a pu être écrit — ce n'est pas une panne applicative,
-    mais le pic mémoire d'une migration d'index sur un gros catalogue, décrit dans
-    [Limites connues](limits.md). Confirmez avec :
+    Le journal du crawler contient `MigrationError: migration N failed: database or disk is full`.
+    Un disque s'est rempli pendant la migration : celui de Docker, qui reçoit ses fichiers
+    temporaires (voir [Limites connues](limits.md)), ou celui de `data/`, où le catalogue grandit le
+    temps d'être réécrit. La migration a été annulée : le catalogue est intact. Vérifiez la place
+    libre sur les deux :
 
     ```bash
-    docker inspect --format '{{.State.OOMKilled}} {{.State.ExitCode}}' mulewatch-mulewatch-1
+    df -h data "$(docker info --format '{{.DockerRootDir}}')"
     ```
 
-    `true 137` signe le manque de mémoire. Remède : relevez temporairement le `mem_limit` du service
-    `mulewatch` dans `base.compose.yml`, faites `docker compose up -d`, laissez le premier démarrage
-    aller à son terme, puis remettez la valeur d'origine. Le pic est ponctuel : une fois l'index
-    construit, il est maintenu au fil de l'eau.
+    Remède : libérez de la place sur le disque plein (`docker image prune` retire les images
+    inutilisées), puis `docker compose up -d`. La migration repart de zéro et, une fois passée, ne
+    se rejoue plus.
 
 ### Le port est déjà pris
 
@@ -102,7 +103,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 - **Cause.** Un autre programme occupe déjà ce port sur votre machine.
 - **Solution.** Les ports ne sont pas des variables, ils sont écrits en clair dans le `ports:` de
   votre pile. Donnez au port concerné une valeur libre **du côté gauche**, par exemple
-  `"8090:8080"`, puis `docker compose up -d` — et pensez à ouvrir la nouvelle adresse. La marche à
+  `"8090:8080"`, puis `docker compose up -d`, et pensez à ouvrir la nouvelle adresse. La marche à
   suivre est détaillée dans [Régler le nœud, § Changer un port](settings.md#changer-un-port).
 
 ### amuled ne se connecte à rien
@@ -139,11 +140,11 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
 - **La page se charge, mais le tableau est vide.** C'est normal les premières heures : le catalogue
   se remplit au fil des recherches, et les cibles rares peuvent mettre des jours à réapparaître.
-  Vérifiez plutôt que le nœud vit — `docker compose logs mulewatch` doit montrer des lignes
+  Vérifiez plutôt que le nœud vit : `docker compose logs mulewatch` doit montrer des lignes
   `cycle ...` jusqu'à `cycle 0 done`. S'il reste `effective_coverage=blind`, voir
   [« amuled ne se connecte à rien »](#amuled-ne-se-connecte-à-rien).
 - **La page ne se charge pas du tout.** La webui est servie en intra-processus par le crawler, il
-  n'y a pas de service `webui` séparé — et un conteneur `Up (healthy)` ne prouve pas que le crawler
+  n'y a pas de service `webui` séparé. Et un conteneur `Up (healthy)` ne prouve pas que le crawler
   est vivant, la sonde n'interroge qu'amuled. Vérifiez donc les deux :
   ```bash
   docker compose ps
