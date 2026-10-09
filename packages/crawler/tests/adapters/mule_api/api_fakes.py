@@ -128,9 +128,6 @@ class FakeAmuleApi:
         ends_at = started_at + timedelta(seconds=seconds)
         return {"state": "running" if self.clock.now() < ends_at else "finished"}
 
-    def _stop_search(self, request: httpx.Request) -> httpx.Response:
-        return httpx.Response(204)
-
     def _more_search(self, request: httpx.Request) -> httpx.Response:
         return httpx.Response(202)
 
@@ -180,7 +177,6 @@ _ROUTES: dict[tuple[str, str], Callable[[FakeAmuleApi, httpx.Request], httpx.Res
     ("POST", "/api/v1/auth/logout"): FakeAmuleApi._logout,
     ("POST", "/api/v1/search"): FakeAmuleApi._start_search,
     ("GET", "/api/v1/search/{id}/results"): FakeAmuleApi._search_results,
-    ("POST", "/api/v1/search/{id}/stop"): FakeAmuleApi._stop_search,
     ("POST", "/api/v1/search/{id}/more"): FakeAmuleApi._more_search,
     ("GET", "/api/v1/status"): FakeAmuleApi._get_status,
     ("GET", "/api/v1/preferences"): FakeAmuleApi._get_preferences,

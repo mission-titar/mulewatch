@@ -221,7 +221,6 @@ sequenceDiagram
       W-)D: nudge (if download tier)
     end
   end
-  W->>A: stop_search()
 ```
 
 - Un résultat devient une `FileObservation` via `adapters/mule_api/mapping.py` (capture

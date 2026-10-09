@@ -1,4 +1,4 @@
-"""Login, refused login, network status and the full search cycle, against a REAL amuleapi.
+"""Login, refused login, network status and a search, against a REAL amuleapi.
 
 Dedicated run: uv run pytest -m api_integration --no-cov
 Without eD2k access the results are empty: what is validated is the cycle, not their richness.
@@ -41,21 +41,17 @@ async def test_real_network_status(amuled: ApiEndpoint) -> None:
 
 
 @pytest.mark.asyncio
-async def test_real_search_cycle(amuled: ApiEndpoint) -> None:
+async def test_real_search(amuled: ApiEndpoint) -> None:
     client = AmuleApiClient(amuled.host, amuled.port, amuled.password, timeout=30.0)
     await client.connect()
     try:
         try:
-            await client.start_search("keroro", "ed2k")
+            results = await client.search("keroro", "ed2k", 30.0)
         except ApiRejectedError as exc:
             # The daemon refused the search cleanly (no eD2k server reachable from the
             # container): the request/response cycle IS validated, with its own message.
             assert str(exc)
             return
-        progress = await client.search_progress()
-        assert progress is None or 0 <= progress <= 100
-        results = await client.fetch_results()  # possibly empty: the CYCLE is what counts
-        assert isinstance(results, tuple)
-        await client.stop_search()
+        assert isinstance(results, tuple)  # possibly empty: the call is what counts
     finally:
         await client.close()

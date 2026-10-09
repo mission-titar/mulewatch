@@ -272,213 +272,6 @@ async def test_an_error_body_whose_error_key_is_not_an_object_still_maps() -> No
         await client.network_status()
 
 
-# --- search --------------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(("channel", "search_type"), [("ed2k", "global"), ("kad", "kad")])
-@pytest.mark.asyncio
-async def test_start_search_sends_the_query_and_the_channels_search_type(
-    channel: str, search_type: str
-) -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-
-    await client.start_search("keroro", channel)
-    await client.close()
-
-    start = api.requests[1]
-    assert start.url.path == "/api/v1/search"
-    assert json.loads(start.content) == {"query": "keroro", "type": search_type}
-
-
-@pytest.mark.asyncio
-async def test_start_search_stops_the_previous_one_first() -> None:
-    """Observed on the image: Kad refuses a keyword still on its search list (§7.2 neighbour).
-
-    Only `POST /search/{id}/stop` takes the keyword off Kademlia's list; freeing the search with
-    a DELETE does not. Stopping first is also what EC did, where starting wiped the previous.
-    """
-    api = FakeAmuleApi()
-    client = await _connected(api)
-
-    await client.start_search("keroro", "kad")
-    await client.start_search("keroro", "kad")
-    await client.close()
-
-    paths = [request.url.path for request in api.requests]
-    assert paths.index("/api/v1/search/42/stop") < paths.index("/api/v1/search", 2)
-
-
-@pytest.mark.asyncio
-async def test_a_previous_search_already_gone_does_not_block_the_next() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-    await client.start_search("keroro", "kad")
-    api.overrides[("POST", "/api/v1/search/42/stop")] = lambda _: error(404, "not_found")
-
-    await client.start_search("titar", "kad")
-    await client.close()
-
-    assert api.requests[-2].url.path == "/api/v1/search"
-
-
-@pytest.mark.asyncio
-async def test_a_search_the_daemon_refuses_is_a_channel_failure() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-    api.overrides[("POST", "/api/v1/search")] = lambda _: error(
-        400, "amuled_rejected", "not connected to any server"
-    )
-
-    with pytest.raises(ApiRejectedError):
-        await client.start_search("keroro", "ed2k")
-
-
-@pytest.mark.asyncio
-async def test_a_search_reply_without_an_id_is_a_channel_failure() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-    api.overrides[("POST", "/api/v1/search")] = lambda _: httpx.Response(202, json={"query": "k"})
-
-    with pytest.raises(ApiRejectedError):
-        await client.start_search("keroro", "ed2k")
-
-
-@pytest.mark.asyncio
-async def test_fetch_results_maps_the_snapshot_and_counts_what_it_drops() -> None:
-    api = FakeAmuleApi(results=[_result(), {"hash": "nope"}])
-    client = await _connected(api)
-
-    await client.start_search("keroro", "ed2k")
-    observations = await client.fetch_results()
-    await client.close()
-
-    assert [observation.filename for observation in observations] == ["Keroro.095.avi"]
-    assert [observation.keyword for observation in observations] == ["keroro"]
-    assert client.skipped_entries_total == 1
-
-
-@pytest.mark.asyncio
-async def test_fetch_results_pages_past_the_first_window() -> None:
-    rows = [_result(f"Keroro.{index:04d}.avi") | {"hash": f"{index:032x}"} for index in range(501)]
-    api = FakeAmuleApi(results=rows)
-    client = await _connected(api)
-
-    await client.start_search("keroro", "ed2k")
-    observations = await client.fetch_results()
-    await client.close()
-
-    assert len(observations) == 501
-
-
-@pytest.mark.asyncio
-async def test_fetch_results_without_a_search_is_a_channel_failure() -> None:
-    client = await _connected(FakeAmuleApi())
-
-    with pytest.raises(ApiRejectedError):
-        await client.fetch_results()
-
-
-@pytest.mark.asyncio
-async def test_search_progress_reads_the_progress_envelope() -> None:
-    api = FakeAmuleApi(progress={"state": "running", "percent": 67})
-    client = await _connected(api)
-
-    await client.start_search("keroro", "ed2k")
-    assert await client.search_progress() == 67
-    await client.close()
-
-
-@pytest.mark.asyncio
-async def test_search_progress_asks_for_no_result_row() -> None:
-    api = FakeAmuleApi(results=[_result()])
-    client = await _connected(api)
-
-    await client.start_search("keroro", "ed2k")
-    await client.search_progress()
-    await client.close()
-
-    assert _paths(api, "/api/v1/search/42/results")[-1].params.get("limit") == "0"
-
-
-@pytest.mark.asyncio
-async def test_search_progress_is_unknown_without_a_search() -> None:
-    client = await _connected(FakeAmuleApi())
-
-    assert await client.search_progress() is None
-
-
-@pytest.mark.asyncio
-async def test_a_progress_the_daemon_does_not_report_is_unknown() -> None:
-    api = FakeAmuleApi(progress={"state": "running"})
-    client = await _connected(api)
-
-    await client.start_search("keroro", "ed2k")
-    assert await client.search_progress() is None
-    await client.close()
-
-
-@pytest.mark.asyncio
-async def test_stop_search_stops_the_search_it_started() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-
-    await client.start_search("keroro", "ed2k")
-    await client.stop_search()
-    await client.close()
-
-    assert _paths(api, "/api/v1/search/42/stop") != []
-
-
-@pytest.mark.asyncio
-async def test_stop_search_without_a_search_is_a_channel_failure() -> None:
-    client = await _connected(FakeAmuleApi())
-
-    with pytest.raises(ApiRejectedError):
-        await client.stop_search()
-
-
-@pytest.mark.asyncio
-async def test_widen_search_asks_kad_for_more_on_the_search_it_started() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-
-    await client.start_search("keroro", "kad")
-    assert await client.widen_search() is False
-    await client.close()
-
-    assert _paths(api, "/api/v1/search/42/more") != []
-
-
-@pytest.mark.asyncio
-async def test_a_kad_search_past_its_last_reask_reports_it_is_exhausted() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-    await client.start_search("keroro", "kad")
-    api.overrides[("POST", "/api/v1/search/42/more")] = lambda _: error(409, "kad_more_exhausted")
-
-    assert await client.widen_search() is True
-
-
-@pytest.mark.asyncio
-async def test_widening_a_search_the_daemon_evicted_is_a_channel_failure() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-    await client.start_search("keroro", "kad")
-    api.overrides[("POST", "/api/v1/search/42/more")] = lambda _: error(404, "not_found")
-
-    with pytest.raises(ApiRejectedError):
-        await client.widen_search()
-
-
-@pytest.mark.asyncio
-async def test_widen_search_without_a_search_is_a_channel_failure() -> None:
-    client = await _connected(FakeAmuleApi())
-
-    with pytest.raises(ApiRejectedError):
-        await client.widen_search()
-
-
 # --- search(): one call per search ---------------------------------------------------------
 
 
@@ -596,6 +389,16 @@ async def test_a_search_the_daemon_refuses_fails_its_channel() -> None:
     api.overrides[("POST", "/api/v1/search")] = lambda _: error(
         400, "amuled_rejected", "not connected to any server"
     )
+    client = await _connected(api)
+
+    with pytest.raises(SearchFailedError):
+        await client.search("keroro", "ed2k", 120)
+
+
+@pytest.mark.asyncio
+async def test_a_search_reply_without_an_id_fails_its_channel() -> None:
+    api = FakeAmuleApi()
+    api.overrides[("POST", "/api/v1/search")] = lambda _: httpx.Response(202, json={"query": "k"})
     client = await _connected(api)
 
     with pytest.raises(SearchFailedError):
