@@ -3,7 +3,7 @@ import dataclasses
 import pytest
 
 from catalog_matching.models import FileCandidate
-from mulewatch.domain.observation import FileObservation, candidate_from_fields
+from mulewatch.domain.observation import FileObservation, candidate_from_fields, fold_raw_meta
 
 
 def _full_observation() -> FileObservation:
@@ -109,3 +109,18 @@ def test_candidate_from_fields_maps_absent_media_metadata_to_none() -> None:
         duration_sec=None,
         bitrate_kbps=None,
     )
+
+
+def test_fold_raw_meta_appends_the_three_values_after_the_pairs() -> None:
+    folded = fold_raw_meta((("0x0308", "0"),), "xvid", "Video", 2)
+    assert folded == (
+        ("0x0308", "0"),
+        ("codec", "xvid"),
+        ("file_type", "Video"),
+        ("complete_source_count", 2),
+    )
+
+
+def test_fold_raw_meta_keeps_an_absent_value_as_none() -> None:
+    folded = fold_raw_meta((), None, None, 0)
+    assert folded == (("codec", None), ("file_type", None), ("complete_source_count", 0))

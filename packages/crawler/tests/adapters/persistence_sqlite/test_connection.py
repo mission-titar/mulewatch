@@ -50,6 +50,21 @@ def test_open_catalog_creates_the_three_tables_and_versions_the_schema(tmp_path:
         connection.close()
 
 
+def test_open_catalog_registers_the_variant_functions_before_migrating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "catalog").mkdir()
+    (tmp_path / "catalog" / "0001_probe.sql").write_text(
+        "CREATE TABLE probe AS SELECT iso_to_micros('1970-01-01T00:00:00.000001+00:00') AS us;"
+    )
+    monkeypatch.setattr(connection_module, "_MIGRATIONS", tmp_path)
+    connection = open_catalog(tmp_path / "catalog.db")
+    try:
+        assert connection.execute("SELECT us FROM probe").fetchone()[0] == 1
+    finally:
+        connection.close()
+
+
 def test_open_local_creates_the_tables_and_versions_the_schema(tmp_path: Path) -> None:
     connection = open_local(tmp_path / "local.db")
     try:

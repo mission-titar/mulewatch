@@ -31,6 +31,7 @@ from mulewatch.adapters.persistence_sqlite.errors import (
     PersistenceError,
     wrap_sqlite_errors,
 )
+from mulewatch.adapters.persistence_sqlite.variants import register_functions
 
 type Clock = Callable[[], datetime]
 
@@ -66,7 +67,7 @@ def utc_iso(moment: datetime) -> str:
 
 def open_catalog(path: Path | str) -> sqlite3.Connection:
     """Opens/migrates ``catalog.db`` (the append-only triggers are part of the schema)."""
-    return _open(path, _MIGRATIONS / "catalog")
+    return _open(path, _MIGRATIONS / "catalog", register_functions)
 
 
 def open_local(path: Path | str) -> sqlite3.Connection:
@@ -74,12 +75,18 @@ def open_local(path: Path | str) -> sqlite3.Connection:
     return _open(path, _MIGRATIONS / "local")
 
 
-def _open(path: Path | str, scripts_dir: Traversable) -> sqlite3.Connection:
+def _open(
+    path: Path | str,
+    scripts_dir: Traversable,
+    register: Callable[[sqlite3.Connection], None] | None = None,
+) -> sqlite3.Connection:
     with wrap_sqlite_errors():
         connection = sqlite3.connect(path, autocommit=True)
     try:
         with wrap_sqlite_errors():
             _configure(connection)
+            if register is not None:
+                register(connection)
             _apply_migrations(connection, _load_scripts(scripts_dir))
     except BaseException:
         # Unconditional close: a NON-sqlite error (e.g. OSError from iterdir) must not
