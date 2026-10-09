@@ -167,19 +167,13 @@ def _to_display_rows(
 
 
 def _timeline_row(sighting: Sighting) -> TimelineRow:
-    """A sighting as one timeline line; a compacted day says so, with its source range."""
-    low, high = sighting.source_count_min, sighting.source_count_max
+    """A sighting as one timeline line."""
     return TimelineRow(
-        names=sighting.names,
+        name=sighting.names[0],
         size_bytes=sighting.size_bytes,
-        sources=str(low) if low == high else f"{low} to {high}",
+        sources=str(sighting.source_count_max),
         keyword=sighting.keyword or "",
-        observed_at=(
-            f"{sighting.first_seen[:10]} (compacted day)"
-            if sighting.compacted
-            else sighting.first_seen
-        ),
-        times_seen=str(sighting.observation_count),
+        observed_at=sighting.first_seen,
     )
 
 
@@ -611,7 +605,7 @@ def build_app(
 
         first_decision = detail.decisions[0] if detail.decisions else None
         if first_decision is not None and latest is not None:
-            # Every known name (ranges included) with the latest fields, as the crawler judges.
+            # Every known name with the latest fields, as the crawler judges.
             explanation = explainer.explain(
                 filenames=detail.known_filenames,
                 size_bytes=latest.size_bytes,

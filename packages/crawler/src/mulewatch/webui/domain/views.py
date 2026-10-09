@@ -74,7 +74,7 @@ class FileRow:
     ed2k_hash: str
     size_bytes: int
     filename: str  # latest observed name
-    source_count: int | None  # latest observation's count; None when unknown (compacted)
+    source_count: int | None  # latest observation's count; None for a file never seen
     last_seen: str  # observed_at of the latest observation (ISO-8601 UTC)
     decisions: tuple[FileDecision, ...]  # current decisions, latest per target, 0..N
 
@@ -86,14 +86,13 @@ class FileRow:
 
 @dataclass(frozen=True)
 class TimelineRow:
-    """One line of a file's timeline, precomputed: a raw observation or a compacted day."""
+    """One observation of a file's timeline, precomputed."""
 
-    names: tuple[str, ...]
+    name: str
     size_bytes: int
-    sources: str  # the count, or "min to max" over a compacted day
-    keyword: str  # "" on a compacted day
-    observed_at: str  # the timestamp, or "<day> (compacted day)"
-    times_seen: str  # "1", or the compacted day's observation count
+    sources: str
+    keyword: str
+    observed_at: str
 
 
 @dataclass(frozen=True)
@@ -114,10 +113,10 @@ class FileDetail:
     ed2k_hash: str
     size_bytes: int
     aich_hash: str | None
-    sightings: tuple[Sighting, ...]  # raw observations and compacted days, oldest first
-    latest: Sighting | None  # the latest raw observation, else the latest compacted day
+    sightings: tuple[Sighting, ...]  # oldest first
+    latest: Sighting | None  # the latest observation
     decisions: tuple[DecisionView, ...]  # current decisions, latest per target, 0..N
-    known_filenames: tuple[str, ...]  # every distinct name, raw or compacted, sorted
+    known_filenames: tuple[str, ...]  # every distinct name, sorted
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +194,7 @@ class FileRowDisplay:
     ed2k_hash: str
     short_hash: str
     filename: str
-    sources_display: str  # the count, or "unknown" when none was read (compacted file)
+    sources_display: str  # the count, or "unknown" for a file never seen
     decisions_display: tuple[DecisionCell, ...]  # one per current decision, 0..N; () when none
     size_display: str  # human_size(size_bytes)
     last_seen_display: str  # short_timestamp(last_seen)
