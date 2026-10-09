@@ -8,7 +8,7 @@ completion is the shared list saying so.
 from dataclasses import dataclass
 from typing import Protocol
 
-from mulewatch.ports.mule_client import NetworkStatus
+from mulewatch.ports.port_sync import NetworkStatus
 
 
 @dataclass(frozen=True)

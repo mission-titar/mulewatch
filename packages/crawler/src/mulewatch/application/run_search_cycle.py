@@ -42,7 +42,8 @@ from mulewatch.domain.search.cycle import Rng, shuffle_for_cycle
 from mulewatch.domain.search.keywords import generate_keywords
 from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock
-from mulewatch.ports.mule_client import KadStatus, MuleClient
+from mulewatch.ports.mule_client import MuleClient
+from mulewatch.ports.port_sync import KadStatus
 from mulewatch.ports.repository_errors import RepositoryError
 from mulewatch.ports.scheduler_state_repository import SchedulerStateRepository
 from mulewatch.ports.telemetry import Telemetry

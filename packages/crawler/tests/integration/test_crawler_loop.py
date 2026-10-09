@@ -28,7 +28,7 @@ from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
 )
 from mulewatch.composition.app import CrawlerApp
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.mule_client import NetworkStatus
+from mulewatch.ports.port_sync import NetworkStatus
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.orchestration_integration

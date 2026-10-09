@@ -22,7 +22,7 @@ from mulewatch.application.search_worker import (
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import AllInstancesBlind, SearchCapabilitySampled
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.application.fakes import (
     FakeClock,
     FakeMuleClient,

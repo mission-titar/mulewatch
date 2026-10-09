@@ -33,8 +33,8 @@ from mulewatch.adapters.mule_api.mapping import (
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
-from mulewatch.ports.mule_client import NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
+from mulewatch.ports.port_sync import NetworkStatus
 
 # Rows asked for per list request. Every list route caps at 100 when `limit` is omitted, which
 # would silently truncate the shared-file sweep completion detection depends on (§7.5).

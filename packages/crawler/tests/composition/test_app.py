@@ -34,8 +34,8 @@ from mulewatch.composition.app import CrawlerApp, WebuiServer, default_client_fa
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_errors import ClientUnreachableError
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from mulewatch.ports.telemetry import Telemetry
 from tests.application.fakes import FakeClock, FakeMuleClient, RecordingSignal
 from tests.catalog_rows import observation_node_ids

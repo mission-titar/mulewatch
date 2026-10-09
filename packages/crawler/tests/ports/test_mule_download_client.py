@@ -3,12 +3,12 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import (
     DownloadEntry,
     MuleDownloadClient,
     SharedFileEntry,
 )
+from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
 
 class _StubDownloadClient:
