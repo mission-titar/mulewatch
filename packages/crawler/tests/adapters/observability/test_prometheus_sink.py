@@ -45,6 +45,30 @@ def test_gauge_search_capable_sets_binary_value() -> None:
     assert registry.get_sample_value("emule_search_capable") == 0.0
 
 
+def test_a_channel_series_is_removed_while_unknown_and_only_that_one() -> None:
+    registry = CollectorRegistry()
+    sink = PrometheusSink(registry)
+    amuled = (("client", "amuled"), ("network", "kad"))
+    other = (("client", "other"), ("network", "kad"))
+    for labels in (amuled, other):
+        sink.apply(MetricInstruction(MetricName.CHANNEL_ON_NETWORK, "set", labels, 1.0))
+        sink.apply(MetricInstruction(MetricName.CHANNEL_CONNECTABLE, "set", labels, 0.0))
+    sink.apply(MetricInstruction(MetricName.CHANNEL_CONNECTABLE, "remove", amuled))
+    assert registry.get_sample_value("p2pwatch_channel_connectable", dict(amuled)) is None
+    assert registry.get_sample_value("p2pwatch_channel_connectable", dict(other)) == 0.0
+    assert registry.get_sample_value("p2pwatch_channel_on_network", dict(amuled)) == 1.0
+
+
+def test_removing_a_series_never_set_is_a_no_op() -> None:
+    # A client unreachable from boot has no series yet.
+    registry = CollectorRegistry()
+    labels = (("client", "amuled"), ("network", "ed2k"))
+    PrometheusSink(registry).apply(
+        MetricInstruction(MetricName.CHANNEL_ON_NETWORK, "remove", labels)
+    )
+    assert registry.get_sample_value("p2pwatch_channel_on_network", dict(labels)) is None
+
+
 def test_histogram_observe() -> None:
     registry = CollectorRegistry()
     PrometheusSink(registry).apply(

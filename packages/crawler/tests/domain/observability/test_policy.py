@@ -18,6 +18,7 @@ from mulewatch.domain.observability.policy import (
 
 _COMMUNITY = frozenset({Audience.COMMUNITY})
 _OPERATIONS = frozenset({Audience.OPERATIONS})
+_AMULED_KAD = (("client", "amuled"), ("network", "kad"))
 
 
 CASES: list[tuple[ev.Event, Report]] = [
@@ -116,6 +117,52 @@ CASES: list[tuple[ev.Event, Report]] = [
             "search-capable: no",
             (MetricInstruction(MetricName.SEARCH_CAPABLE, "set", (), 0.0),),
         ),
+    ),
+    (
+        ev.ChannelStatusSampled(client="amuled", channel="kad", on_network=True, connectable=False),
+        Report(
+            Severity.DEBUG,
+            "status amuled kad: on network yes, connectable no",
+            (
+                MetricInstruction(MetricName.CHANNEL_ON_NETWORK, "set", _AMULED_KAD, 1.0),
+                MetricInstruction(MetricName.CHANNEL_CONNECTABLE, "set", _AMULED_KAD, 0.0),
+            ),
+        ),
+    ),
+    (
+        ev.ChannelStatusSampled(client="amuled", channel="kad", on_network=None, connectable=None),
+        Report(
+            Severity.DEBUG,
+            "status amuled kad: on network unknown, connectable unknown",
+            (
+                MetricInstruction(MetricName.CHANNEL_ON_NETWORK, "remove", _AMULED_KAD),
+                MetricInstruction(MetricName.CHANNEL_CONNECTABLE, "remove", _AMULED_KAD),
+            ),
+        ),
+    ),
+    (
+        ev.ChannelDegraded(client="amuled", channel="ed2k", field="on_network", seconds=300.0),
+        Report(Severity.WARNING, "amuled ed2k: off its network for 5 min", (), _OPERATIONS),
+    ),
+    (
+        ev.ChannelDegraded(client="amuled", channel="kad", field="connectable", seconds=300.0),
+        Report(Severity.WARNING, "amuled kad: not connectable for 5 min", (), _OPERATIONS),
+    ),
+    (
+        ev.ChannelRecovered(client="amuled", channel="ed2k", field="on_network"),
+        Report(Severity.INFO, "amuled ed2k: back on its network", (), _OPERATIONS),
+    ),
+    (
+        ev.ChannelRecovered(client="amuled", channel="kad", field="connectable"),
+        Report(Severity.INFO, "amuled kad: connectable again", (), _OPERATIONS),
+    ),
+    (
+        ev.ClientUnreachableLasting(client="amuled", seconds=120.0),
+        Report(Severity.WARNING, "amuled unreachable for 2 min", (), _OPERATIONS),
+    ),
+    (
+        ev.ClientReachableAgain(client="amuled"),
+        Report(Severity.INFO, "amuled reachable again", (), _OPERATIONS),
     ),
     (
         ev.FreeSpaceSampled(free_bytes=5_000),
