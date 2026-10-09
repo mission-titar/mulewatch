@@ -100,6 +100,21 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
     inutilisées), puis `docker compose up -d`. La migration repart de zéro et, une fois passée, ne
     se rejoue plus.
 
+!!! bug "`file_observation_ranges holds rows`, juste après une montée d'image"
+
+    Le journal du crawler contient `MigrationError: migration 6 failed: file_observation_ranges
+    holds rows: a compacted day cannot become observations`. Votre catalogue a été compacté par
+    l'ancien outil `python -m mulewatch.compact`, qui n'existe plus. Une journée compactée ne garde
+    ni le mot-clé, ni la durée, ni les métadonnées brutes : elle ne peut pas devenir des
+    observations, et la migration refuse plutôt que d'inventer ce qui manque. Elle a été annulée :
+    le catalogue est intact.
+
+    Remède : épinglez votre ancienne image (`ghcr.io/mission-titar/mulewatch:4.1.0`) dans
+    `base.compose.yml`, puis `docker compose up -d`. Ouvrez ensuite un ticket sur
+    <https://github.com/mission-titar/mulewatch/issues> avec cette ligne de journal et le résultat
+    de `SELECT COUNT(*) FROM file_observation_ranges` dans la console SQL : la conversion s'écrira
+    sur vos données.
+
 ### Le port est déjà pris
 
 - **Symptôme.** `docker compose up -d` s'arrête sur `bind: address already in use`. Le numéro dans
