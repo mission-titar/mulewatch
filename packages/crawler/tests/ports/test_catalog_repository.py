@@ -66,11 +66,10 @@ def test_protocol_is_satisfied_structurally() -> None:
     stub = _StubRepository()
     repository: CatalogRepository = stub  # mypy proves the structural satisfaction
     observation = FileObservation(
-        ed2k_hash="31d6cfe0d16ae931b73c59d7e0c089c0",
+        file=_KEY,
         filename="Keroro 062A.avi",
         size_bytes=100,
         source_count=1,
-        complete_source_count=0,
         keyword="keroro",
     )
     decision = MatchDecision(

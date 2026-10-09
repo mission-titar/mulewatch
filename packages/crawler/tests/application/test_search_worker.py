@@ -12,6 +12,7 @@ from mulewatch.application.search_worker import (
     WorkerDeps,
     WorkerPolicy,
 )
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import (
     InstanceUnreachable,
     SearchExecuted,
@@ -50,11 +51,10 @@ _POLICY = WorkerPolicy(
 
 def _obs() -> FileObservation:
     return FileObservation(
-        ed2k_hash=_HASH,
+        file=FileKey(Network.ED2K, _HASH),
         filename=_DL_NAME,
         size_bytes=234_000_000,
         source_count=3,
-        complete_source_count=1,
         keyword="keroro",
     )
 
@@ -206,11 +206,10 @@ async def test_multiple_observations_some_unchanged_are_all_processed(
 ) -> None:
     clock = FakeClock()
     discarded = FileObservation(
-        ed2k_hash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        file=FileKey(Network.ED2K, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
         filename="random.txt",  # discarded by the engine → record_observation returns False
         size_bytes=10,
         source_count=1,
-        complete_source_count=0,
         keyword="keroro",
     )
     # Two observations in the same readout: the 1st is discarded (False → loop back), the 2nd

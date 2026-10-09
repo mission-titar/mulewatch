@@ -13,7 +13,7 @@ from mulewatch.adapters.persistence_sqlite.connection import open_catalog, utc_i
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
 from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import FileObservation
+from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import CatalogRepository, ReevalRow
 from tests.catalog_rows import count_observations, insert_file
@@ -48,23 +48,19 @@ def _observation(
     size_bytes: int = 234567890,
     media_length_sec: int | None = None,
     bitrate_kbps: int | None = None,
-    codec: str | None = None,
-    file_type: str | None = None,
 ) -> FileObservation:
-    # media None by default (EC exposes NO media metadata — report 2026-06-11);
-    # raw_meta with a DUPLICATE, wire order and non-ASCII (the three properties to preserve).
+    # raw_meta with a DUPLICATE, wire order, non-ASCII and the fold's native types.
     return FileObservation(
-        ed2k_hash=_HASH,
+        file=_KEY,
         filename=filename,
         size_bytes=size_bytes,
         source_count=5,
-        complete_source_count=2,
         keyword="keroro",
         media_length_sec=media_length_sec,
         bitrate_kbps=bitrate_kbps,
-        codec=codec,
-        file_type=file_type,
-        raw_meta=(("0x0308", "0"), ("0x0308", "0"), ("0x0999", "mystère")),
+        raw_meta=fold_raw_meta(
+            (("0x0308", "0"), ("0x0308", "0"), ("0x0999", "mystère")), None, None, 2
+        ),
     )
 
 
@@ -151,17 +147,14 @@ def test_record_observation_with_media_metadata_and_default_clock(tmp_path: Path
     try:
         repository = SqliteCatalogRepository(connection, _NODE)  # default clock (utc_now)
         before = iso_to_micros(utc_iso(datetime.now(UTC)))
-        repository.record_observation(
-            _observation(media_length_sec=1474, bitrate_kbps=1200, codec="xvid", file_type="Video")
-        )
+        repository.record_observation(_observation(media_length_sec=1474, bitrate_kbps=1200))
         after = iso_to_micros(utc_iso(datetime.now(UTC)))
         row = connection.execute(
-            "SELECT media_length_sec, bitrate_kbps, raw_meta, observed_at"
+            "SELECT media_length_sec, bitrate_kbps, observed_at"
             " FROM observation_variants JOIN observations USING (variant_id)"
         ).fetchone()
         assert row[:2] == (1474, 1200)
-        assert json.loads(row[2])[3:5] == [["codec", "xvid"], ["file_type", "Video"]]
-        assert before <= row[3] <= after  # the default clock stamps now
+        assert before <= row[2] <= after  # the default clock stamps now
     finally:
         connection.close()
 
@@ -193,7 +186,7 @@ def test_record_observation_rejects_non_canonical_hash(
     # behavior): without Python validation BEFORE the transaction, a non-canonical hash
     # would only survive thanks to the foreign_keys pragma (opaque diagnostic), and a connection
     # without that pragma would commit an ORPHAN observation.
-    upper = dataclasses.replace(_observation(), ed2k_hash=_HASH.upper())
+    upper = dataclasses.replace(_observation(), file=FileKey(Network.ED2K, _HASH.upper()))
     with pytest.raises(PersistenceError, match="non-canonical eD2k hash"):
         repository.record_observation(upper)
     assert connection.execute("SELECT count(*) FROM files").fetchone()[0] == 0
@@ -349,7 +342,7 @@ def test_iter_reevaluation_rows_returns_the_latest_observation_per_hash(
             _observation(
                 filename="other.avi", size_bytes=300, media_length_sec=1234, bitrate_kbps=1500
             ),
-            ed2k_hash=_HASH_B,
+            file=FileKey(Network.ED2K, _HASH_B),
         )
     )
     rows = list(repository.iter_reevaluation_rows())
@@ -392,7 +385,9 @@ def test_count_files_counts_catalogued_hashes_not_observations(
     assert repository.count_files() == 0
     repository.record_observation(_observation())
     repository.record_observation(_observation())
-    repository.record_observation(dataclasses.replace(_observation(), ed2k_hash=_HASH_B))
+    repository.record_observation(
+        dataclasses.replace(_observation(), file=FileKey(Network.ED2K, _HASH_B))
+    )
     assert repository.count_files() == 2
 
 

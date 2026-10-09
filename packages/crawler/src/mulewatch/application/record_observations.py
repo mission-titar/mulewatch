@@ -21,7 +21,6 @@ import logging
 
 from catalog_matching.engine import MatchingEngine
 from mulewatch.application.decisions import record_decision_if_changed
-from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import ObservationRecorded
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.catalog_repository import CatalogRepository
@@ -49,7 +48,7 @@ async def record_observation(
         catalog.record_observation(observation)
         await telemetry.emit(ObservationRecorded(network=network))
         return await record_decision_if_changed(
-            FileKey(Network.ED2K, observation.ed2k_hash),
+            observation.file,
             observation.to_candidate(),
             catalog=catalog,
             engine=engine,
@@ -58,8 +57,9 @@ async def record_observation(
         )
     except RepositoryError as error:
         _logger.error(
-            "persistence failed on hash=%s (%s): observation skipped, cycle continues",
-            observation.ed2k_hash,
+            "persistence failed on %s:%s (%s): observation skipped, cycle continues",
+            observation.file.network,
+            observation.file.native_id,
             error,
         )
         return 0

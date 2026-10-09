@@ -8,9 +8,12 @@ from mulewatch.adapters.mule_api.mapping import (
     map_search_results,
     map_shared_entry,
 )
+from mulewatch.domain.file_key import FileKey, Network
+from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.mule_client import KadStatus
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
+_KEY = FileKey(Network.ED2K, _HASH)
 
 
 def _result(**overrides: Any) -> dict[str, Any]:
@@ -33,24 +36,36 @@ def _result(**overrides: Any) -> dict[str, Any]:
     return row
 
 
+def _meta(observation: FileObservation) -> dict[str, object]:
+    return dict(observation.raw_meta)
+
+
 def test_maps_a_result_to_an_observation() -> None:
     observations, skipped = map_search_results([_result()], "keroro")
 
     assert skipped == 0
     (observation,) = observations
-    assert observation.ed2k_hash == _HASH
+    assert observation.file == _KEY
     assert observation.filename == "Keroro.095.avi"
     assert observation.size_bytes == 3825205248
     assert observation.source_count == 217
-    assert observation.complete_source_count == 142
-    assert observation.file_type == "video"
     assert observation.keyword == "keroro"
+
+
+def test_the_ed2k_only_fields_are_folded_last_into_raw_meta() -> None:
+    (observation,), _ = map_search_results([_result(media={"codec": "H.264"})], "keroro")
+
+    assert observation.raw_meta[-3:] == (
+        ("codec", "H.264"),
+        ("file_type", "video"),
+        ("complete_source_count", 142),
+    )
 
 
 def test_an_uppercase_hash_is_folded_to_lowercase() -> None:
     (observation,), _ = map_search_results([_result(hash=_HASH.upper())], "keroro")
 
-    assert observation.ed2k_hash == _HASH
+    assert observation.file == _KEY
 
 
 def test_media_fills_the_columns_that_ec_never_could() -> None:
@@ -66,7 +81,7 @@ def test_media_fills_the_columns_that_ec_never_could() -> None:
 
     assert observation.media_length_sec == 1440
     assert observation.bitrate_kbps == 1500
-    assert observation.codec == "H.264"
+    assert _meta(observation)["codec"] == "H.264"
     # artist/album/title have no column: they survive in raw_meta (spec §4.2).
     assert ("media.title", "Keroro") in observation.raw_meta
 
@@ -76,20 +91,20 @@ def test_a_null_media_leaves_the_media_columns_empty() -> None:
 
     assert observation.media_length_sec is None
     assert observation.bitrate_kbps is None
-    assert observation.codec is None
+    assert _meta(observation)["codec"] is None
 
 
 def test_a_malformed_media_object_is_tolerated() -> None:
     (observation,), _ = map_search_results([_result(media={"codec": 7})], "keroro")
 
-    assert observation.codec is None
+    assert _meta(observation)["codec"] is None
     assert observation.media_length_sec is None
 
 
 def test_unmapped_keys_land_in_raw_meta() -> None:
     (observation,), _ = map_search_results([_result(rating=3)], "keroro")
 
-    raw = dict(observation.raw_meta)
+    raw = _meta(observation)
     assert raw["rating"] == "3"
     assert raw["status"] == "new"
     assert raw["already_downloaded"] == "false"
@@ -114,17 +129,21 @@ def test_every_alternate_name_becomes_its_own_observation() -> None:
         "sgt-frog-095.avi",
     ]
     # The hash and the size come from the parent, the source counts from each entry.
-    assert {observation.ed2k_hash for observation in observations} == {_HASH}
+    assert {observation.file for observation in observations} == {_KEY}
     assert {observation.size_bytes for observation in observations} == {3825205248}
     assert [observation.source_count for observation in observations] == [217, 40, 10]
-    assert [observation.complete_source_count for observation in observations] == [142, 22, 3]
+    assert [_meta(observation)["complete_source_count"] for observation in observations] == [
+        142,
+        22,
+        3,
+    ]
 
 
 def test_an_alternate_never_carries_the_volatile_ecid() -> None:
     alternate = {"ecid": 621, "name": "[Keroro].095.avi", "sources": {"total": 40}}
     observations, _ = map_search_results([_result(alternate_names=[alternate])], "keroro")
 
-    assert all("621" not in value for _, value in observations[1].raw_meta)
+    assert all("621" not in str(value) for _, value in observations[1].raw_meta)
 
 
 def test_a_result_without_a_usable_hash_is_skipped_and_counted() -> None:
@@ -180,7 +199,7 @@ def test_missing_source_counts_read_as_zero() -> None:
     (observation,), _ = map_search_results([_result(sources="nope")], "keroro")
 
     assert observation.source_count == 0
-    assert observation.complete_source_count == 0
+    assert _meta(observation)["complete_source_count"] == 0
 
 
 def test_a_non_integer_source_count_reads_as_zero() -> None:
@@ -192,7 +211,7 @@ def test_a_non_integer_source_count_reads_as_zero() -> None:
 def test_a_non_string_file_type_is_dropped() -> None:
     (observation,), _ = map_search_results([_result(file_type=7)], "keroro")
 
-    assert observation.file_type is None
+    assert _meta(observation)["file_type"] is None
 
 
 def test_a_results_payload_that_is_not_a_list_yields_nothing() -> None:

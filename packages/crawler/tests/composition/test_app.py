@@ -31,6 +31,7 @@ from mulewatch.adapters.persistence_sqlite.local_state_repository import (
 from mulewatch.application.edge_state import EdgeState
 from mulewatch.application.search_worker import BackoffRegistry
 from mulewatch.composition.app import CrawlerApp, WebuiServer, default_client_factory
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.mule_client import KadStatus, MuleUnreachableError, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
@@ -348,11 +349,10 @@ async def test_unreachable_client_at_startup_does_not_crash_the_run(
 @pytest.mark.asyncio
 async def test_node_id_override_is_used(tmp_path: Path, matcher_config: MatcherConfig) -> None:
     observation = FileObservation(
-        ed2k_hash="31d6cfe0d16ae931b73c59d7e0c089c0",
+        file=FileKey(Network.ED2K, "31d6cfe0d16ae931b73c59d7e0c089c0"),
         filename=_DL_NAME,
         size_bytes=234_000_000,
         source_count=3,
-        complete_source_count=1,
         keyword="keroro",
     )
     app_holder: dict[str, CrawlerApp] = {}
@@ -534,11 +534,10 @@ async def test_observations_are_catalogued_during_the_cycle(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
     observation = FileObservation(
-        ed2k_hash="31d6cfe0d16ae931b73c59d7e0c089c0",
+        file=FileKey(Network.ED2K, "31d6cfe0d16ae931b73c59d7e0c089c0"),
         filename=_DL_NAME,
         size_bytes=234_000_000,
         source_count=3,
-        complete_source_count=1,
         keyword="keroro",
     )
     app_holder: dict[str, CrawlerApp] = {}

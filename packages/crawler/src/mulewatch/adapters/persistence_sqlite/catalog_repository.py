@@ -36,7 +36,7 @@ from mulewatch.adapters.persistence_sqlite.connection import Clock, utc_iso, utc
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError, wrap_sqlite_errors
 from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
 from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import FileObservation, fold_raw_meta
+from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
 from mulewatch.ports.catalog_repository import ObservedFile, ReevalRow
 
@@ -108,21 +108,16 @@ class SqliteCatalogRepository:
 
     def record_observation(self, observation: FileObservation) -> None:
         """ONE transaction: file (first sight wins), its variant, the stamped observation."""
-        if not _CANONICAL_HASH_RE.fullmatch(observation.ed2k_hash):
-            raise PersistenceError(f"non-canonical eD2k hash: {observation.ed2k_hash!r}")
-        pairs = fold_raw_meta(
-            observation.raw_meta,
-            observation.codec,
-            observation.file_type,
-            observation.complete_source_count,
-        )
+        native_id = observation.file.native_id
+        if not _CANONICAL_HASH_RE.fullmatch(native_id):
+            raise PersistenceError(f"non-canonical eD2k hash: {native_id!r}")
         variant = (
-            observation.ed2k_hash,
+            native_id,
             observation.filename,
             observation.size_bytes,
             observation.media_length_sec,
             observation.bitrate_kbps,
-            json.dumps(pairs, ensure_ascii=False),
+            json.dumps(observation.raw_meta, ensure_ascii=False),
             observation.keyword,
             self._node_id,
         )
@@ -131,9 +126,7 @@ class SqliteCatalogRepository:
         with wrap_sqlite_errors():
             self._connection.execute("BEGIN")
             try:
-                self._connection.execute(
-                    _INSERT_FILE, (observation.ed2k_hash, observation.size_bytes)
-                )
+                self._connection.execute(_INSERT_FILE, (native_id, observation.size_bytes))
                 self._connection.execute(_INSERT_VARIANT, (*variant, key))
                 self._connection.execute(
                     _INSERT_OBSERVATION, (observed_at, observation.source_count, key)
