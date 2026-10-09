@@ -17,6 +17,7 @@ from typing import Literal, assert_never
 
 from catalog_matching.config import TIER_RANK
 from catalog_matching.ed2k_link import build_ed2k_link
+from mulewatch.domain.file_key import Network
 from mulewatch.domain.observability.events import (
     AllInstancesBlind,
     ConnectedInstancesSampled,
@@ -142,7 +143,7 @@ def _describe_decisions(event: DecisionsRecorded) -> Report:
     changes = ", ".join(f"{c.target_id} {c.before or 'none'} → {c.after}" for c in event.changes)
     report = Report(
         Severity.INFO,
-        f"decisions for {event.filename} ({event.ed2k_hash}): {changes}",
+        f"decisions for {event.filename} ({event.file.native_id}): {changes}",
         tuple(
             MetricInstruction(MetricName.DECISIONS, "inc", (("tier", c.after),))
             for c in event.changes
@@ -152,7 +153,11 @@ def _describe_decisions(event: DecisionsRecorded) -> Report:
     if not risen:
         return report
     top = max((c.after for c in risen), key=_rank)
-    link = build_ed2k_link(event.filename, event.size_bytes, event.ed2k_hash)
+    match event.file.network:
+        case Network.ED2K:
+            link = build_ed2k_link(event.filename, event.size_bytes, event.file.native_id)
+        case _:  # pragma: no cover
+            assert_never(event.file.network)
     return replace(
         report,
         audiences=frozenset({Audience.COMMUNITY}),

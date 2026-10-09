@@ -42,7 +42,7 @@ def _key(ed2k_hash: str) -> FileKey:
 
 
 def _event(ed2k_hash: str, filename: str, *changes: DecisionChange) -> DecisionsRecorded:
-    return DecisionsRecorded(ed2k_hash, filename, _SIZE, changes)
+    return DecisionsRecorded(_key(ed2k_hash), filename, _SIZE, changes)
 
 
 def _obs(ed2k_hash: str, filename: str, sources: int = 3) -> FileObservation:
@@ -327,7 +327,7 @@ async def test_a_file_with_no_name_left_is_named_by_the_candidate(
     )
     assert telemetry.events == [
         DecisionsRecorded(
-            _HASH_CAT,
+            _key(_HASH_CAT),
             _DISCARD_NAME,
             0,
             (DecisionChange("062A", _TITLE_A, "notify", RETRACTED_TIER),),

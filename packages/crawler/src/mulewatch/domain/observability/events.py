@@ -8,6 +8,8 @@ job). Recurring failure facts carry ``first_occurrence`` (computed by the applic
 
 from dataclasses import dataclass
 
+from mulewatch.domain.file_key import FileKey
+
 
 @dataclass(frozen=True)
 class SearchCycleCompleted:
@@ -60,7 +62,7 @@ class DecisionChange:
 @dataclass(frozen=True)
 class DecisionsRecorded:
     # What one evaluation of a file changed in its judgement, all its targets together.
-    ed2k_hash: str
+    file: FileKey
     filename: str  # the clean name, the most sourced
     size_bytes: int
     changes: tuple[DecisionChange, ...]

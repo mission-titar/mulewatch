@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability import events as ev
 from mulewatch.domain.observability.policy import (
     Audience,
@@ -189,7 +190,10 @@ _HASH = "8f3a1c0b9e7d44a2b6c1f0e9d8a7b6c5"
 
 def _decisions(*changes: ev.DecisionChange) -> ev.DecisionsRecorded:
     return ev.DecisionsRecorded(
-        ed2k_hash=_HASH, filename="Keroro 062.avi", size_bytes=367_185_920, changes=changes
+        file=FileKey(Network.ED2K, _HASH),
+        filename="Keroro 062.avi",
+        size_bytes=367_185_920,
+        changes=changes,
     )
 
 
