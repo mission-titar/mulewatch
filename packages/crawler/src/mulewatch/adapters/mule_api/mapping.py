@@ -9,6 +9,7 @@ from typing import Any
 
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation, fold_raw_meta
+from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from mulewatch.ports.mule_client import KadStatus, NetworkStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 
@@ -77,6 +78,24 @@ def map_network_status(payload: object) -> NetworkStatus:
         server_name=_string(ed2k.get("server_name")),
         server_addr=_server_addr(ed2k),
     )
+
+
+def map_client_status(status: object, version: object) -> ClientStatus:
+    """A /status and a /version body → ``ClientStatus``. Never raises: missing reads unknown."""
+    body = _object(status)
+    ed2k, kad = _object(body.get("ed2k")), _object(body.get("kad"))
+    high_id, firewalled = ed2k.get("high_id"), kad.get("firewalled_tcp")
+    channels = (
+        _channel("ed2k", ed2k, high_id if isinstance(high_id, bool) else None),
+        _channel("kad", kad, not firewalled if isinstance(firewalled, bool) else None),
+    )
+    return ClientStatus(version=_string(_object(version).get("daemon_version")), channels=channels)
+
+
+def _channel(name: str, network: dict[str, Any], connectable: bool | None) -> ChannelStatus:
+    """Off the network the flag tells nothing: there ``high_id`` false means "no id yet"."""
+    on_network = network.get("state") == "connected"
+    return ChannelStatus(name, on_network, connectable if on_network else None)
 
 
 def _map_result(result: object, keyword: str) -> tuple[list[FileObservation], int]:

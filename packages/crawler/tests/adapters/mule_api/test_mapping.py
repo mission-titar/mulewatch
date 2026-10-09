@@ -3,6 +3,7 @@
 from typing import Any
 
 from mulewatch.adapters.mule_api.mapping import (
+    map_client_status,
     map_download_entry,
     map_network_status,
     map_search_results,
@@ -10,6 +11,7 @@ from mulewatch.adapters.mule_api.mapping import (
 )
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
+from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from mulewatch.ports.mule_client import KadStatus
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
@@ -325,3 +327,62 @@ def test_a_partial_server_address_is_not_reported() -> None:
     payload = {"ed2k": {"state": "connected", "server_ip": "203.0.113.5", "server_port": None}}
 
     assert map_network_status(payload).server_addr is None
+
+
+def test_a_connected_high_id_and_open_kad_are_connectable() -> None:
+    status = map_client_status(
+        {
+            "ed2k": {"state": "connected", "high_id": True, "public_ip": "210.2.150.73"},
+            "kad": {"state": "connected", "firewalled_tcp": False},
+        },
+        {"daemon_version": "3.0.1"},
+    )
+
+    assert status == ClientStatus(
+        version="3.0.1",
+        channels=(
+            ChannelStatus(channel="ed2k", on_network=True, connectable=True),
+            ChannelStatus(channel="kad", on_network=True, connectable=True),
+        ),
+    )
+
+
+def test_a_low_id_and_a_firewalled_kad_are_not_connectable() -> None:
+    status = map_client_status(
+        {
+            "ed2k": {"state": "connected", "high_id": False},
+            "kad": {"state": "connected", "firewalled_tcp": True},
+        },
+        {"daemon_version": "3.0.1"},
+    )
+
+    assert [channel.connectable for channel in status.channels] == [False, False]
+
+
+def test_connectable_is_unknown_off_the_network() -> None:
+    # Off the network, high_id false means "no id yet", not Low-ID.
+    status = map_client_status(
+        {
+            "ed2k": {"state": "connecting", "high_id": False},
+            "kad": {"state": "connecting", "firewalled_tcp": None},
+        },
+        {"daemon_version": "3.0.1"},
+    )
+
+    assert [channel.on_network for channel in status.channels] == [False, False]
+    assert [channel.connectable for channel in status.channels] == [None, None]
+
+
+def test_a_missing_reachability_flag_on_the_network_is_unknown() -> None:
+    status = map_client_status({"ed2k": {"state": "connected"}, "kad": {"state": "connected"}}, {})
+
+    assert [channel.connectable for channel in status.channels] == [None, None]
+
+
+def test_an_empty_version_and_status_degrade_to_unknown() -> None:
+    # daemon_version is "" while EC is down.
+    status = map_client_status("nonsense", {"daemon_version": ""})
+
+    assert status.version is None
+    assert [channel.channel for channel in status.channels] == ["ed2k", "kad"]
+    assert [channel.on_network for channel in status.channels] == [False, False]
