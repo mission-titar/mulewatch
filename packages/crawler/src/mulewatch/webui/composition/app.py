@@ -365,7 +365,10 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
 # strings avoid em/en-dashes (project UI rule). A ``done`` code absent from this mapping (or no
 # ``done`` at all) renders NO banner.
 _CONTROL_MESSAGES: dict[str, str] = {
-    "paused": "Crawl paused. Searches in flight finish, then the crawler idles.",
+    "paused": (
+        "Crawl paused. Searches in flight or already waiting their network slot still run, "
+        "then the crawler idles."
+    ),
     "resumed": "Crawl resumed.",
     "restart": "Restart requested. The service goes offline briefly, then returns.",
 }

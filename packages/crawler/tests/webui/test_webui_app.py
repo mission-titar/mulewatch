@@ -1560,7 +1560,10 @@ async def test_post_pause_followed_lands_on_the_dashboard_banner(
         resp = await client.post("/controls/pause")
     assert resp.status_code == 200
     assert "control-banner" in resp.text
-    assert "Crawl paused. Searches in flight finish, then the crawler idles." in resp.text
+    assert (
+        "Crawl paused. Searches in flight or already waiting their network slot still run, "
+        "then the crawler idles." in resp.text
+    )
     assert control.calls == ["pause"]
 
 
