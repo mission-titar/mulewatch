@@ -7,6 +7,7 @@ the real High-ID belong to the e2e suite.
 
 import pytest
 
+from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.client import AmuleApiClient
 from tests.integration.conftest import ApiEndpoint
 
@@ -15,7 +16,9 @@ pytestmark = pytest.mark.api_integration
 
 @pytest.mark.asyncio
 async def test_real_get_listen_port_reads_a_plausible_port(amuled: ApiEndpoint) -> None:
-    client = AmuleApiClient(amuled.host, amuled.port, amuled.password, timeout=30.0)
+    client = AmuleApiClient(
+        amuled.host, amuled.port, amuled.password, timeout=30.0, clock=AsyncioClock()
+    )
     await client.connect()
     try:
         listen_port = await client.get_listen_port()
@@ -28,7 +31,9 @@ async def test_real_get_listen_port_reads_a_plausible_port(amuled: ApiEndpoint) 
 async def test_real_set_then_get_round_trips_the_port(amuled: ApiEndpoint) -> None:
     # set_listen_port(N) writes the preference; a later get must return N. The actual re-bind
     # (socket) requires a restart: NOT tested here (covered by the layer-B e2e).
-    client = AmuleApiClient(amuled.host, amuled.port, amuled.password, timeout=30.0)
+    client = AmuleApiClient(
+        amuled.host, amuled.port, amuled.password, timeout=30.0, clock=AsyncioClock()
+    )
     await client.connect()
     try:
         original = await client.get_listen_port()

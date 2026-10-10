@@ -33,11 +33,17 @@ from mulewatch.adapters.persistence_sqlite.local_state_repository import (
     SqliteLocalStateRepository,
 )
 from mulewatch.composition import app as composition_app
-from mulewatch.composition.app import CrawlerApp, WebuiServer, default_client_factory
+from mulewatch.composition.app import (
+    CrawlerApp,
+    WebuiServer,
+    default_client_factory,
+    default_download_client_factory,
+)
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.client_status import ClientStatus
+from mulewatch.ports.clock import Clock
 from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
 from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, FakeAmuleApi
@@ -183,7 +189,7 @@ async def test_app_runs_then_shuts_down_cleanly(
     created: list[_ShutdownOnStatusClient] = []
     app_holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         client = _ShutdownOnStatusClient(app_holder)
         created.append(client)
         return client
@@ -214,7 +220,7 @@ async def test_run_logs_the_package_version_at_startup(
     # signal a correlated-to-version regression relies on (spec 2026-07-10-git-driven-versioning).
     app_holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(app_holder)
 
     app = _make_app(tmp_path, matcher_config, factory=factory)
@@ -235,7 +241,7 @@ async def test_the_status_loop_reads_the_search_client_under_its_endpoint_name(
     app = _make_app(
         tmp_path,
         matcher_config,
-        factory=lambda e: _ShutdownOnStatusClient(app_holder),
+        factory=lambda endpoint, clock: _ShutdownOnStatusClient(app_holder),
         observability=ObservabilityConfig(
             log_level="INFO",
             metrics=MetricsConfig(enabled=True, port=9123),
@@ -282,7 +288,7 @@ async def test_unreachable_client_at_startup_does_not_crash_the_run(
     created: list[_UnreachableAtStartupClient] = []
     app_holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _UnreachableAtStartupClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _UnreachableAtStartupClient:
         client = _UnreachableAtStartupClient(app_holder)
         created.append(client)
         return client
@@ -315,7 +321,7 @@ async def test_node_id_override_is_used(tmp_path: Path, matcher_config: MatcherC
     )
     app_holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(app_holder, results=[(observation,)])
 
     app = _make_app(tmp_path, matcher_config, factory=factory, node_id="forced-node")
@@ -331,7 +337,7 @@ async def test_node_id_override_is_used(tmp_path: Path, matcher_config: MatcherC
 
 @pytest.mark.asyncio
 async def test_second_signal_forces_exit(tmp_path: Path, matcher_config: MatcherConfig) -> None:
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient())
+    app = _make_app(tmp_path, matcher_config, factory=lambda endpoint, clock: FakeMuleClient())
     app._on_signal()  # 1st signal: shutdown request
     with pytest.raises(SystemExit):
         app._on_signal()  # 2nd signal: escalation → SystemExit
@@ -353,7 +359,7 @@ async def test_signal_cancels_an_in_flight_search(
 ) -> None:
     # A task is BLOCKED in search; an external SIGINT cancels the TaskGroup →
     # covers the cancellation path (clean unwind + "Workers stopped" line).
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: _BlockingClient())
+    app = _make_app(tmp_path, matcher_config, factory=lambda endpoint, clock: _BlockingClient())
     run_task = asyncio.create_task(app.run())
     for _ in range(20):  # let the tasks start and block in search
         await asyncio.sleep(0)
@@ -388,7 +394,7 @@ async def test_normal_run_outlives_shutdown_deadline_without_a_signal(
     app = _make_app(
         tmp_path,
         matcher_config,
-        factory=lambda e: _RealPacedClient(),
+        factory=lambda endpoint, clock: _RealPacedClient(),
         shutdown_deadline=0.2,
     )
     run_task = asyncio.create_task(app.run())
@@ -399,19 +405,13 @@ async def test_normal_run_outlives_shutdown_deadline_without_a_signal(
     assert run_task.exception() is None
 
 
-def test_default_client_factory_builds_an_amule_client() -> None:
-    from mulewatch.adapters.mule_api.client import AmuleApiClient
-
+def test_the_default_client_factories_pace_on_the_composition_clock() -> None:
     endpoint = AmuleEndpoint(name="amule-1", host="gluetun", port=4712, password="secret")
-    assert isinstance(default_client_factory(endpoint), AmuleApiClient)
-
-
-def test_default_download_client_factory_builds_an_amule_client() -> None:
-    from mulewatch.adapters.mule_api.client import AmuleApiClient
-    from mulewatch.composition.app import default_download_client_factory
-
-    endpoint = AmuleEndpoint(name="dl", host="gluetun", port=4799, password="secret")
-    assert isinstance(default_download_client_factory(endpoint), AmuleApiClient)
+    clock = FakeClock()
+    for factory in (default_client_factory, default_download_client_factory):
+        client = factory(endpoint, clock)
+        assert isinstance(client, AmuleApiClient)
+        assert client._clock is clock
 
 
 # A close that drags FAR beyond the armed bound (0.05 s) and FAR beyond the assertion
@@ -446,7 +446,7 @@ async def test_shutdown_deadline_forces_exit(tmp_path: Path, matcher_config: Mat
     # above any plausible CI startup jitter, far below the 10 s slow close.
     app_holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _SlowCloseClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _SlowCloseClient:
         return _SlowCloseClient(app_holder)
 
     app = _make_app(tmp_path, matcher_config, factory=factory, shutdown_deadline=0.05)
@@ -472,7 +472,7 @@ async def test_observations_are_catalogued(tmp_path: Path, matcher_config: Match
     )
     app_holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(app_holder, results=[(observation,)])
 
     app = _make_app(tmp_path, matcher_config, factory=factory)
@@ -511,7 +511,7 @@ async def test_a_channel_that_never_ends_does_not_hold_the_other_back(
 ) -> None:
     app_holder: dict[str, CrawlerApp] = {}
     client = _KadNeverEndsClient(app_holder)
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: client)
+    app = _make_app(tmp_path, matcher_config, factory=lambda endpoint, clock: client)
     app_holder["app"] = app
     await asyncio.wait_for(app.run(), timeout=5.0)
     assert ("titar", "ed2k") in client.searches
@@ -547,8 +547,8 @@ def test_an_hour_of_the_running_app_keeps_to_the_networks_rules(
             rng=_NoopRng(),
             signal_hub=RecordingSignal(),
             policy_fingerprint=_FP,
-            client_factory=lambda e: AmuleApiClient(
-                e.host, e.port, PASSWORD, transport=api.transport(), clock=api.clock
+            client_factory=lambda endpoint, clock: AmuleApiClient(
+                endpoint.host, endpoint.port, PASSWORD, transport=api.transport(), clock=clock
             ),
         )
         asyncio.get_running_loop().call_later(_HOUR, app._on_signal)
@@ -582,7 +582,7 @@ async def test_backfill_runs_and_stores_marker_when_policy_never_set(
     # stores the fingerprint, so a LATER restart with the SAME policy would skip it.
     holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     app = CrawlerApp(
@@ -624,7 +624,7 @@ async def test_backfill_skipped_when_marker_already_matches_fingerprint(
         local_conn.close()
     holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     app = CrawlerApp(
@@ -702,10 +702,10 @@ async def test_observer_mode_runs_without_the_download_loop(
     holder: dict[str, CrawlerApp] = {}
     built: list[AmuleEndpoint] = []
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
-    def download_factory(endpoint: AmuleEndpoint) -> FakeDownloadClient:
+    def download_factory(endpoint: AmuleEndpoint, clock: Clock) -> FakeDownloadClient:
         built.append(endpoint)
         return FakeDownloadClient()
 
@@ -735,7 +735,7 @@ async def test_full_mode_runs_the_download_loop(
     holder: dict[str, CrawlerApp] = {}
     download_client = _ShutdownOnQueueDownloadClient(holder)
 
-    def search_factory(endpoint: AmuleEndpoint) -> FakeMuleClient:
+    def search_factory(endpoint: AmuleEndpoint, clock: Clock) -> FakeMuleClient:
         return FakeMuleClient()  # does NOT drive the shutdown: the download loop arms it
 
     app = CrawlerApp(
@@ -747,7 +747,7 @@ async def test_full_mode_runs_the_download_loop(
         signal_hub=RecordingSignal(),
         policy_fingerprint=_FP,
         client_factory=search_factory,
-        download_client_factory=lambda endpoint: download_client,
+        download_client_factory=lambda endpoint, clock: download_client,
     )
     holder["app"] = app
     await asyncio.wait_for(app.run(), timeout=5.0)
@@ -763,10 +763,10 @@ async def test_full_mode_tolerates_download_daemon_unreachable_at_startup(
     # fail, the loop is armed anyway (its backoff governs the retries).
     holder: dict[str, CrawlerApp] = {}
 
-    def search_factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def search_factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
-    def download_factory(endpoint: AmuleEndpoint) -> _UnreachableDownloadClient:
+    def download_factory(endpoint: AmuleEndpoint, clock: Clock) -> _UnreachableDownloadClient:
         return _UnreachableDownloadClient()
 
     app = CrawlerApp(
@@ -839,8 +839,8 @@ async def test_full_mode_shutdown_cancels_the_download_loop_promptly(
         rng=_NoopRng(),
         signal_hub=RecordingSignal(),
         policy_fingerprint=_FP,
-        client_factory=lambda endpoint: FakeMuleClient(),
-        download_client_factory=lambda endpoint: FakeDownloadClient(),
+        client_factory=lambda endpoint, clock: FakeMuleClient(),
+        download_client_factory=lambda endpoint, clock: FakeDownloadClient(),
     )
     holder["app"] = app
     # The external guard (3 s of REAL time) is WELL below the shutdown_deadline (30 s) AND below
@@ -873,8 +873,8 @@ async def test_full_mode_shutdown_leaves_no_task_leaked(
         rng=_NoopRng(),
         signal_hub=RecordingSignal(),
         policy_fingerprint=_FP,
-        client_factory=lambda endpoint: FakeMuleClient(),
-        download_client_factory=lambda endpoint: FakeDownloadClient(),
+        client_factory=lambda endpoint, clock: FakeMuleClient(),
+        download_client_factory=lambda endpoint, clock: FakeDownloadClient(),
     )
     holder["app"] = app
     before = asyncio.all_tasks()  # snapshot BEFORE (the test task + pytest-asyncio infra)
@@ -898,7 +898,7 @@ async def test_metrics_server_started_when_enabled(
     started: list[int] = []
     holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     def metrics_server(port: int, registry: object) -> None:
@@ -929,7 +929,7 @@ async def test_metrics_server_not_started_when_disabled(
     started: list[int] = []
     holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     def metrics_server(port: int, registry: object) -> None:
@@ -960,7 +960,7 @@ async def test_metrics_server_not_started_when_observability_absent(
     started: list[int] = []
     holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     def metrics_server(port: int, registry: object) -> None:
@@ -985,7 +985,7 @@ async def test_emits_crawler_started_observer_mode(
     """CrawlerStarted(mode='observer') emitted at boot in observer mode."""
     holder: dict[str, CrawlerApp] = {}
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     app = _make_app(tmp_path, matcher_config, factory=factory)
@@ -1011,8 +1011,8 @@ async def test_emits_crawler_started_full_mode(
         rng=_NoopRng(),
         signal_hub=RecordingSignal(),
         policy_fingerprint=_FP,
-        client_factory=lambda e: FakeMuleClient(),
-        download_client_factory=lambda endpoint: download_client,
+        client_factory=lambda endpoint, clock: FakeMuleClient(),
+        download_client_factory=lambda endpoint, clock: download_client,
     )
     holder["app"] = app
     with caplog.at_level(logging.INFO, logger="mulewatch.observability"):
@@ -1097,7 +1097,7 @@ async def test_port_sync_loop_runs_when_section_present(
         rng=_NoopRng(),
         signal_hub=RecordingSignal(),
         policy_fingerprint=_FP,
-        client_factory=lambda endpoint: ec_client,
+        client_factory=lambda endpoint, clock: ec_client,
         port_forwarding_reader_factory=lambda url: reader,
         mule_restarter_factory=lambda: _RecordingRestarter(),
     )
@@ -1120,7 +1120,7 @@ async def test_port_sync_loop_off_when_no_config(
     def boom_restarter() -> object:
         raise AssertionError("the restarter factory must not be called (port-sync OFF)")
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     app = CrawlerApp(
@@ -1160,7 +1160,7 @@ async def test_port_sync_tolerates_ec_daemon_unreachable_at_startup(
         rng=_NoopRng(),
         signal_hub=RecordingSignal(),
         policy_fingerprint=_FP,
-        client_factory=lambda endpoint: _UnreachableEcClient(),
+        client_factory=lambda endpoint, clock: _UnreachableEcClient(),
         port_forwarding_reader_factory=lambda url: reader,
         mule_restarter_factory=lambda: _RecordingRestarter(),
     )
@@ -1233,7 +1233,7 @@ async def test_webui_starts_on_own_thread_and_stops_at_shutdown(
         captured["app"] = app
         return server
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     app = CrawlerApp(
@@ -1279,7 +1279,7 @@ async def test_the_webui_reads_the_status_loops_board_and_the_pause_gate(
         rng=_NoopRng(),
         signal_hub=RecordingSignal(),
         policy_fingerprint=_FP,
-        client_factory=lambda endpoint: _ShutdownOnStatusClient(holder),
+        client_factory=lambda endpoint, clock: _ShutdownOnStatusClient(holder),
         webui_server_factory=lambda webui: _FakeWebuiServer(),
     )
     holder["app"] = app
@@ -1301,7 +1301,7 @@ async def test_webui_not_started_when_disabled(
     def boom_factory(app: Starlette) -> WebuiServer:
         raise AssertionError("the webui factory must not be called when disabled")
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     app = CrawlerApp(
@@ -1332,7 +1332,7 @@ async def test_webui_crash_degrades_and_crawler_shuts_down_cleanly(
     def crash_factory(app: Starlette) -> _CrashingWebuiServer:
         return server
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownOnStatusClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
         return _ShutdownOnStatusClient(holder)
 
     app = CrawlerApp(
@@ -1370,7 +1370,7 @@ def test_default_webui_server_factory_builds_a_uvicorn_server() -> None:
 
 @pytest.mark.asyncio
 async def test_app_starts_unpaused(tmp_path: Path, matcher_config: MatcherConfig) -> None:
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient())
+    app = _make_app(tmp_path, matcher_config, factory=lambda endpoint, clock: FakeMuleClient())
     assert app._resumed.is_set()
 
 
@@ -1379,7 +1379,7 @@ async def test_resumed_gate_blocks_when_cleared_and_releases_when_set(
     tmp_path: Path, matcher_config: MatcherConfig
 ) -> None:
     # Focused gate semantics: cleared ``_resumed`` blocks a waiter; setting it releases it.
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: FakeMuleClient())
+    app = _make_app(tmp_path, matcher_config, factory=lambda endpoint, clock: FakeMuleClient())
     app._resumed.clear()  # paused
     gate = asyncio.create_task(app._resumed.wait())
     await asyncio.sleep(0)
@@ -1414,7 +1414,7 @@ async def test_pause_gate_blocks_the_searches_until_resumed(
     # search immediately and the run would finish before resume.
     holder: dict[str, CrawlerApp] = {}
     client = _ShutdownOnSearchClient(holder)
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: client)
+    app = _make_app(tmp_path, matcher_config, factory=lambda endpoint, clock: client)
     holder["app"] = app
     app._resumed.clear()  # start paused
     run_task = asyncio.create_task(app.run())
@@ -1434,7 +1434,7 @@ async def test_restart_control_triggers_graceful_shutdown(
     # Driving ``LoopCrawlerControl.restart()`` (bound to the app's own events + this loop) sets
     # ``_shutdown`` on the loop thread → an in-flight search is cancelled and ``run()`` exits
     # cleanly, through the control path.
-    app = _make_app(tmp_path, matcher_config, factory=lambda e: _BlockingClient())
+    app = _make_app(tmp_path, matcher_config, factory=lambda endpoint, clock: _BlockingClient())
     run_task = asyncio.create_task(app.run())
     for _ in range(20):  # let the tasks start and block in search
         await asyncio.sleep(0)

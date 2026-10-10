@@ -8,6 +8,7 @@ from the ephemeral container): it is the start -> list -> status cycle that is v
 
 import pytest
 
+from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.client import AmuleApiClient
 from mulewatch.adapters.mule_api.errors import ApiRejectedError
 from mulewatch.domain.file_key import FileKey, Network
@@ -25,7 +26,9 @@ _SIZE = 734003200  # ~700 MiB: a real size, hence an active partfile (never "com
 
 @pytest.mark.asyncio
 async def test_start_then_appears_in_downloads(amuled: ApiEndpoint) -> None:
-    client = AmuleApiClient(amuled.host, amuled.port, amuled.password, timeout=30.0)
+    client = AmuleApiClient(
+        amuled.host, amuled.port, amuled.password, timeout=30.0, clock=AsyncioClock()
+    )
     await client.connect()
     try:
         file = FileKey(Network.ED2K, _HASH)
