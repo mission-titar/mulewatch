@@ -9,7 +9,7 @@ import sqlite3
 from importlib import resources
 from pathlib import Path
 
-from mulewatch.adapters.persistence_sqlite.connection import open_local
+from tests.adapters.persistence_sqlite.older_catalog import open_local_at
 
 _LOCAL_MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations/local"
 _QUEUED_AT = "2026-09-01T00:00:00.000000+00:00"
@@ -33,7 +33,7 @@ def _write_local_db_at_version_4(path: Path) -> None:
 def test_backfills_last_seen_at_with_queued_at(tmp_path: Path) -> None:
     path = tmp_path / "local.db"
     _write_local_db_at_version_4(path)
-    connection = open_local(path)
+    connection = open_local_at(path, 5)
     try:
         row = connection.execute("SELECT last_seen_at FROM downloads WHERE ed2k_hash = 'a1'")
         assert row.fetchone()[0] == _QUEUED_AT

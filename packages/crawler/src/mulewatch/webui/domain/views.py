@@ -128,7 +128,7 @@ class FileDetail:
 class DownloadRow:
     """An active or completed download (downloads table)."""
 
-    ed2k_hash: str
+    native_id: str
     target_id: str
     state: str
     queued_at: str

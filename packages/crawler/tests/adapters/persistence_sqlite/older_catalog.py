@@ -7,17 +7,24 @@ import pytest
 from mulewatch.adapters.persistence_sqlite import connection as connection_module
 from mulewatch.adapters.persistence_sqlite.variants import register_functions
 
-_CATALOG_MIGRATIONS = (
-    resources.files("mulewatch.adapters.persistence_sqlite") / "migrations/catalog"
-)
+_MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations"
 
 
 def open_catalog_at(path: Path, version: int) -> sqlite3.Connection:
     """A catalog.db migrated by the runner up to ``version`` only, as an older release left it."""
+    return _open_at(path, "catalog", version)
+
+
+def open_local_at(path: Path, version: int) -> sqlite3.Connection:
+    """The same for a local.db."""
+    return _open_at(path, "local", version)
+
+
+def _open_at(path: Path, database: str, version: int) -> sqlite3.Connection:
     connection = sqlite3.connect(path, autocommit=True)
     connection_module._configure(connection)
     register_functions(connection)
-    scripts = connection_module._load_scripts(_CATALOG_MIGRATIONS)
+    scripts = connection_module._load_scripts(_MIGRATIONS / database)
     connection_module._apply_migrations(
         connection, tuple(s for s in scripts if s.version <= version)
     )

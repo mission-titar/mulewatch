@@ -6,8 +6,8 @@ disciplines as the other repos (data-model spec §7): timestamp stamped BEFORE `
 ``BEGIN IMMEDIATE`` + rollback on ``BaseException`` (a NON-sqlite failure does not leave the
 connection ``in_transaction``), ``wrap_sqlite_errors``.
 
-Methods take a ``FileKey``; the table still stores its ``native_id`` in ``ed2k_hash`` (stage 2
-spec D19). ``record_queued`` is dedup-safe (PK = hash, ``ON CONFLICT DO NOTHING``); ``set_state``
+Methods take a ``FileKey``; rows are keyed by its ``file_id`` (stage 2 spec D19).
+``record_queued`` is dedup-safe (PK = ``file_id``, ``ON CONFLICT DO NOTHING``); ``set_state``
 stamps ``completed_at`` on completion (injected clock); ``mark_seen``/``expire_lost`` carry
 the lost-download TTL (2026-09-13 spec §2); ``active_states`` returns the file→state map (the
 loop's monitor reconciles against it).
@@ -24,28 +24,29 @@ from mulewatch.domain.download.states import DownloadState
 from mulewatch.domain.file_key import FileKey, Network
 
 _INSERT = """
-INSERT INTO downloads (ed2k_hash, target_id, state, queued_at, size_bytes, last_seen_at)
-VALUES (?, ?, 'queued', ?, ?, ?)
-ON CONFLICT (ed2k_hash) DO NOTHING
+INSERT INTO downloads
+    (file_id, network, native_id, target_id, state, queued_at, size_bytes, last_seen_at)
+VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)
+ON CONFLICT (file_id) DO NOTHING
 """
 
-_SET_STATE = "UPDATE downloads SET state = ? WHERE ed2k_hash = ?"
+_SET_STATE = "UPDATE downloads SET state = ? WHERE file_id = ?"
 
-_SET_STATE_COMPLETED = "UPDATE downloads SET state = ?, completed_at = ? WHERE ed2k_hash = ?"
+_SET_STATE_COMPLETED = "UPDATE downloads SET state = ?, completed_at = ? WHERE file_id = ?"
 
-_IS_DOWNLOADED = "SELECT 1 FROM downloads WHERE ed2k_hash = ?"
+_IS_DOWNLOADED = "SELECT 1 FROM downloads WHERE file_id = ?"
 
-_ACTIVE_STATES = "SELECT ed2k_hash, state FROM downloads"
+_ACTIVE_STATES = "SELECT network, native_id, state FROM downloads"
 
-_GET_TARGET_ID = "SELECT target_id FROM downloads WHERE ed2k_hash = ?"
+_GET_TARGET_ID = "SELECT target_id FROM downloads WHERE file_id = ?"
 
-_MARK_SEEN = "UPDATE downloads SET last_seen_at = ? WHERE ed2k_hash = ?"
+_MARK_SEEN = "UPDATE downloads SET last_seen_at = ? WHERE file_id = ?"
 
 # The non-terminal states listed here MUST stay synchronized with _TERMINAL_STATES (states.py).
 _EXPIRE_LOST = """
 UPDATE downloads SET state = 'failed'
 WHERE state IN ('queued', 'downloading') AND last_seen_at < ?
-RETURNING ed2k_hash
+RETURNING network, native_id
 """
 
 
@@ -63,7 +64,16 @@ class SqliteDownloadRepository:
             self._connection.execute("BEGIN IMMEDIATE")
             try:
                 cursor = self._connection.execute(
-                    _INSERT, (file.native_id, target_id, queued_at, size_bytes, queued_at)
+                    _INSERT,
+                    (
+                        file.file_id,
+                        file.network,
+                        file.native_id,
+                        target_id,
+                        queued_at,
+                        size_bytes,
+                        queued_at,
+                    ),
                 )
                 self._connection.execute("COMMIT")
             except BaseException:
@@ -75,23 +85,23 @@ class SqliteDownloadRepository:
     def set_state(self, file: FileKey, state: DownloadState) -> None:
         """UPDATE the state; stamps ``completed_at`` if the state is ``completed`` (injected clock).
 
-        Requires an existing download (an unknown hash → ``PersistenceError``: caller-code bug).
+        Requires an existing download (an unknown file → ``PersistenceError``: caller-code bug).
         Only ``completed`` is timestamped; ``failed`` does not overwrite the ``completed_at``.
         """
         with wrap_sqlite_errors():
             if state == DownloadState.COMPLETED:
                 cursor = self._connection.execute(
-                    _SET_STATE_COMPLETED, (state.value, utc_iso(self._clock()), file.native_id)
+                    _SET_STATE_COMPLETED, (state.value, utc_iso(self._clock()), file.file_id)
                 )
             else:
-                cursor = self._connection.execute(_SET_STATE, (state.value, file.native_id))
+                cursor = self._connection.execute(_SET_STATE, (state.value, file.file_id))
         if cursor.rowcount != 1:
             raise PersistenceError(f"download {file.native_id} not found (caller bug)")
 
     def is_downloaded(self, file: FileKey) -> bool:
         """``True`` if this file is already known to ``downloads`` (dedup, spec §6)."""
         with wrap_sqlite_errors():
-            row = self._connection.execute(_IS_DOWNLOADED, (file.native_id,)).fetchone()
+            row = self._connection.execute(_IS_DOWNLOADED, (file.file_id,)).fetchone()
         return row is not None
 
     def mark_seen(self, files: Iterable[FileKey]) -> None:
@@ -101,7 +111,7 @@ class SqliteDownloadRepository:
         """
         seen_at = utc_iso(self._clock())
         with wrap_sqlite_errors():
-            self._connection.executemany(_MARK_SEEN, [(seen_at, file.native_id) for file in files])
+            self._connection.executemany(_MARK_SEEN, [(seen_at, file.file_id) for file in files])
 
     def expire_lost(self, max_age_seconds: float) -> tuple[FileKey, ...]:
         """Fails the non-terminal downloads amuled has not shown for ``max_age_seconds``.
@@ -113,13 +123,13 @@ class SqliteDownloadRepository:
         cutoff = utc_iso(self._clock() - timedelta(seconds=max_age_seconds))
         with wrap_sqlite_errors():
             rows = self._connection.execute(_EXPIRE_LOST, (cutoff,)).fetchall()
-        return tuple(FileKey(Network.ED2K, row[0]) for row in rows)
+        return tuple(FileKey(Network(row[0]), row[1]) for row in rows)
 
     def active_states(self) -> dict[FileKey, DownloadState]:
         """File→state map of ALL known downloads (the monitor reconciles against it)."""
         with wrap_sqlite_errors():
             rows = self._connection.execute(_ACTIVE_STATES).fetchall()
-        return {FileKey(Network.ED2K, row[0]): DownloadState(row[1]) for row in rows}
+        return {FileKey(Network(row[0]), row[1]): DownloadState(row[2]) for row in rows}
 
     def get_target_id(self, file: FileKey) -> str | None:
         """``target_id`` of a downloaded file, or ``None`` (never queued) — READ.
@@ -128,7 +138,7 @@ class SqliteDownloadRepository:
         case (a shared file the crawler never queued), reported as ``unknown``.
         """
         with wrap_sqlite_errors():
-            row = self._connection.execute(_GET_TARGET_ID, (file.native_id,)).fetchone()
+            row = self._connection.execute(_GET_TARGET_ID, (file.file_id,)).fetchone()
         if row is None:
             return None
         return str(row[0])

@@ -16,7 +16,7 @@
   <table>
     <thead>
       <tr>
-        <th>Hash</th>
+        <th>Native ID</th>
         <th>Target</th>
         <th>State</th>
         <th>Queued at</th>
@@ -26,7 +26,7 @@
     <tbody>
       {% for dl in node_state.downloads %}
       <tr>
-        <td>{{ dl.ed2k_hash }}</td>
+        <td>{{ dl.native_id }}</td>
         <td>{{ dl.target_id }}</td>
         <td>{{ dl.state }}</td>
         <td>{{ dl.queued_at }}</td>

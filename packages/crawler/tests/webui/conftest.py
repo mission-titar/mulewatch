@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the webui: a migrated catalog.db, a hand-written local.db."""
+"""Shared pytest fixtures for the webui: a migrated catalog.db and local.db."""
 
 import contextlib
 import sqlite3
@@ -8,37 +8,7 @@ from typing import Any
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-
-# ---------------------------------------------------------------------------
-# DDL helpers (module-level, not exported)
-# ---------------------------------------------------------------------------
-
-
-def _apply_local_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript("""
-        CREATE TABLE node_runtime (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE TABLE downloads (
-            ed2k_hash TEXT PRIMARY KEY,
-            target_id TEXT NOT NULL,
-            state TEXT NOT NULL,
-            queued_at TEXT NOT NULL,
-            completed_at TEXT,
-            size_bytes INTEGER NOT NULL DEFAULT 0
-        );
-
-        CREATE TABLE scheduler_state (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        PRAGMA journal_mode=WAL;
-    """)
-
+from mulewatch.adapters.persistence_sqlite.connection import open_catalog, open_local
 
 # ---------------------------------------------------------------------------
 # Fixtures pytest
@@ -55,11 +25,9 @@ def catalog_db(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def local_db(tmp_path: Path) -> Path:
-    """Create a local.db with the realistic schema (WAL, empty), return the Path."""
+    """An empty local.db migrated by the crawler's own migrations."""
     path = tmp_path / "local.db"
-    with sqlite3.connect(path) as conn:
-        _apply_local_schema(conn)
-        conn.commit()
+    open_local(path).close()
     return path
 
 

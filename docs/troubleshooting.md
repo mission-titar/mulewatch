@@ -175,7 +175,7 @@ accumulé, mais vous redémarrez d'un état connu.
   docker compose exec mulewatch s6-svc -d /etc/services.d/mulewatch # (1)!
   docker compose exec --user amule mulewatch python -c \
     "import sqlite3; db = sqlite3.connect('/data/local.db', autocommit=True); \
-     db.execute('DELETE FROM downloads WHERE ed2k_hash = ?', ('<hash>',))" # (2)!
+     db.execute('DELETE FROM downloads WHERE native_id = ?', ('<hash>',))" # (2)!
   docker compose exec mulewatch s6-svc -u /etc/services.d/mulewatch # (3)!
   ```
 

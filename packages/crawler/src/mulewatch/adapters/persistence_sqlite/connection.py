@@ -75,21 +75,20 @@ def open_catalog(path: Path | str) -> sqlite3.Connection:
 
 def open_local(path: Path | str) -> sqlite3.Connection:
     """Opens/migrates ``local.db``."""
-    return _open(path, _MIGRATIONS / "local")
+    return _open(path, _MIGRATIONS / "local", register_functions)
 
 
 def _open(
     path: Path | str,
     scripts_dir: Traversable,
-    register: Callable[[sqlite3.Connection], None] | None = None,
+    register: Callable[[sqlite3.Connection], None],
 ) -> sqlite3.Connection:
     with wrap_sqlite_errors():
         connection = sqlite3.connect(path, autocommit=True)
     try:
         with wrap_sqlite_errors():
             _configure(connection)
-            if register is not None:
-                register(connection)
+            register(connection)
             _apply_migrations(connection, _load_scripts(scripts_dir))
     except BaseException:
         # Unconditional close: a NON-sqlite error (e.g. OSError from iterdir) must not
