@@ -192,7 +192,6 @@ class SearchWorker:
             await self._deps.telemetry.emit(InstanceUnreachable(self._instance))
             return False
         self._connected = True
-        self._deps.backoff.reset(self._instance)
         _logger.info("instance %s connected", self._instance)
         return True
 
@@ -260,6 +259,7 @@ class SearchWorker:
             return
         changed = await self._record(task.channel, results)
         self._deps.backoff.reset(channel_key)
+        self._deps.backoff.reset(self._instance)  # connect() proves nothing: it may not log in
         _logger.info(
             "instance %s: '%s'/%s → %d verdict(s) changed",
             self._instance,
