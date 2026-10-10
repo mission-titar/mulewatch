@@ -57,7 +57,9 @@ CREATE TABLE files (
 
 `file_id = uuid5(NS, f"{network}:{native_id}").bytes`, `NS = uuid5(NAMESPACE_URL,
 "https://mission-titar.github.io/mulewatch/file")` = `7d16bb87-5b2f-5aa5-9262-c007b2ab0db4` (spike Q5,
-rechecked by the spec review). `network` cannot contain `:`, so the name is unambiguous.
+rechecked by the spec review). (Corrected: the URL becomes
+`https://mission-titar.github.io/p2pwatch/file`, UUID `d30da1ca-776a-5106-b046-daf77302c1af`, with the
+rename; stage 3's spec, D1.) `network` cannot contain `:`, so the name is unambiguous.
 
 *Reasons. The identity is a natural key: the same file on two nodes is the same `(network, native_id)`. A
 UUID derived from it is the same on every node, so `merge` copies `files` rows as it does today, with no id
