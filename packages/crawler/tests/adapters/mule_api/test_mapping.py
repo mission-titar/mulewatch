@@ -287,6 +287,14 @@ def test_a_download_waits_for_the_first_reason_that_applies(
     assert _download(_queued(status, sources=sources)).waiting_reason is reason
 
 
+def test_a_status_that_is_not_a_string_waits_on_its_sources() -> None:
+    # An unhashable status must not reach the status table as a key.
+    row = _queued("downloading", sources={"total": 0})
+    row["status"] = ["paused"]
+
+    assert _download(row).waiting_reason is WaitingReason.NO_SOURCE
+
+
 def test_a_download_status_row_without_a_usable_hash_is_dropped() -> None:
     assert map_download_status({"size_bytes": 1000, "status": "completed"}) is None
     assert map_download_status("nonsense") is None
