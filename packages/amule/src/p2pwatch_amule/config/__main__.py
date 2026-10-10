@@ -1,4 +1,4 @@
-"""Entry point `python -m p2pwatch.amule_config`: run once by the entrypoint, as root.
+"""Entry point `python -m p2pwatch_amule.config`: run once by the entrypoint, as root.
 
 Before any change, exits naming the first variable missing or, for PUID/PGID, not a numeric id.
 """
@@ -11,7 +11,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 
-from p2pwatch.amule_config.conf import INCOMING_DIR, TEMP_DIR, reconcile_conf
+from p2pwatch_amule.config.conf import INCOMING_DIR, TEMP_DIR, reconcile_conf
 
 HOME_DIR = "/home/amule"
 CONFIG_DIR = "/home/amule/.aMule"

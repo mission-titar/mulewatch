@@ -1,0 +1,34 @@
+[project]
+name = "p2pwatch-amule"
+dynamic = ["version"]
+description = "aMule's container: boot step and port-sync (stdlib only)"
+requires-python = ">=3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+# Versioned from the shared root git tag like every member (see the crawler pyproject).
+[tool.hatch.version]
+source = "vcs"
+tag-pattern = '^v(?P<version>\d+\.\d+\.\d+)$'
+fallback-version = "0.0.0"
+
+[tool.hatch.version.raw-options]
+search_parent_directories = true
+git_describe_command = [
+    "git", "describe", "--dirty", "--tags", "--long",
+    "--match", "v[0-9]*.[0-9]*.[0-9]*", "--exclude", "*-*",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/p2pwatch_amule"]
+
+[tool.pytest.ini_options]
+addopts = "--cov=p2pwatch_amule --cov-branch --cov-report=term-missing --cov-fail-under=100 --strict-markers"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["p2pwatch_amule"]
