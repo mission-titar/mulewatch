@@ -238,35 +238,6 @@ async def test_connect_failure_arms_instance_backoff_and_skips_the_item(
 
 
 @pytest.mark.asyncio
-async def test_instance_in_backoff_skips_without_connecting(
-    catalog: SqliteCatalogRepository, engine: MatchingEngine
-) -> None:
-    clock = FakeClock()
-    registry = _registry(clock)
-    registry.record_failure("amule-1")  # instance already in backoff
-    client = FakeMuleClient(results=[(_obs(),)])
-    worker = SearchWorker("amule-1", client, _deps(catalog, engine, registry))
-    await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert client.connect_calls == 0  # neither connect nor search: skipped
-    assert client.searches == []
-
-
-@pytest.mark.asyncio
-async def test_channel_in_backoff_skips_that_item(
-    catalog: SqliteCatalogRepository, engine: MatchingEngine
-) -> None:
-    clock = FakeClock()
-    registry = _registry(clock)
-    registry.record_failure("amule-1:kad")  # kad channel in backoff
-    client = FakeMuleClient(results=[(_obs(),), (_obs(),)])
-    worker = SearchWorker("amule-1", client, _deps(catalog, engine, registry))
-    await worker.run_task(SearchTask(keyword="k", channel="kad"))  # skipped
-    assert client.searches == []
-    await worker.run_task(SearchTask(keyword="k", channel="ed2k"))  # other channel OK
-    assert client.searches == [("k", "ed2k")]
-
-
-@pytest.mark.asyncio
 async def test_backoff_expires_and_item_runs_again(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:

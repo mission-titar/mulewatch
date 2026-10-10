@@ -214,23 +214,8 @@ class SearchWorker:
         return changed
 
     async def run_task(self, task: SearchTask) -> None:
-        """Runs ONE ``SearchTask`` (spec §4). Never raises: signals via backoff/log.
-
-        SKIPS the item if the instance OR the channel is backed off (future ``retry_after``,
-        spec §7).
-        """
+        """One search, run once ``seconds_until_ready`` is 0. Never raises: backs off and logs."""
         channel_key = f"{self._instance}:{task.channel}"
-        if self._deps.backoff.is_in_backoff(self._instance):
-            _logger.info("instance %s in backoff: item '%s' skipped", self._instance, task.keyword)
-            return
-        if self._deps.backoff.is_in_backoff(channel_key):
-            _logger.info(
-                "instance %s channel %s in backoff: item '%s' skipped",
-                self._instance,
-                task.channel,
-                task.keyword,
-            )
-            return
         if not await self._ensure_connected():
             return
         try:
