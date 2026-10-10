@@ -1,26 +1,5 @@
-"""Search worker: owns 1 ``SearchClient``, runs the search tasks' searches (spec §4).
-
-APPLICATION layer. One worker per ``amuled`` instance. Per task ``(keyword, channel)``:
-
-  consults the backoff (SKIPS the item if the instance OR the channel is backed off until its
-  ``retry_after``) → ensures the connection (per-instance reconnection if down) →
-  ``search`` with the core's budget → ``record_observation`` for EACH obs.
-
-Error handling (spec §7, "the client signals, Plan C decides") - the application catches
-ONLY PORT exceptions (never an adapter's, dependency rule §4):
-- ``ClientUnreachableError`` (the daemon is out of reach: refused, timed out, or degraded) →
-  instance DOWN: we drop the client, PER-INSTANCE reconnection BACKOFF (``retry_after``
-  set); the other workers continue; the item is ABANDONED.
-- ``SearchFailedError`` (application failure of a channel) → BACKOFF PER (instance, channel).
-- ``RepositoryError`` on an obs → logged and counted by ``record_observations``.
-
-The backoff is exponential + jitter (spec §3), REMEMBERED in a SHARED ``BackoffRegistry``
-(a single instance for ALL workers + the search tasks) and PERSISTED in
-``scheduler_state`` at each change (spec §3/§7: it survives a restart). A backed-off channel
-is skipped, not waited on. Mutations of the shared registry happen between
-two ``await`` (single-threaded event loop, single writer) → no lock needed (spec §3).
-The worker NEVER closes the client (ownership = composition root, §6).
-"""
+"""One client's searches: a task's search, its observations recorded, and the backoff a failure
+earns, per client when unreachable and per channel when refused (stage 2, D4 and D7)."""
 
 import logging
 from dataclasses import dataclass
@@ -155,7 +134,7 @@ class WorkerDeps:
 
 
 class SearchWorker:
-    """Drives ONE ``amuled`` to drain ``SearchTask`` objects (spec §3/§4)."""
+    """Runs one client's search tasks; never closes the client, which composition owns."""
 
     def __init__(self, instance_name: str, client: SearchClient, deps: WorkerDeps) -> None:
         self._instance = instance_name
