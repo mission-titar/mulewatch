@@ -77,7 +77,7 @@ def test_every_emitted_metric_is_declared_in_the_sink() -> None:
 
 
 def test_exposed_names() -> None:
-    # Dashboards query these names: port-sync's three keep theirs until port-sync leaves the core.
+    # Dashboards query these names.
     registry = CollectorRegistry()
     PrometheusSink(registry)
     assert {m.name for m in registry.collect()} == {
@@ -92,7 +92,4 @@ def test_exposed_names() -> None:
         "p2pwatch_crawler_up",
         "p2pwatch_channel_on_network",
         "p2pwatch_channel_connectable",
-        "emule_port_sync_triggered",
-        "emule_high_id_recovered",
-        "emule_port_mismatch",
     }
