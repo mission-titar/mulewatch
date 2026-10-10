@@ -355,7 +355,8 @@ from mulewatch.adapters.mule_api.client import AmuleApiClient
 async def main() -> None:
     client = AmuleApiClient({_API_HOST!r}, {_API_PORT}, {_API_PASSWORD!r})
     await client.connect()
-    print(json.dumps(sorted(entry.ed2k_hash for entry in await client.shared_files())))
+    completed = [d.file.native_id for d in await client.downloads() if d.completed]
+    print(json.dumps(sorted(completed)))
     await client.close()
 
 asyncio.run(main())

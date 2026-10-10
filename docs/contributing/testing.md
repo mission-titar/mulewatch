@@ -68,7 +68,7 @@ Le projet a **deux niveaux** :
 | Marker | Paquet | Ce qu'il valide | Docker ? | Autres prérequis | Commande |
 |---|---|---|---|---|---|
 | `api_integration` | crawler | L'adapter amuleapi (login, statut réseau, cycle de recherche, get/set du port) face à un vrai démon | **Oui** (à lancer soi-même) | Un démon que vous fournissez, désigné par `MULEWATCH_TEST_API_HOST` (§3.0) | `( cd packages/crawler && uv run pytest -m api_integration --no-cov )` |
-| `download_integration` | crawler | La mécanique du téléchargement (`add_link` dans la file de téléchargement) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m download_integration --no-cov )` |
+| `download_integration` | crawler | La mécanique du téléchargement (`start`, puis le fichier listé par `downloads`) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m download_integration --no-cov )` |
 | `orchestration_integration` | crawler | Une boucle de crawl complète (un cycle plus un arrêt borné) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m orchestration_integration --no-cov )` |
 | `compose_integration` | crawler | Smoke e2e de la pile docker compose assemblée (sans VPN) : câblage uniquement | **Oui** (compose v2) | docker compose v2 ; un build d'image | `( cd packages/crawler && uv run pytest -m compose_integration --no-cov )` |
 
@@ -157,8 +157,8 @@ aucun skip. Une recherche refusée est tolérée en interne (le test passe quand
 
 ### 3.2 `download_integration` (crawler, **Docker requis**)
 
-**Ce que ça prouve.** La mécanique du téléchargement face à un vrai démon : `add_link` est accepté
-et le lien apparaît dans `download_queue` avec des compteurs lisibles. Un hash et une taille
+**Ce que ça prouve.** La mécanique du téléchargement face à un vrai démon : `start` est accepté
+et le fichier apparaît dans `downloads` avec des compteurs lisibles. Un hash et une taille
 réalistes (~700 MiB) sont employés, **jamais** le MD4 du fichier vide (qu'amuled traite comme
 instantanément complet et ne liste pas). C'est aussi ce qui prouve que `?status=all` est bien
 demandé : sans lui, la file ne montre que ce qui transfère.
@@ -170,9 +170,8 @@ demandé : sans lui, la file ne montre que ce qui transfère.
 ( cd packages/crawler && uv run pytest -m download_integration --no-cov )
 ```
 
-**Attendu.** 2 tests passés (`test_add_link_then_appears_in_download_queue` et
-`test_shared_files_round_trips`). Une complétion réelle n'est pas atteignable (pas de sources eD2k) :
-seul le cycle add_link, file, statut est validé.
+**Attendu.** 1 test passé (`test_start_then_appears_in_downloads`). Une complétion réelle n'est pas
+atteignable (pas de sources eD2k) : seul le cycle start, liste, statut est validé.
 
 ---
 

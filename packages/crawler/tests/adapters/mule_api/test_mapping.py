@@ -6,12 +6,10 @@ import pytest
 
 from mulewatch.adapters.mule_api.mapping import (
     map_client_status,
-    map_download_entry,
     map_download_status,
     map_network_status,
     map_search_results,
     map_shared_download,
-    map_shared_entry,
 )
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
@@ -223,48 +221,6 @@ def test_a_non_string_file_type_is_dropped() -> None:
 
 def test_a_results_payload_that_is_not_a_list_yields_nothing() -> None:
     assert map_search_results("nope", "keroro") == ((), 0)
-
-
-def test_maps_a_download_queue_row() -> None:
-    row = {
-        "hash": _HASH,
-        "name": "Keroro.095.avi",
-        "size_bytes": 1000,
-        "completed_bytes": 400,
-        "status": "downloading",
-    }
-    entry = map_download_entry(row)
-
-    assert entry is not None
-    assert entry.ed2k_hash == _HASH
-    assert entry.size_full == 1000
-    assert entry.size_done == 400
-    assert entry.remaining_bytes == 600
-
-
-def test_a_download_row_without_a_usable_hash_is_dropped() -> None:
-    assert map_download_entry({"size_bytes": 1000, "completed_bytes": 0}) is None
-    assert map_download_entry("nonsense") is None
-
-
-def test_missing_download_byte_counters_read_as_zero() -> None:
-    entry = map_download_entry({"hash": _HASH})
-
-    assert entry is not None
-    assert (entry.size_full, entry.size_done) == (0, 0)
-    assert not entry.is_complete
-
-
-def test_maps_a_shared_row_to_its_hash_only() -> None:
-    entry = map_shared_entry({"hash": _HASH, "name": "Keroro.095.avi", "size_bytes": 10})
-
-    assert entry is not None
-    assert entry.ed2k_hash == _HASH
-
-
-def test_a_shared_row_without_a_usable_hash_is_dropped() -> None:
-    assert map_shared_entry({"name": "Keroro.095.avi"}) is None
-    assert map_shared_entry("nonsense") is None
 
 
 def _queued(status: str, **overrides: Any) -> dict[str, Any]:

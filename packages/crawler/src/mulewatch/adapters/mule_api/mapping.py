@@ -11,7 +11,6 @@ from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from mulewatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
-from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
 _HASH_LENGTH = 32
@@ -51,21 +50,6 @@ def map_search_results(results: object, keyword: str) -> tuple[tuple[FileObserva
     return tuple(observations), skipped
 
 
-def map_download_entry(row: object) -> DownloadEntry | None:
-    """A /downloads row, or ``None`` if the hash is unusable. Reads ``completed_bytes``, what
-    is on disk, never ``transferred_bytes``, which counts wire bytes corruption then discarded."""
-    if not isinstance(row, dict):
-        return None
-    ed2k_hash = _hash_hex(row.get("hash"))
-    if ed2k_hash is None:
-        return None
-    return DownloadEntry(
-        ed2k_hash=ed2k_hash,
-        size_done=_int(row.get("completed_bytes")),
-        size_full=_int(row.get("size_bytes")),
-    )
-
-
 def map_download_status(row: object) -> DownloadStatus | None:
     """A /downloads row, or ``None`` if the hash is unusable. Only ``completed`` completes: it
     is the one status amuleapi reserves for a file verified and moved (spec stage 2, D10)."""
@@ -98,14 +82,6 @@ def map_shared_download(row: object) -> DownloadStatus | None:
         return None
     size = _int(row.get("size_bytes"))
     return DownloadStatus(FileKey(Network.ED2K, ed2k_hash), size, size, True, None, None)
-
-
-def map_shared_entry(row: object) -> SharedFileEntry | None:
-    """A /shared row, hash only, or ``None`` if that hash is unusable."""
-    if not isinstance(row, dict):
-        return None
-    ed2k_hash = _hash_hex(row.get("hash"))
-    return None if ed2k_hash is None else SharedFileEntry(ed2k_hash=ed2k_hash)
 
 
 def map_network_status(payload: object) -> NetworkStatus:

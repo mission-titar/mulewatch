@@ -505,17 +505,6 @@ async def test_set_listen_port_moves_tcp_and_udp_together() -> None:
 
 
 @pytest.mark.asyncio
-async def test_add_link_queues_the_link() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-
-    await client.add_link("ed2k://|file|a|10|abc|/")
-    await client.close()
-
-    assert api.added_links == ["ed2k://|file|a|10|abc|/"]
-
-
-@pytest.mark.asyncio
 async def test_a_link_the_daemon_refuses_is_reported() -> None:
     """The bulk envelope answers 2xx even when the one item inside it failed."""
     api = FakeAmuleApi()
@@ -534,7 +523,7 @@ async def test_a_link_the_daemon_refuses_is_reported() -> None:
     client = await _connected(api)
 
     with pytest.raises(ApiRejectedError, match="malformed"):
-        await client.add_link("ed2k://x")
+        await client.start(DownloadRequest(file=_KEY, filename="x", size_bytes=1))
 
 
 @pytest.mark.asyncio
@@ -544,57 +533,32 @@ async def test_a_bulk_envelope_without_an_outcome_is_reported() -> None:
     client = await _connected(api)
 
     with pytest.raises(ApiRejectedError):
-        await client.add_link("ed2k://x")
+        await client.start(DownloadRequest(file=_KEY, filename="x", size_bytes=1))
 
 
 @pytest.mark.asyncio
-async def test_a_failed_bulk_entry_without_a_message_is_still_reported() -> None:
-    api = FakeAmuleApi()
-    api.overrides[("POST", "/api/v1/downloads")] = lambda _: httpx.Response(
-        207, json={"results": [{"id": "ed2k://x", "ok": False}]}
-    )
-    client = await _connected(api)
-
-    with pytest.raises(ApiRejectedError):
-        await client.add_link("ed2k://x")
-
-
-@pytest.mark.asyncio
-async def test_download_queue_asks_for_the_completed_entries_too() -> None:
-    """§4.3: the default `status=active` hides completions, and the disk cap sums the queue."""
-    api = FakeAmuleApi(downloads=[{"hash": _HASH, "size_bytes": 10, "completed_bytes": 4}])
-    client = await _connected(api)
-
-    queue = await client.download_queue()
-    await client.close()
-
-    assert _paths(api, "/api/v1/downloads")[0].params.get("status") == "all"
-    assert [entry.remaining_bytes for entry in queue] == [6]
-
-
-@pytest.mark.asyncio
-async def test_download_queue_drops_an_entry_with_no_usable_hash() -> None:
+async def test_downloads_drops_an_entry_with_no_usable_hash() -> None:
     api = FakeAmuleApi(downloads=[{"size_bytes": 10}, {"hash": _HASH}])
     client = await _connected(api)
 
-    queue = await client.download_queue()
+    downloads = await client.downloads()
     await client.close()
 
-    assert [entry.ed2k_hash for entry in queue] == [_HASH]
+    assert [download.file for download in downloads] == [_KEY]
 
 
 @pytest.mark.asyncio
-async def test_shared_files_pages_past_the_first_hundred() -> None:
+async def test_downloads_pages_the_shared_files_past_the_first_hundred() -> None:
     """§7.5: the newest shared file is the one we wait for, and it is the one that falls out."""
     rows = [{"hash": f"{index:032x}", "name": f"{index}.avi"} for index in range(501)]
     api = FakeAmuleApi(shared=rows)
     client = await _connected(api)
 
-    shared = await client.shared_files()
+    shared = await client.downloads()
     await client.close()
 
     assert len(shared) == 501
-    assert shared[-1].ed2k_hash == f"{500:032x}"
+    assert shared[-1].file.native_id == f"{500:032x}"
     # Keyset paging, never offset: a row removed mid-sweep must not shift the window (§7.5).
     sweep = _paths(api, "/api/v1/shared")
     assert all(url.params.get("offset") is None for url in sweep)
@@ -608,7 +572,7 @@ async def test_a_page_whose_last_row_has_no_anchor_stops_the_sweep() -> None:
     api = FakeAmuleApi(shared=rows)
     client = await _connected(api)
 
-    shared = await client.shared_files()
+    shared = await client.downloads()
     await client.close()
 
     assert len(shared) == 499
@@ -620,7 +584,7 @@ async def test_a_list_envelope_that_is_not_a_list_stops_the_sweep() -> None:
     api.overrides[("GET", "/api/v1/shared")] = lambda _: httpx.Response(200, json={"shared": 7})
     client = await _connected(api)
 
-    assert await client.shared_files() == ()
+    assert await client.downloads() == ()
     await client.close()
 
 

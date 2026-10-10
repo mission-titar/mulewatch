@@ -49,7 +49,7 @@ testpaths = ["tests"]
 markers = [
     "api_integration: amuleapi adapter against a real daemon provided by the caller (MULEWATCH_TEST_API_HOST, see docs/contributing/testing.md); deselected by default, dedicated run: cd packages/crawler && uv run pytest -m api_integration --no-cov",
     "orchestration_integration: real crawl loop against a real amuled provided by the caller (MULEWATCH_TEST_API_HOST, see docs/contributing/testing.md); deselected by default, dedicated run: cd packages/crawler && uv run pytest -m orchestration_integration --no-cov",
-    "download_integration: add_link plus download-queue read against a real amuled provided by the caller (MULEWATCH_TEST_API_HOST, see docs/contributing/testing.md); deselected by default, dedicated run: cd packages/crawler && uv run pytest -m download_integration --no-cov",
+    "download_integration: start plus downloads read against a real amuled provided by the caller (MULEWATCH_TEST_API_HOST, see docs/contributing/testing.md); deselected by default, dedicated run: cd packages/crawler && uv run pytest -m download_integration --no-cov",
     "compose_integration: smoke e2e de la stack docker compose assemblée (sans VPN) — Docker+compose requis ; déselectionné par défaut ; run dédié : cd packages/crawler && uv run pytest -m compose_integration --no-cov",
 ]
 asyncio_mode = "strict"
