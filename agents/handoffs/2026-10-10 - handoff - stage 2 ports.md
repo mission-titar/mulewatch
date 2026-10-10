@@ -1,16 +1,17 @@
 # Handoff: stage 2, generic search, download and status ports
 
-Drafted by block 200, corrected by the closing block (210).
+Drafted by block 200, corrected by the closing block (210), then by block 220 (the operator's review comments).
 
 ## State
 
 Tier Spec lot, spec `agents/specs/2026-10-09-stage2-search-download-status-ports.md` (approved 2026-10-09). A
 stack of 28 blocks: PRs #127, #128 and #130 to #154 (there is no #129), then the closing block 210
-(`docs/stage2-closing`) on top. Nothing is merged and no release follows (D23): the node pulls `latest`, which
+(`docs/stage2-closing`) on top, then block 220 (`fix/stage2-review-comments`) with the operator's review
+comments. Nothing is merged and no release follows (D23): the node pulls `latest`, which
 stays on 4.1.0. `catalog.db` is unchanged at schema version 9, `local.db` goes from 5 to 8 (0006 to 0008).
 
-After the stack, `application/` and `domain/` name no aMule type outside `port_sync_loop.py` (D22's grep prints
-two `port_sync_loop.py` lines and nothing else, checked at block 210's tip). `git tag -l 'v*'` still ends at
+After the stack, `application/` and `domain/` name no aMule type (D22's grep prints nothing at block 220's tip;
+it printed two `port_sync_loop.py` lines at block 210's). `git tag -l 'v*'` still ends at
 `v4.1.0`. `ports/mule_client.py` survives as `MuleClient(SearchClient,
 StatusClient)`, the composition's type for the one aMule session the search tasks and the status loop share.
 
@@ -31,7 +32,8 @@ StatusClient)`, the composition's type for the one aMule session the search task
   `search_poll_*` removed and refused; the four-call search removed.
 - **Status** (blocks 70 to 96): `StatusClient` (`connect()`, `status()`), per channel `on_network` and
   `connectable: bool | None`, `ec_connected` not `true` raising `ClientUnreachableError`. `NetworkStatus` and
-  `KadStatus` moved to `ports/port_sync.py` (D18). The status loop reads every 60 s and alerts on a degraded
+  `KadStatus` moved to `ports/port_sync.py` (D18), then went in block 220: port-sync reads `status()`, the
+  `ed2k` channel's `connectable is True` being High-ID. The status loop reads every 60 s and alerts on a degraded
   state that lasts (5 min per channel field, 2 min for the API), with the two `p2pwatch_channel_*` gauges. The
   cycle's coverage readout, `coverage.py` and the three coverage events and metrics went.
 - **Search tasks** (blocks 100 to 130): one task per (client, channel, keyword), pause gate, sleep until a
@@ -105,9 +107,18 @@ StatusClient)`, the composition's type for the one aMule session the search task
   `ClientReading` lives in `ports/client_status.py` beside the port, and the 120 s / 121 s freshness boundary
   is tested on `StatusBoard` only (207).
 
+- **Block 220: the operator's review comments, fixed in one block on top** rather than in each block they
+  concern (the operator's choice, against the workflow's fix-back default): port-sync on the generic status
+  (#135, D18 and D22 carry markers, `BACKLOG.md`'s stage 3 line no longer names `NetworkStatus`),
+  `run_search_tasks` as the `SearchTasks` class (#140), a download's status normalized once with `_string()`
+  (#148). A status read that finds amuleapi cut from amuled now raises in port-sync and is absorbed like an
+  unreachable client: no High-ID recovery, no alert, the poll's backoff. Before, `network_status()` read
+  amuleapi's cached state, which a dead amuled leaves reading connected.
+
 ## Wrap counts
 
-- Fix-backs: 1 (block 110's CI failure, below). Cascaded rebases: 1. Runs re-triggered by them: 1.
+- Fix-backs: 1 (block 110's CI failure, below). The operator's review comments took no fix-back: one block on
+  top (220). Cascaded rebases: 1. Runs re-triggered by them: 1.
 - The four splits rewrote unpushed branches only: no run re-triggered.
 - Bodies called unreadable: none so far; the operator has not reviewed the stack yet.
 

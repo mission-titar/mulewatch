@@ -12,8 +12,8 @@ An agent adds an entry only after the operator has agreed to it.
 
 - **Multi network**: a generic core driving one container per P2P client, renamed p2pwatch.
   Umbrella spec: `agents/specs/2026-10-08-multi-network-architecture.md`.
-  - **Stage 3, aMule leaves the core**: `p2pwatch-amule` image, local port-sync (its metrics and
-    `NetworkStatus` leave the core with it), include-based compose, rename to p2pwatch. Stage 3 of `agents/specs/2026-10-08-multi-network-architecture.md`.
+  - **Stage 3, aMule leaves the core**: `p2pwatch-amule` image, local port-sync (its metrics leave
+    the core with it), include-based compose, rename to p2pwatch. Stage 3 of `agents/specs/2026-10-08-multi-network-architecture.md`.
   - **Stage 4, sources and events**: pseudonymous source history, eD2k download sources,
     `new-location` / `reappeared`, `docs/legal.md`. Stage 4 of `agents/specs/2026-10-08-multi-network-architecture.md`.
   - **Stage 5, new networks**: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella),

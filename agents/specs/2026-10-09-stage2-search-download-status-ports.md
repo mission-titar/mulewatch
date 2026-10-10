@@ -509,6 +509,10 @@ silently would let an operator believe a setting still applies.*
 `NetworkStatus` and `KadStatus` move from `ports/mule_client.py` to a port-sync port module, read only by
 `PortPreferences` (`application/port_sync_loop.py`). `AmuleApiClient` keeps `network_status()`,
 `get_listen_port()` and `set_listen_port()` for it. `server_name` and `server_addr`, read by nothing, go.
+(Corrected: port-sync read only `ed2k_high`, so it reads the generic `status()`, the `ed2k` channel's
+`connectable is True` being High-ID; `NetworkStatus`, `KadStatus`, `ports/port_sync.py` and
+`network_status()` are gone, `AmuleApiClient` keeps the two port preferences for it, block 220, operator
+review 2026-10-10)
 
 *Reason: port-sync is aMule-specific and moves into the aMule container in stage 3 (umbrella D7); widening
 the generic status port with High-ID details for it would undo D14.*
@@ -589,7 +593,8 @@ the webui would double the API traffic and the 401 lockout risk.*
 ### D22. What the core no longer knows about aMule
 
 After stage 2, `application/` and `domain/` name none of `MuleClient`, `MuleDownloadClient`, `ed2k_hash`,
-`SearchChannel`, `KadStatus` or `NetworkStatus`, except `port_sync_loop.py` (D18).
+`SearchChannel`, `KadStatus` or `NetworkStatus`, except `port_sync_loop.py` (D18). (Corrected: no exception
+since block 220, both types are gone)
 `domain/download/policy.py`'s docstring, which names `NetworkStatus`, loses the name in block 70.
 
 *Reason: the acceptance criterion that proves the ports generic (section 6).*
@@ -677,6 +682,7 @@ Paths under `packages/crawler/` unless noted. Sizes are estimates from `wc -l` o
 | 205 | `fix/stage2-holistic-findings` | Holistic findings in the core and adapter | The client backoff grows until a search succeeds; `connect()` serialized under a lock; the status loop reads any client error but a refused password (`ClientAuthError`) as unreachable; `client` label on `p2pwatch_client_unreachable`; `run_task`'s unreachable skips removed; `AmuleApiClient` takes the composition's clock; `start()` refuses a non-ed2k file; a list without its envelope is unreachable (holistic findings 1, 2, 3, 4, 7, 9, 14, 15) (Corrected: closing work split at its file bound) | 273 / 18 |
 | 207 | `fix/stage2-holistic-ports-docs` | Holistic findings in the ports, tests and docstrings | The webui reads the status through a `StatusReadings` port; the simulated year runs against `SqliteDownloadRepository` and the real TTL; the stale docstrings (holistic findings 8, 10, 17) (Corrected: closing work split at its file bound) | 125 / 12 |
 | 210 | `docs/stage2-closing` | Closing | The holistic findings left to it, in this spec, `AGENTS.md`, `docs/`, `BACKLOG.md` and the handoff (5, 6, 11, 12, 13, 16); `BACKLOG.md` reconciled, handoff (Corrected: closing work split at its file bound, the code findings went to blocks 205 and 207) | 80 / 6 |
+| 220 | `fix/stage2-review-comments` | The operator's review comments | Port-sync reads the generic `status()`, and `NetworkStatus`, `KadStatus`, `ports/port_sync.py`, `network_status()` and their mapping go (D18, #135); `run_search_tasks` becomes the `SearchTasks` class (#140); a download's status is read as a string once (#148) (Corrected: the operator's review comments, fixed in one block on top) | 298 / 15 |
 
 Block 120 passes the 500-line bound: it deletes `run_search_cycle.py` (210 lines) with its test (730) and
 `cycle.py` with its test, and a module cannot leave without its test (an untested module fails the coverage
@@ -715,7 +721,7 @@ Between blocks 180 and 185, `MuleDownloadClient` and the adapter's `add_link`, `
 
 - **"Multi network", stage 2**: deleted at Wrap.
 - **Stage 3**: stays open. Its text gains that port-sync's metrics and `NetworkStatus` leave the core with it
-  (D16, D18).
+  (D16, D18). (Corrected: `NetworkStatus` is gone since block 220, so the text names only the metrics)
 - **Stage 4**: stays open; nothing here touches sources or events.
 - **Stage 5**: stays open. Its text gains that the persistent and passive search ports arrive with their
   first client (D1), and `SearchFailed` a `retry_after` if slskd announces one (D7).
@@ -770,7 +776,7 @@ Each criterion names the output that would prove it wrong.
   status loop, the gauges and the dashboard with no code change. Separately, `grep -rnE
   'MuleClient|MuleDownloadClient|ed2k_hash|SearchChannel|KadStatus|NetworkStatus'
   packages/crawler/src/mulewatch/application packages/crawler/src/mulewatch/domain` prints only
-  `port_sync_loop.py` lines (D22). Any other line fails it.
+  `port_sync_loop.py` lines (D22). Any other line fails it. (Corrected: since block 220 it prints nothing)
 - **Removed keys are refused.** `parse_crawler_config` on a config with `cycle_interval_seconds` raises a
   `ConfigError` whose text contains `cycle_interval_seconds`, and so for each of the five (watched failing).
 - **Metric names.** In `packages/crawler/src/mulewatch/domain/observability/policy.py`, `grep -c '"emule_'`
