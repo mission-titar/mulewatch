@@ -54,7 +54,7 @@ def map_download_status(row: object) -> DownloadStatus | None:
     ed2k_hash = _hash_hex(row.get("hash"))
     if ed2k_hash is None:
         return None
-    status = row.get("status")
+    status = _string(row.get("status")) or ""
     completed = status == "completed"
     failure = FailureReason.ERROR if status == "erroneous" else None
     waiting = None if completed or failure else _waiting_reason(status, row.get("sources"))
@@ -183,9 +183,9 @@ def _sources(value: object) -> tuple[int, int]:
     return _int(sources.get("total")), _int(sources.get("complete"))
 
 
-def _waiting_reason(status: object, sources: object) -> WaitingReason | None:
+def _waiting_reason(status: str, sources: object) -> WaitingReason | None:
     """The status's own reason first, then the sources: none at all, or none sending."""
-    reason = _WAITING_STATUSES.get(status) if isinstance(status, str) else None
+    reason = _WAITING_STATUSES.get(status)
     if reason is not None:
         return reason
     counts = _object(sources)
