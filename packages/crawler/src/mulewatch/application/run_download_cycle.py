@@ -40,7 +40,12 @@ from mulewatch.ports.client_errors import ClientUnreachableError, DownloadReject
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.decision_signal import DecisionSignal
 from mulewatch.ports.disk_space import DiskSpace
-from mulewatch.ports.download_client import DownloadClient, DownloadRequest, DownloadStatus
+from mulewatch.ports.download_client import (
+    DownloadClient,
+    DownloadRequest,
+    DownloadStatus,
+    FailureReason,
+)
 from mulewatch.ports.repository_errors import RepositoryError
 from mulewatch.ports.telemetry import Telemetry
 
@@ -62,11 +67,13 @@ class DownloadRepository(Protocol):
 
     def record_queued(self, file: FileKey, target_id: str, size_bytes: int) -> bool: ...
 
-    def set_state(self, file: FileKey, state: DownloadState) -> None: ...
+    def set_state(
+        self, file: FileKey, state: DownloadState, failure_reason: FailureReason | None = None
+    ) -> None: ...
 
     def is_downloaded(self, file: FileKey) -> bool: ...
 
-    def mark_seen(self, files: Iterable[FileKey]) -> None: ...
+    def mark_seen(self, statuses: Iterable[DownloadStatus]) -> None: ...
 
     def expire_lost(self, max_age_seconds: float) -> tuple[FileKey, ...]: ...
 
@@ -138,10 +145,10 @@ async def _monitor(
     states: dict[FileKey, DownloadState],
     listed: tuple[DownloadStatus, ...],
 ) -> None:
-    """Reconciles ``downloads`` with the client's list: QUEUED→DOWNLOADING, and nothing else.
+    """Reconciles ``downloads`` with the client's list: a failure it reports, else DOWNLOADING.
 
-    ``FAILED`` is not a wall, since the client is the authority on what it holds; ``COMPLETED``
-    is one, so its notification never fires twice.
+    ``FAILED`` is a wall only while the client reports a failure, so an erroneous download does
+    not flap back each round; ``COMPLETED`` is one, so its notification never fires twice.
     """
     for status in listed:
         file = status.file
@@ -150,9 +157,11 @@ async def _monitor(
             continue  # download outside the crawler: ignored
         if current is DownloadState.COMPLETED:
             continue  # already notified: don't regress and don't re-fire
-        if current is not DownloadState.DOWNLOADING:
-            deps.downloads.set_state(file, DownloadState.DOWNLOADING)
-            states[file] = DownloadState.DOWNLOADING
+        failed = status.failure_reason is not None
+        target = DownloadState.FAILED if failed else DownloadState.DOWNLOADING
+        if current is not target:
+            deps.downloads.set_state(file, target, status.failure_reason)
+            states[file] = target
 
 
 async def _record_completion(
@@ -288,7 +297,7 @@ async def _start_unlisted(deps: DownloadDeps, listed: frozenset[FileKey]) -> Non
                 DownloadRequest(file, observation.filename, observation.size_bytes)
             )
         except DownloadRejectedError as error:
-            deps.downloads.set_state(file, DownloadState.FAILED)
+            deps.downloads.set_state(file, DownloadState.FAILED, FailureReason.REJECTED)
             _logger.warning(
                 "start rejected by the client for file=%s (%s): marked failed",
                 file.native_id,
@@ -357,7 +366,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     # Step 2b - PRESENCE + TTL: stamp FIRST, condemn after. The reverse order would fail a row
     # the client is showing us right now.
     try:
-        deps.downloads.mark_seen(listed_files)
+        deps.downloads.mark_seen(listed)
         _expire_lost(deps)
     except RepositoryError as error:
         _logger.error("download presence repo failure (%s): step skipped, continues", error)

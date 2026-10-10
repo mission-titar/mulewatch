@@ -203,7 +203,7 @@ le crawl en gardant aMule vivant, c'est
 | `/files` | Liste paginée des fichiers ; filtres `?target=`, `?tier=`, `?q=` |
 | `/files/{file_id}` | Détail d'un fichier, désigné par son `file_id` en 32 caractères hexadécimaux minuscules, tel que la console SQL l'affiche : réseau, identifiant natif, observations, décisions, explication du matching |
 | `/targets/{target_id}` | Fichiers d'une cible (alias de `/files?target=`) |
-| `/node` | État du crawler : `node_id` et entrées du `scheduler_state`. N'expose pas l'état réseau d'aMule. |
+| `/node` | État du crawler : `node_id`, entrées du `scheduler_state` et téléchargements (voir [Suivre un téléchargement](#suivre-un-téléchargement)). N'expose pas l'état réseau d'aMule. |
 | `/controls` | Mettre en pause ou reprendre la surveillance, redémarrer le crawler seul (le conteneur reste debout, aMule garde ses sessions). |
 | `/console` | Console SQL en lecture seule : un unique `SELECT` sur `catalog.db` ou `local.db`, avec export CSV. Toujours active. |
 | `/health` | Healthcheck JSON : répond `{"status": "ok"}` si le service est opérationnel |
@@ -213,6 +213,23 @@ conception. `/console` est structurellement en lecture seule et bornée contre l
 (délai maximum, plafond de lignes rendues, une seule instruction). **Ces deux surfaces ne sont
 défendables que derrière votre propre périmètre** : réseau privé, VPN ou reverse proxy authentifié,
 jamais sur Internet.
+
+### Suivre un téléchargement
+
+La table des téléchargements de `/node` montre pourquoi un téléchargement avance ou non :
+
+- **Dernier progrès** : la dernière fois que le crawler a vu le nombre d'octets reçus augmenter.
+  Vide tant qu'il ne l'a jamais vu augmenter, ce qui vaut aussi pour un téléchargement antérieur
+  à la mise à niveau, jusqu'à son prochain progrès.
+- **Attente** : `no_source` (aucune source connue), `remote_queue` (des sources, aucune
+  n'envoie), `local` (aMule vérifie ou alloue le fichier), `paused` (en pause dans aMule),
+  `disk_full` (disque plein côté aMule).
+- **Échec** : `error` (aMule signale le fichier en erreur), `rejected` (aMule a refusé de le
+  démarrer), `lost` (aMule ne le montre plus depuis `download.lost_after_seconds`).
+
+Attendre n'est pas échouer : un téléchargement sans source pendant des mois reste `downloading`
+avec sa raison d'attente. Seul un échec le passe en `failed`, et un fichier qu'aMule signale en
+erreur y reste tant qu'aMule le signale ainsi.
 
 ### Adresse d'écoute et chemins de bases
 
