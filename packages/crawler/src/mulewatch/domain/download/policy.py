@@ -38,7 +38,7 @@ def download_policy(
     """Decide the fate of a download candidate (spec §6). All branches tested.
 
     Both space terms are MEASURED, never declared (2026-09-13 spec §1). ``free_bytes`` = what
-    the filesystem reports free; ``outstanding_bytes`` = what amuled's queue still has to
+    the filesystem reports free; ``outstanding_bytes`` = what the client's queue still has to
     transfer; ``file_size`` = the candidate's size; ``min_free_bytes`` = the configured floor,
     an inclusive MIN (landing exactly on it is allowed).
 

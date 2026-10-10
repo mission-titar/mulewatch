@@ -103,7 +103,7 @@ class DownloadDeps:
     """Dependencies of the download loop (composition assembles them once).
 
     ``targets`` serves the ``target_id → status`` lookup (pure policy). ``disk`` measures the
-    free space of the filesystem amuled writes to (metadata only, no file is opened).
+    free space of the filesystem the client writes to (metadata only, no file is opened).
     ``catalog`` is typed to
     the NARROW ``CatalogReader`` Protocol above: the loop depends only on the subset it reads
     (consistent with the local ``DownloadRepository`` Protocol), so the minimal test fakes are
@@ -169,7 +169,7 @@ async def _record_completion(
 ) -> None:
     """Marks ``completed`` (stamps completed_at) and notifies (step 2, §5).
 
-    ``completed`` is terminal: the file stays in amuled's IncomingDir, nothing moves it and
+    ``completed`` is terminal: the file stays where the client put it, nothing moves it and
     nothing opens it. The caller skips files already ``completed``, so the notification fires
     exactly once per download.
     """
@@ -332,7 +332,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     # Step 0 - CONNECT + SNAPSHOT: client I/O → ClientUnreachableError = dead daemon = ABORT.
     # ``connect()`` is IDEMPOTENT (the adapter no-ops when its transport is live) and is the ONLY
     # thing that re-arms a stream the adapter discarded after a failed read. SKIPPING IT WEDGES
-    # THE LOOP: amuled is restarted by the port-sync on every VPN renegotiation, and nothing else
+    # THE LOOP: the port-sync restarts the client on every VPN renegotiation, and nothing else
     # in this loop ever reconnects (field, 2026-09-04: 7 days of "client not connected").
     # Same guard as ``SearchWorker._ensure_connected`` and ``run_port_sync_cycle``.
     try:

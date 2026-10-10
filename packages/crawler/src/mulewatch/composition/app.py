@@ -306,9 +306,9 @@ class CrawlerApp:
         """Assemble the download loop deps (download mode, spec §7).
 
         SHARED single repos (``catalog_repo`` already built; a ``SqliteDownloadRepository`` on
-        the SAME ``local_conn`` - single writer on the event loop, no race). A 2nd session
-        to the same daemon (DECISION D3) connected tolerating ``ClientUnreachableError`` (a daemon
-        not yet listening at startup does not kill the crawler; the loop's backoff governs).
+        the SAME ``local_conn`` - single writer on the event loop, no race). Its own session to
+        the daemon, connected tolerating ``ClientUnreachableError`` (a daemon not yet listening
+        at startup does not kill the crawler; the loop's backoff governs).
         """
         download_client = self._download_client_factory(
             self._crawler_config.amule_endpoint, self._clock

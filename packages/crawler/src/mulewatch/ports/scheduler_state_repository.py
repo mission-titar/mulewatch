@@ -8,7 +8,7 @@ merged, invariant §11).
 The backoff is serialized as JSON under ONE key (``channel_backoff``): a map
 ``{ "amule-1:kad": {attempts, retry_after}, "amule-1": {...} }`` — the key is either
 ``instance:channel`` (a channel failure), or ``instance`` alone (reconnection). ``retry_after``
-is a fixed-width ISO-8601 UTC (lexicographic comparison == chronological).
+is a fixed-width ISO-8601 UTC.
 ``load_channel_backoff`` returns an empty dict if never written (first startup).
 """
 
