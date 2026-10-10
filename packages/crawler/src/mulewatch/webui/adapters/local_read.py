@@ -17,14 +17,14 @@ from mulewatch.webui.domain.views import DownloadRow, NodeState
 
 _SQL_DOWNLOADS = """\
 SELECT
-    ed2k_hash,
+    native_id,
     target_id,
     state,
     queued_at,
     completed_at,
     size_bytes
 FROM downloads
-ORDER BY queued_at ASC, ed2k_hash ASC
+ORDER BY queued_at ASC, native_id ASC
 """
 
 _SQL_SCHEDULER = """\
@@ -57,7 +57,7 @@ class LocalReader:
 
         downloads = tuple(
             DownloadRow(
-                ed2k_hash=row["ed2k_hash"],
+                native_id=row["native_id"],
                 target_id=row["target_id"],
                 state=row["state"],
                 queued_at=row["queued_at"],

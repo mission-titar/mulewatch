@@ -4,7 +4,7 @@ import sqlite3
 from importlib import resources
 from pathlib import Path
 
-from mulewatch.adapters.persistence_sqlite.connection import open_local
+from tests.adapters.persistence_sqlite.older_catalog import open_local_at
 
 _LOCAL_MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations/local"
 
@@ -30,7 +30,7 @@ def test_0006_deletes_the_cycle_state_and_the_backoff_map(tmp_path: Path) -> Non
     path = tmp_path / "local.db"
     _write_local_db_at_version_5(path)
 
-    connection = open_local(path)
+    connection = open_local_at(path, 6)
     try:
         assert connection.execute("PRAGMA user_version").fetchone()[0] == 6
         assert connection.execute("SELECT key FROM scheduler_state").fetchall() == []

@@ -28,8 +28,9 @@ def test_node_state_populated(local_db: Path) -> None:
     # --- populate ---
     with sqlite3.connect(local_db) as w:
         w.execute(
-            "INSERT INTO downloads VALUES (?,?,?,?,?,?)",
-            ("aabbccdd" * 4, "062A", "active", "2026-06-22T10:00:00Z", None, 1024),
+            "INSERT INTO downloads (file_id, network, native_id, target_id, state, queued_at,"
+            " size_bytes) VALUES (x'00', 'ed2k', ?, '062A', 'active', '2026-06-22T10:00:00Z', ?)",
+            ("aabbccdd" * 4, 1024),
         )
         w.execute(
             "INSERT INTO scheduler_state VALUES (?,?)",
@@ -53,7 +54,7 @@ def test_node_state_populated(local_db: Path) -> None:
     assert len(state.downloads) == 1
     dl = state.downloads[0]
     assert isinstance(dl, DownloadRow)
-    assert dl.ed2k_hash == "aabbccdd" * 4
+    assert dl.native_id == "aabbccdd" * 4
     assert dl.target_id == "062A"
     assert dl.state == "active"
     assert dl.queued_at == "2026-06-22T10:00:00Z"

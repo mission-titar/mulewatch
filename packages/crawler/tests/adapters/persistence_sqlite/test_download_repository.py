@@ -52,6 +52,15 @@ def test_record_queued_inserts_a_new_download(repository: SqliteDownloadReposito
     assert repository.is_downloaded(_A) is True
 
 
+def test_record_queued_keys_the_row_by_file_id_and_keeps_the_file_key(
+    repository: SqliteDownloadRepository, connection: sqlite3.Connection
+) -> None:
+    repository.record_queued(_A, "062A", 100)
+    assert connection.execute("SELECT file_id, network, native_id FROM downloads").fetchall() == [
+        (_A.file_id, "ed2k", _A.native_id)
+    ]
+
+
 def test_record_queued_is_dedup_safe(repository: SqliteDownloadRepository) -> None:
     assert repository.record_queued(_A, "062A", 100) is True
     assert repository.record_queued(_A, "062A", 100) is False  # duplicate ignored
@@ -74,7 +83,7 @@ def test_set_state_to_completed_stamps_completed_at(
     repository.record_queued(_A, "062A", 100)
     repository.set_state(_A, DownloadState.COMPLETED)
     stamped = connection.execute(
-        "SELECT completed_at FROM downloads WHERE ed2k_hash = ?", (_A.native_id,)
+        "SELECT completed_at FROM downloads WHERE file_id = ?", (_A.file_id,)
     ).fetchone()[0]
     assert stamped is not None
 
@@ -85,7 +94,7 @@ def test_set_state_non_completed_leaves_completed_at_null(
     repository.record_queued(_A, "062A", 100)
     repository.set_state(_A, DownloadState.DOWNLOADING)
     stamped = connection.execute(
-        "SELECT completed_at FROM downloads WHERE ed2k_hash = ?", (_A.native_id,)
+        "SELECT completed_at FROM downloads WHERE file_id = ?", (_A.file_id,)
     ).fetchone()[0]
     assert stamped is None
 
@@ -128,7 +137,7 @@ def test_get_target_id_is_none_for_unknown_hash(repository: SqliteDownloadReposi
 
 def _last_seen(connection: sqlite3.Connection, file: FileKey) -> str:
     row = connection.execute(
-        "SELECT last_seen_at FROM downloads WHERE ed2k_hash = ?", (file.native_id,)
+        "SELECT last_seen_at FROM downloads WHERE file_id = ?", (file.file_id,)
     ).fetchone()
     return str(row[0])
 
@@ -140,7 +149,7 @@ def test_record_queued_stamps_last_seen_at_with_queued_at(
     repository = SqliteDownloadRepository(connection, clock=_SettableClock())
     repository.record_queued(_A, "062A", 100)
     queued_at = connection.execute(
-        "SELECT queued_at FROM downloads WHERE ed2k_hash = ?", (_A.native_id,)
+        "SELECT queued_at FROM downloads WHERE file_id = ?", (_A.file_id,)
     ).fetchone()[0]
     assert _last_seen(connection, _A) == queued_at
 

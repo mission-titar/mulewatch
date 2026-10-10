@@ -71,13 +71,16 @@ def test_local_rewrites_a_legacy_quarantined_download_as_completed(tmp_path: Pat
     legacy = sqlite3.connect(path, autocommit=True)
     legacy.execute(
         "INSERT INTO downloads (ed2k_hash, target_id, state, queued_at, size_bytes) "
-        "VALUES ('a1', '062A', 'quarantined', '2026-09-01T00:00:00.000000+00:00', 42)"
+        "VALUES (?, '062A', 'quarantined', '2026-09-01T00:00:00.000000+00:00', 42)",
+        ("a1" * 16,),
     )
     legacy.close()
 
     connection = open_local(path)
     try:
         repository = SqliteDownloadRepository(connection)
-        assert repository.active_states() == {FileKey(Network.ED2K, "a1"): DownloadState.COMPLETED}
+        assert repository.active_states() == {
+            FileKey(Network.ED2K, "a1" * 16): DownloadState.COMPLETED
+        }
     finally:
         connection.close()

@@ -363,13 +363,15 @@ asyncio.run(main())
 
 _SEED_ROW = f"""
 import datetime, sqlite3, sys
+from mulewatch.domain.file_key import FileKey, Network
 now = datetime.datetime.now(datetime.UTC).isoformat()
+file = FileKey(Network.ED2K, sys.argv[1])
 conn = sqlite3.connect("/data/local.db", timeout=30)
 conn.execute(
     "INSERT INTO downloads"
-    " (ed2k_hash, target_id, state, queued_at, size_bytes, last_seen_at)"
-    " VALUES (?, {_SEEDED_TARGET!r}, 'downloading', ?, {_SEEDED_SIZE}, ?)",
-    (sys.argv[1], now, now),
+    " (file_id, network, native_id, target_id, state, queued_at, size_bytes, last_seen_at)"
+    " VALUES (?, ?, ?, {_SEEDED_TARGET!r}, 'downloading', ?, {_SEEDED_SIZE}, ?)",
+    (file.file_id, file.network, file.native_id, now, now),
 )
 conn.commit()
 """
@@ -378,7 +380,7 @@ _READ_ROW = """
 import sqlite3, sys
 conn = sqlite3.connect("/data/local.db", timeout=30)
 row = conn.execute(
-    "SELECT state, completed_at IS NOT NULL FROM downloads WHERE ed2k_hash = ?", (sys.argv[1],)
+    "SELECT state, completed_at IS NOT NULL FROM downloads WHERE native_id = ?", (sys.argv[1],)
 ).fetchone()
 print(row[0], bool(row[1]))
 """

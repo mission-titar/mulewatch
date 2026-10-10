@@ -819,6 +819,22 @@ async def test_node_page_renders_scheduler_state(
     assert "last_search_cycle" in resp.text
 
 
+@pytest.mark.asyncio
+async def test_node_page_names_a_download_by_its_native_id(
+    populated_app: tuple[Starlette, str], local_db: Path
+) -> None:
+    app, hash_ = populated_app
+    with sqlite3.connect(local_db) as conn:
+        conn.execute(
+            "INSERT INTO downloads (file_id, network, native_id, target_id, state, queued_at)"
+            " VALUES (?, 'ed2k', ?, '062A', 'downloading', '2026-10-10')",
+            (file_id(hash_), hash_),
+        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/node")
+    assert f"<td>{hash_}</td>" in resp.text
+
+
 @pytest.fixture
 def app_with_media_obs(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """File with an observation having non-null media_length_sec and bitrate_kbps."""

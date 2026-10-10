@@ -374,7 +374,7 @@ flowchart LR
   `BEFORE UPDATE/DELETE -> ABORT`), pour que N nœuds fusionnent en un seul catalogue (`python -m
   mulewatch.merge`). Les insertions sont **idempotentes** (`INSERT OR IGNORE` /
   `ON CONFLICT DO NOTHING`), donc sans danger en cas de redémarrage en pleine écriture.
-- **`local.db`** (version de schéma 5) : l'état d'exécution du nœud (identité, suivi des
+- **`local.db`** (version de schéma 7) : l'état d'exécution du nœud (identité, suivi des
   téléchargements, progression et backoff de l'ordonnanceur). **Jamais fusionnée** : elle appartient
   à un seul nœud.
 
@@ -394,6 +394,9 @@ microsecondes, et le nombre de sources. `codec`, `file_type` et `complete_source
 repliés dans `raw_meta`. `catalog/0008` identifie un fichier par `(network, native_id)`, avec pour
 clé `file_id`, un UUID v5 de ce couple, identique sur tous les nœuds ; `aich_hash` disparaît.
 `catalog/0009` rend au disque, par un `VACUUM`, la place que ces réécritures ont libérée.
+`local/0006` efface l'état du cycle de recherche, qui n'existe plus, et la carte des backoffs.
+`local/0007` identifie un téléchargement par le même `file_id` que le catalogue, et garde
+`(network, native_id)` : `file_id` est à sens unique, et la boucle doit retrouver le fichier.
 
 ### 8.1 Écrire une migration
 
