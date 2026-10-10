@@ -15,3 +15,7 @@ class SearchFailedError(ClientError):
 
 class DownloadRejectedError(ClientError):
     """The client refused a download: that download fails."""
+
+
+class ClientAuthError(ClientError):
+    """The client refused our credentials: a config problem, the crawler fails fast."""

@@ -10,6 +10,7 @@ import json
 import httpx
 
 from mulewatch.ports.client_errors import (
+    ClientAuthError,
     ClientError,
     ClientUnreachableError,
     DownloadRejectedError,
@@ -29,7 +30,7 @@ class ApiUnreachableError(ApiError, ClientUnreachableError):
     """Transport dead, amuleapi down, or its EC link to amuled down -> instance down."""
 
 
-class ApiAuthError(ApiError):
+class ApiAuthError(ApiError, ClientAuthError):
     """Login refused (wrong admin password) - not a loop case, a config one."""
 
 
