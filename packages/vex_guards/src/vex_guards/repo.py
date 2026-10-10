@@ -29,4 +29,6 @@ def source_dirs() -> list[Path]:
 
 
 def vex_files() -> dict[str, Path]:
-    return {image: _ROOT / "security" / f"{image}.vex.openvex.json" for image in ("crawler",)}
+    return {
+        image: _ROOT / "security" / f"{image}.vex.openvex.json" for image in ("crawler", "amule")
+    }

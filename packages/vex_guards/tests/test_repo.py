@@ -24,6 +24,7 @@ def test_source_dirs_are_the_shipped_packages_only() -> None:
 
 def test_vex_files_point_at_security_dir() -> None:
     files = repo.vex_files()
-    assert set(files) == {"crawler"}
-    assert files["crawler"].name == "crawler.vex.openvex.json"
-    assert files["crawler"].is_file()
+    assert set(files) == {"crawler", "amule"}
+    for image, path in files.items():
+        assert path.name == f"{image}.vex.openvex.json"
+        assert path.is_file()
