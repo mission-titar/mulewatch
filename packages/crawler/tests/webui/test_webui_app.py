@@ -835,6 +835,26 @@ async def test_node_page_names_a_download_by_its_native_id(
     assert f"<td>{hash_}</td>" in resp.text
 
 
+@pytest.mark.asyncio
+async def test_node_page_shows_a_downloads_lifecycle(
+    populated_app: tuple[Starlette, str], local_db: Path
+) -> None:
+    app, hash_ = populated_app
+    with sqlite3.connect(local_db) as conn:
+        conn.execute(
+            "INSERT INTO downloads (file_id, network, native_id, target_id, state, queued_at,"
+            " last_progress_at, waiting_reason, failure_reason) VALUES"
+            " (?, 'ed2k', ?, '062A', 'failed', '2026-10-10', '2026-10-11', 'local', 'error')",
+            (file_id(hash_), hash_),
+        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/node")
+    assert "<td>2026-10-11</td>" in resp.text
+    assert "<td>local</td>" in resp.text
+    assert "<td>error</td>" in resp.text
+    assert "None" not in resp.text  # an unknown value shows blank
+
+
 @pytest.fixture
 def app_with_media_obs(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     """File with an observation having non-null media_length_sec and bitrate_kbps."""

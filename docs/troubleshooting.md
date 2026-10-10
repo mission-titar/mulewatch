@@ -165,9 +165,10 @@ accumulé, mais vous redémarrez d'un état connu.
 - **Ne sortez pas un fichier d'`IncomingDir` avant que le téléchargement soit `completed`.**
   Absent à la fois de la file et des fichiers partagés, il serait renvoyé à amuled et téléchargé de
   nouveau en entier.
-- **`failed` n'est pas définitif.** amuled reste l'autorité : si le hash réapparaît dans sa file, le
-  crawler remet le téléchargement en `downloading` ; s'il apparaît dans les fichiers partagés, le
-  téléchargement se termine et la notification part. Regardez `downloads/incoming` avant de conclure
+- **`failed` n'est pas définitif.** amuled reste l'autorité : si le hash réapparaît dans sa file
+  sans erreur, le crawler remet le téléchargement en `downloading` ; s'il apparaît dans les fichiers
+  partagés, le téléchargement se termine et la notification part. Un fichier qu'amuled signale en
+  erreur reste `failed`, avec la raison `error` sur `/node`. Regardez `downloads/incoming` avant de conclure
   que le fichier est perdu.
 - **Pour en réessayer un à la main**, supprimez sa ligne : `is_downloaded()` ignore l'état, donc une
   ligne `failed` continue de bloquer la remise en file automatique, à dessein. Il n'existe pas de

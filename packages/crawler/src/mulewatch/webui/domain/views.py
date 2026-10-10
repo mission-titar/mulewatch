@@ -134,6 +134,9 @@ class DownloadRow:
     queued_at: str
     completed_at: str | None
     size_bytes: int
+    last_progress_at: str | None
+    waiting_reason: str | None
+    failure_reason: str | None
 
 
 @dataclass(frozen=True)

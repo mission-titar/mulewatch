@@ -29,8 +29,9 @@ def test_node_state_populated(local_db: Path) -> None:
     with sqlite3.connect(local_db) as w:
         w.execute(
             "INSERT INTO downloads (file_id, network, native_id, target_id, state, queued_at,"
-            " size_bytes) VALUES (x'00', 'ed2k', ?, '062A', 'active', '2026-06-22T10:00:00Z', ?)",
-            ("aabbccdd" * 4, 1024),
+            " size_bytes, last_progress_at, waiting_reason, failure_reason)"
+            " VALUES (x'00', 'ed2k', ?, '062A', 'active', '2026-06-22T10:00:00Z', ?, ?, ?, ?)",
+            ("aabbccdd" * 4, 1024, "2026-06-23T10:00:00Z", "no_source", "error"),
         )
         w.execute(
             "INSERT INTO scheduler_state VALUES (?,?)",
@@ -60,6 +61,9 @@ def test_node_state_populated(local_db: Path) -> None:
     assert dl.queued_at == "2026-06-22T10:00:00Z"
     assert dl.completed_at is None
     assert dl.size_bytes == 1024
+    assert dl.last_progress_at == "2026-06-23T10:00:00Z"
+    assert dl.waiting_reason == "no_source"
+    assert dl.failure_reason == "error"
 
     # scheduler KV
     assert state.scheduler == {"cycle_index": "5"}

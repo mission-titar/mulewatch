@@ -16,7 +16,12 @@ from mulewatch.domain.observability.events import (
 )
 from mulewatch.ports.catalog_repository import DownloadCandidate, ObservedFile
 from mulewatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
-from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
+from mulewatch.ports.download_client import (
+    DownloadRequest,
+    DownloadStatus,
+    FailureReason,
+    WaitingReason,
+)
 from mulewatch.ports.repository_errors import RepositoryError
 from tests.application.fakes import RecordingTelemetry
 
@@ -91,8 +96,8 @@ class FakeDownloadClient:
 class FakeDownloadRepo:
     """In-memory downloads repo (the contract of SqliteDownloadRepository, without SQL).
 
-    Keyed by ``native_id``, as the real table still stores the hash. ``fail_set_state_for``:
-    hashes for which ``set_state`` raises ``RepositoryError`` —
+    Keyed by ``native_id``; ``failures`` and ``waiting`` hold the lifecycle reasons.
+    ``fail_set_state_for``: hashes for which ``set_state`` raises ``RepositoryError`` —
     lets us simulate a mid-cycle repo failure (cf. logic-download#2/error-boundary#2).
     ``fail_active_states``: ``active_states()`` raises — lets us simulate persistence being down
     also at re-read time (every step of the cycle absorbs). ``lost``: hashes ``expire_lost``
@@ -108,6 +113,8 @@ class FakeDownloadRepo:
         lost: set[str] | None = None,
     ) -> None:
         self.states: dict[str, DownloadState] = {}
+        self.failures: dict[str, FailureReason | None] = {}
+        self.waiting: dict[str, WaitingReason | None] = {}
         self.sizes: dict[str, int] = {}
         self.seen: list[set[str]] = []
         self.expired_after: list[float] = []
@@ -130,18 +137,23 @@ class FakeDownloadRepo:
         self.sizes[file.native_id] = size_bytes
         return True
 
-    def set_state(self, file: FileKey, state: DownloadState) -> None:
+    def set_state(
+        self, file: FileKey, state: DownloadState, failure_reason: FailureReason | None = None
+    ) -> None:
         if file.native_id in self._fail_set_state_for:
             raise RepositoryError(f"set_state({file.native_id}) failed")
         self.states[file.native_id] = state
+        self.failures[file.native_id] = failure_reason
 
     def is_downloaded(self, file: FileKey) -> bool:
         return file.native_id in self.states
 
-    def mark_seen(self, files: Iterable[FileKey]) -> None:
+    def mark_seen(self, statuses: Iterable[DownloadStatus]) -> None:
         if self._fail_mark_seen:
             raise RepositoryError("mark_seen failed")
-        self.seen.append({file.native_id for file in files})
+        statuses = tuple(statuses)
+        self.seen.append({status.file.native_id for status in statuses})
+        self.waiting.update({s.file.native_id: s.waiting_reason for s in statuses})
 
     def expire_lost(self, max_age_seconds: float) -> tuple[FileKey, ...]:
         self.expired_after.append(max_age_seconds)
@@ -152,6 +164,7 @@ class FakeDownloadRepo:
         )
         for ed2k_hash in condemned:
             self.states[ed2k_hash] = DownloadState.FAILED
+            self.failures[ed2k_hash] = FailureReason.LOST
         return tuple(_key(h) for h in condemned)
 
     def active_states(self) -> dict[FileKey, DownloadState]:
@@ -217,9 +230,15 @@ def _candidate(hash_hex: str, target_id: str) -> DownloadCandidate:
 
 
 def _status(
-    hash_hex: str, *, done: int = 0, total: int = 0, completed: bool = False
+    hash_hex: str,
+    *,
+    done: int = 0,
+    total: int = 0,
+    completed: bool = False,
+    waiting: WaitingReason | None = None,
+    failure: FailureReason | None = None,
 ) -> DownloadStatus:
-    return DownloadStatus(_key(hash_hex), done, total, completed, None, None)
+    return DownloadStatus(_key(hash_hex), done, total, completed, waiting, failure)
 
 
 def _started(client: FakeDownloadClient) -> list[str]:
@@ -437,7 +456,9 @@ async def test_monitor_does_not_regress_a_completed_queue_entry() -> None:
     # _monitor: a COMPLETED hash present in the amuled queue MUST NOT regress to DOWNLOADING
     # (the completion notification already fired; re-firing it would be noise).
     class _NoSetStateRepo(FakeDownloadRepo):
-        def set_state(self, file: FileKey, state: DownloadState) -> None:
+        def set_state(
+            self, file: FileKey, state: DownloadState, failure_reason: FailureReason | None = None
+        ) -> None:
             raise AssertionError("set_state must not be called (completed state)")
 
     client = FakeDownloadClient(listed=[(_status(_A, done=3, total=10),)])
@@ -455,9 +476,11 @@ async def test_monitor_resurrects_a_failed_download_back_in_the_queue() -> None:
     client = FakeDownloadClient(listed=[(_status(_A, done=3, total=10),)])
     downloads = FakeDownloadRepo()
     downloads.states[_A] = DownloadState.FAILED
+    downloads.failures[_A] = FailureReason.LOST
     deps = _deps(client=client, downloads=downloads, catalog=FakeCatalogReads())
     await run_download_cycle(deps)
     assert downloads.states[_A] is DownloadState.DOWNLOADING
+    assert downloads.failures[_A] is None
 
 
 @pytest.mark.asyncio
@@ -681,7 +704,9 @@ async def test_monitor_no_op_when_state_already_matches() -> None:
     downloads.states[_A] = DownloadState.DOWNLOADING
 
     class _NoSetStateRepo(FakeDownloadRepo):
-        def set_state(self, file: FileKey, state: DownloadState) -> None:
+        def set_state(
+            self, file: FileKey, state: DownloadState, failure_reason: FailureReason | None = None
+        ) -> None:
             raise AssertionError("set_state must not be called (state already up to date)")
 
     repo = _NoSetStateRepo()
@@ -749,6 +774,7 @@ async def test_start_rejected_marks_failed_and_does_not_crash() -> None:
     )
     await run_download_cycle(deps)  # does not raise (application failure tolerated per hash)
     assert downloads.states[_A] is DownloadState.FAILED  # link rejected → marked failed
+    assert downloads.failures[_A] is FailureReason.REJECTED
     assert client.started == []
 
 
@@ -958,7 +984,9 @@ async def test_monitor_repo_failure_is_isolated_and_does_not_starve_candidates()
     # _monitor raises RepositoryError (set_state fails during reconciliation) → step 1 is
     # ISOLATED (log + continue), it does NOT starve step 3: _B is enqueued anyway.
     class _MonitorFailRepo(FakeDownloadRepo):
-        def set_state(self, file: FileKey, state: DownloadState) -> None:
+        def set_state(
+            self, file: FileKey, state: DownloadState, failure_reason: FailureReason | None = None
+        ) -> None:
             raise RepositoryError("set_state monitor failed")
 
     client = FakeDownloadClient(listed=[(_status(_A, done=10, total=10),)])
@@ -984,10 +1012,12 @@ async def test_start_repo_failure_is_tolerated_and_does_not_raise() -> None:
     # _start_unlisted raises RepositoryError (set_state fails while marking a rejected start) →
     # tolerated (log), run_download_cycle does not raise. Contract "never raises".
     class _AddLinkSetStateFailRepo(FakeDownloadRepo):
-        def set_state(self, file: FileKey, state: DownloadState) -> None:
+        def set_state(
+            self, file: FileKey, state: DownloadState, failure_reason: FailureReason | None = None
+        ) -> None:
             if state is DownloadState.FAILED:
                 raise RepositoryError("set_state(FAILED) failed")
-            super().set_state(file, state)
+            super().set_state(file, state, failure_reason)
 
     # start rejected → _start_unlisted tries set_state(FAILED), which raises
     # RepositoryError.
@@ -1042,7 +1072,9 @@ async def test_already_completed_shared_hash_is_not_recompleted() -> None:
     # A completed file stays in amuled's shared list forever. Without the terminal skip, every
     # cycle would re-stamp it and re-fire the community notification.
     class _NoSetStateRepo(FakeDownloadRepo):
-        def set_state(self, file: FileKey, state: DownloadState) -> None:
+        def set_state(
+            self, file: FileKey, state: DownloadState, failure_reason: FailureReason | None = None
+        ) -> None:
             raise AssertionError("must not re-stamp an already completed download")
 
     downloads = _NoSetStateRepo()
@@ -1116,6 +1148,7 @@ async def test_a_download_amuled_no_longer_knows_becomes_failed() -> None:
     await run_download_cycle(deps)
     assert downloads.states[_A] is DownloadState.FAILED
     assert downloads.expired_after == [3600.0]
+    assert downloads.failures[_A] is FailureReason.LOST
     assert client.started == []  # failed by the TTL: never started again
 
 
@@ -1220,3 +1253,34 @@ async def test_low_disk_warns_once_per_crossing_and_rearms_at_the_floor() -> Non
         )
     assert warnings_per_cycle == [1, 0, 0, 1]
     assert DiskSpaceLow(free_bytes=500, min_free_bytes=600) in telemetry.events
+
+
+@pytest.mark.asyncio
+async def test_a_failure_the_client_reports_stays_failed_round_after_round() -> None:
+    # Stage 2, D12: an erroneous partfile is failed, and a listing without progress does not
+    # flap it back to downloading each round.
+    erroneous = _status(_A, done=3, total=10, failure=FailureReason.ERROR)
+    client = FakeDownloadClient(listed=[(erroneous,)] * 3)
+    downloads = FakeDownloadRepo()
+    downloads.states[_A] = DownloadState.DOWNLOADING
+    deps = _deps(client=client, downloads=downloads, catalog=FakeCatalogReads())
+    rounds = []
+    for _ in range(3):
+        await run_download_cycle(deps)
+        rounds.append((downloads.states[_A], downloads.failures.get(_A)))
+    assert rounds == [(DownloadState.FAILED, FailureReason.ERROR)] * 3
+    assert client.started == []
+
+
+@pytest.mark.asyncio
+async def test_waiting_for_sources_is_not_failing() -> None:
+    waiting = _status(_A, total=10, waiting=WaitingReason.NO_SOURCE)
+    client = FakeDownloadClient(listed=[(waiting,)] * 12)
+    downloads = FakeDownloadRepo()
+    downloads.states[_A] = DownloadState.QUEUED
+    deps = _deps(client=client, downloads=downloads, catalog=FakeCatalogReads())
+    for _ in range(12):
+        await run_download_cycle(deps)
+    assert downloads.states[_A] is DownloadState.DOWNLOADING
+    assert downloads.waiting[_A] is WaitingReason.NO_SOURCE
+    assert downloads.failures[_A] is None

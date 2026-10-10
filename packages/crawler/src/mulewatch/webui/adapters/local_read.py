@@ -22,7 +22,10 @@ SELECT
     state,
     queued_at,
     completed_at,
-    size_bytes
+    size_bytes,
+    last_progress_at,
+    waiting_reason,
+    failure_reason
 FROM downloads
 ORDER BY queued_at ASC, native_id ASC
 """
@@ -63,6 +66,9 @@ class LocalReader:
                 queued_at=row["queued_at"],
                 completed_at=row["completed_at"],
                 size_bytes=row["size_bytes"],
+                last_progress_at=row["last_progress_at"],
+                waiting_reason=row["waiting_reason"],
+                failure_reason=row["failure_reason"],
             )
             for row in dl_rows
         )

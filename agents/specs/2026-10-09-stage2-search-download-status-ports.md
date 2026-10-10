@@ -520,7 +520,9 @@ ALTER TABLE downloads_new RENAME TO downloads;
   The `file_id()` SQL function of stage 1 is registered on the local connection too (`open_local`).
 - **0008, lifecycle columns** (with D12): `bytes_done INTEGER NOT NULL DEFAULT 0` (the last value seen, from
   which `last_progress_at` is computed), `last_progress_at TEXT`, `waiting_reason TEXT`, `failure_reason
-  TEXT`.
+  TEXT`. (Corrected: `bytes_done INTEGER`, NULL on the rows migrated and 0 on a row queued after, since a
+  default 0 made the first reading after 0008 stamp `last_progress_at` on every download already
+  running, block 190)
 
 Their tests are `test_local_migration_0006.py`, `_0007.py` and `_0008.py`: the catalog's
 `test_migration_0006.py` to `_0008.py` already exist.
