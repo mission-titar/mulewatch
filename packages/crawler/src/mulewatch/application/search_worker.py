@@ -1,8 +1,6 @@
-"""Search worker: owns 1 ``SearchClient``, drains the queue (spec §4).
+"""Search worker: owns 1 ``SearchClient``, runs the search tasks' searches (spec §4).
 
-APPLICATION layer. One worker per ``amuled`` instance (spec §3: N workers = N
-sessions = real parallelism; degenerates to a sequential loop at N=1). Per item
-``(keyword, channel)`` pulled from the shared queue:
+APPLICATION layer. One worker per ``amuled`` instance. Per task ``(keyword, channel)``:
 
   consults the backoff (SKIPS the item if the instance OR the channel is backed off until its
   ``retry_after``) → ensures the connection (per-instance reconnection if down) →
@@ -17,10 +15,9 @@ ONLY PORT exceptions (never an adapter's, dependency rule §4):
 - ``RepositoryError`` on an obs → logged and counted by ``record_observations``.
 
 The backoff is exponential + jitter (spec §3), REMEMBERED in a SHARED ``BackoffRegistry``
-(a single instance for ALL workers + the cycle) and PERSISTED in
-``scheduler_state`` at the end of the cycle (spec §3/§7: it survives a restart). "Skip until
-``retry_after``" replaces the old "sleep for the delay": a backed-off channel is skipped, not
-waited on - the event loop stays available. Mutations of the shared registry happen between
+(a single instance for ALL workers + the search tasks) and PERSISTED in
+``scheduler_state`` at each change (spec §3/§7: it survives a restart). A backed-off channel
+is skipped, not waited on. Mutations of the shared registry happen between
 two ``await`` (single-threaded event loop, single writer) → no lock needed (spec §3).
 The worker NEVER closes the client (ownership = composition root, §6).
 """
@@ -61,17 +58,10 @@ def _iso(moment: datetime) -> str:
 
 @dataclass(frozen=True)
 class SearchTask:
-    """A unit of work: a keyword on a channel (spec §4).
-
-    ``skipped_by`` remembers the ``instance_name`` values that have already refused this task
-    during the cycle (instance or channel backoff). A re-enqueued task carries this trace to
-    enable termination: when ALL instances have refused, the loop drops the task with
-    a telemetry trace (spec §14: visibility rather than silence). ``frozenset`` →
-    idempotent union, hashable (compatible with ``dataclass(frozen=True)``)."""
+    """A unit of work: a keyword on a channel (spec §4)."""
 
     keyword: str
     channel: str
-    skipped_by: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -80,17 +70,12 @@ class WorkerPolicy:
 
     ``backoff_jitter_ratio``: fraction of the nominal delay drawn as additional jitter
     (anti-thundering-herd, spec §3) - e.g. 0.3 ⇒ jitter in ``[0, 0.3 * delay)``.
-    ``keyword_pause_min_seconds``/``keyword_pause_max_seconds``: bounds (min ≤ max) of the
-    JITTERED inter-keyword PAUSE (spec §5/§7, eD2k anti-rate-limit) - a delay
-    ``min + rng.jitter(max - min)`` is slept BETWEEN two items of the same worker.
     """
 
     backoff_base_seconds: float
     backoff_cap_seconds: float
     backoff_factor: float
     backoff_jitter_ratio: float
-    keyword_pause_min_seconds: float
-    keyword_pause_max_seconds: float
 
 
 class BackoffRegistry:
@@ -115,7 +100,7 @@ class BackoffRegistry:
         self._states = dict(states)
 
     def snapshot(self) -> dict[str, ChannelBackoff]:
-        """Copy of the current map (to persist at the end of the cycle, spec §7)."""
+        """Copy of the current map (to persist, spec §7)."""
         return dict(self._states)
 
     def is_in_backoff(self, key: str) -> bool:
@@ -158,18 +143,13 @@ class BackoffRegistry:
 class WorkerDeps:
     """A worker's shared dependencies (composition assembles them once).
 
-    ``backoff`` is the SHARED registry (same instance for all workers + the cycle,
-    which persists it). ``rng`` serves the inter-keyword pause jitter (the backoff has its
-    own RNG access via the registry; both point to the same shared instance).
-    Single writer on the event loop → no race (spec §3).
+    ``backoff`` is the SHARED registry (same instance for all workers + the search tasks,
+    which persist it). Single writer on the event loop → no race (spec §3).
     """
 
     catalog: CatalogRepository
     engine: MatchingEngine
     signal: DecisionSignal
-    clock: Clock
-    rng: Rng
-    policy: WorkerPolicy
     backoff: "BackoffRegistry"
     telemetry: Telemetry
 
@@ -286,17 +266,3 @@ class SearchWorker:
             task.channel,
             changed,
         )
-
-    async def pause_between_items(self) -> None:
-        """Sleeps a JITTERED inter-keyword PAUSE (spec §5/§7, eD2k anti-rate-limit).
-
-        Delay = ``keyword_pause_min + rng.jitter(keyword_pause_max - keyword_pause_min)``
-        (reuses the ``Rng.jitter`` contract: ``[0, span)``; ``span ≤ 0`` when min == max
-        → zero jitter → FIXED pause = min). Spaces out one worker's searches to
-        avoid ``amuled`` getting banned from an eD2k server (spec §7). Called by the
-        drain BETWEEN two items, never after the last (the caller skips the emptied queue).
-        """
-        policy = self._deps.policy
-        span = policy.keyword_pause_max_seconds - policy.keyword_pause_min_seconds
-        delay = policy.keyword_pause_min_seconds + self._deps.rng.jitter(span)
-        await self._deps.clock.sleep(delay)

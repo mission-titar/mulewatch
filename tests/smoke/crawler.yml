@@ -1,6 +1,4 @@
 # SMOKE crawler.yml: download mode (download.enabled: true), short intervals.
-keyword_pause_min_seconds: 0.1
-keyword_pause_max_seconds: 0.5
 decision_poll_interval_seconds: 2.0
 shutdown_deadline_seconds: 5.0
 

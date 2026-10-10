@@ -180,8 +180,6 @@ def _build_policy(config: CrawlerConfig) -> WorkerPolicy:
         backoff_cap_seconds=config.backoff.cap_seconds,
         backoff_factor=config.backoff.factor,
         backoff_jitter_ratio=config.backoff.jitter_ratio,
-        keyword_pause_min_seconds=config.keyword_pause_min_seconds,
-        keyword_pause_max_seconds=config.keyword_pause_max_seconds,
     )
 
 
@@ -519,9 +517,6 @@ class CrawlerApp:
                 catalog=catalog_repo,
                 engine=engine,
                 signal=self._signal,
-                clock=self._clock,
-                rng=self._rng,
-                policy=policy,
                 backoff=backoff,
                 telemetry=telemetry,
             )
