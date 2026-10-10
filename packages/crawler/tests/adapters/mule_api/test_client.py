@@ -597,12 +597,14 @@ async def test_a_page_whose_last_row_has_no_anchor_stops_the_sweep() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_list_envelope_that_is_not_a_list_stops_the_sweep() -> None:
+async def test_a_list_without_its_envelope_is_unreachable_not_empty() -> None:
+    # Read as empty, it would restart every download it hides (stage 2, D13).
     api = FakeAmuleApi()
     api.overrides[("GET", "/api/v1/shared")] = lambda _: httpx.Response(200, json={"shared": 7})
     client = await _connected(api)
 
-    assert await client.downloads() == ()
+    with pytest.raises(ApiUnreachableError, match="/shared"):
+        await client.downloads()
     await client.close()
 
 
