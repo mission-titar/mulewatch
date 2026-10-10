@@ -328,8 +328,8 @@ class AmuleApiClient:
         while True:
             payload = await self._call("GET", path, params=page_params)
             page = payload.get(envelope)
-            if not isinstance(page, list):
-                return rows  # unexpected envelope: tolerated, sweep over
+            if not isinstance(page, list):  # an under-report would restart what it hides
+                raise ApiUnreachableError(f"GET {path} answered without its {envelope!r} list")
             rows.extend(page)
             if len(page) < _PAGE_SIZE:
                 return rows
