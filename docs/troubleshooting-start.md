@@ -11,8 +11,8 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 !!! info "Où lancer ces commandes"
 
     Depuis votre dossier de travail, celui qui contient `compose.yml`. Les chemins sont donc
-    relatifs : `.env`, `crawler.yml`, `data/`. Sous la pile VPN, ajoutez `-f gluetun.compose.yml` à
-    chaque `docker compose ...`.
+    relatifs : `.env`, `crawler.yml`, `data/`. Les mêmes commandes servent les deux variantes,
+    directe et VPN.
 
 ### Docker introuvable, ou installé mais sans réponse
 
@@ -32,19 +32,22 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
 - **Symptôme.** `docker compose up -d` refuse de démarrer quoi que ce soit :
   ```
-  error while interpolating services.p2pwatch.environment.PUID: required variable "PUID" is not set
+  error while interpolating services.p2pwatch.user: required variable PUID is missing a value
   ```
-  Idem pour `PGID`, `AMULE_EC_PASSWORD` et `AMULE_API_PASSWORD`. Variante : la variable est
-  déclarée mais vide, et le conteneur sort en moins d'une seconde sur une seule ligne de journal,
-  `PUID is required`. **Le signe distinctif est l'absence de traceback Python** : rien de Python
-  n'a démarré. Si vous en voyez une, lisez plutôt
-  [« Un conteneur redémarre en boucle »](#un-conteneur-redémarre-en-boucle).
-- **Cause.** Les quatre variables sont strictement obligatoires : le one-shot de démarrage les lit
-  avant tout le reste, pour créer l'utilisateur du conteneur, prendre possession des dossiers montés
-  et écrire les deux mots de passe aMule. Il sort en 1 si l'une manque ou est vide.
+  Idem pour `PGID`, `AMULE_EC_PASSWORD` et `AMULE_API_PASSWORD`, et pour une variable déclarée
+  mais vide.
+- **Cause.** Les quatre variables sont strictement obligatoires : `PUID` et `PGID` sont l'identité
+  sous laquelle tourne le crawler et à laquelle `ed2k` donne ses dossiers, et les deux mots de passe
+  sont écrits dans la configuration d'aMule au démarrage d'`ed2k`, celui d'amuleapi servant aussi au
+  crawler. Compose refuse avant de démarrer quoi que ce soit.
 - **Solution.** Renseignez les quatre dans `.env` (copiez `.env.example` si ce n'est pas déjà fait),
   puis `docker compose up -d`. Le détail de chacune est au
   [tableau de l'étape 3](install.md#3-choisir-vos-mots-de-passe).
+- **Variante : `ed2k` redémarre en boucle sur une seule ligne de journal**, sans traceback Python,
+  qui nomme une variable : `PUID must be a numeric id, got 'moi'`,
+  `AMULE_API_PASSWORD must not contain a control character`, ou une valeur de port-sync refusée.
+  Le démarrage d'`ed2k` vérifie ces valeurs avant de lancer amuled, et sort sur la première qui ne
+  convient pas. Corrigez-la dans `.env`, puis `docker compose up -d`.
 
 ??? question "Cas voisin : un `change-me` oublié"
 
@@ -64,19 +67,21 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 ### Un conteneur redémarre en boucle
 
 - **Symptôme.** `docker compose ps` montre le service en **`Restarting`** ou `Exited`.
-- **Diagnostic.** Il n'y a qu'un seul service, `p2pwatch` (plus `gluetun` sous la pile VPN) : la
-  question n'est pas « quel conteneur ? » mais **lequel des processus a échoué**. Lisez
-  `docker compose logs p2pwatch` : le journal est entrelacé, amuled et le crawler y écrivent tous
-  les deux, repérez qui parle en dernier. Seul un arrêt non nul du crawler couche le conteneur ; si
-  amuled tombe, s6 le relance sur place et le conteneur reste `Up`. amuleapi, démarré par amuled,
-  n'écrit pas là mais dans `amule/amuleapi.log`.
+- **Diagnostic.** `docker compose ps` dit lequel : `p2pwatch` (le crawler), `ed2k` (le client
+  eMule) ou, sous la variante VPN, `ed2k-gluetun`. Lisez ensuite son journal seul, par exemple
+  `docker compose logs p2pwatch`. Docker relance le crawler après chacune de ses sorties, donc
+  une erreur au démarrage se voit comme une boucle. Dans `ed2k`, en revanche, s6 relance amuled sur
+  place et le conteneur reste `Up` ; amuleapi, démarré par amuled, écrit dans
+  `ed2k/amule/amuleapi.log`.
 - **Causes fréquentes.**
-    - **Configuration invalide.** Le journal finit par `Invalid config, refusing to start: ...`.
-      Corrigez `crawler.yml`, `targets.yml` ou `matcher.yml`, puis `docker compose up -d`. Vous
-      pouvez valider les trois sans rien démarrer, voir
+    - **Configuration invalide** (`p2pwatch`). Le journal finit par
+      `Invalid config, refusing to start: ...`. Corrigez `crawler.yml`, `targets.yml` ou
+      `matcher.yml`, puis `docker compose up -d`. Vous pouvez valider les trois sans rien démarrer,
+      voir
       [« Valider la configuration »](troubleshooting.md#valider-la-configuration-sans-rien-démarrer).
-    - **Mot de passe EC refusé** (`EcAuthError`) : voir le cas `change-me` ci-dessus.
-    - **Journal d'une ligne, sans Python** : voir
+    - **`unable to open database file`** (`p2pwatch`) : `data/` n'appartient pas à votre `PUID`,
+      voir [« Un conteneur ne peut pas écrire dans ses dossiers »](troubleshooting.md#un-conteneur-ne-peut-pas-écrire-dans-ses-dossiers-puid--pgid).
+    - **Journal d'une ligne, sans Python** (`ed2k`) : voir
       [« Une variable obligatoire manque »](#une-variable-obligatoire-manque).
 
 !!! bug "`database or disk is full`, juste après une montée d'image"
@@ -109,8 +114,8 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
     observations, et la migration refuse plutôt que d'inventer ce qui manque. Elle a été annulée :
     le catalogue est intact.
 
-    Remède : épinglez votre ancienne image (`ghcr.io/mission-titar/mulewatch:4.1.0`) dans
-    `base.compose.yml`, puis `docker compose up -d`. Ouvrez ensuite un ticket sur
+    Remède : revenez à votre ancienne image (`ghcr.io/mission-titar/mulewatch:4.1.0`) par le
+    [retour arrière](migration-4x.md#retour-arrière) de la migration. Ouvrez ensuite un ticket sur
     <https://github.com/mission-titar/p2pwatch/issues> avec cette ligne de journal et le résultat
     de `SELECT COUNT(*) FROM file_observation_ranges` dans la console SQL : la conversion s'écrira
     sur vos données.
@@ -118,8 +123,9 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 ### Le port est déjà pris
 
 - **Symptôme.** `docker compose up -d` s'arrête sur `bind: address already in use`. Le numéro dans
-  le message dit lequel : `8080` (le catalogue), `4711` (l'interface d'aMule) ou `4662` (le port
-  eMule, publié par la pile directe seulement).
+  le message dit lequel : `8080` (le catalogue, dans `compose.yml`), `4711` (l'interface d'aMule),
+  ou `4662` et `4672` (les ports eMule, publiés par la variante directe seulement). Ces trois-là
+  sont dans le fichier de la variante, sous `ed2k/`.
 - **Cause.** Un autre programme occupe déjà ce port sur votre machine.
 - **Solution.** Les ports ne sont pas des variables, ils sont écrits en clair dans le `ports:` de
   votre pile. Donnez au port concerné une valeur libre **du côté gauche**, par exemple
@@ -142,16 +148,17 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
     [Devenir High-ID](high-id.md).
 
 - **Si cela dure.** Vérifiez la sortie Internet de la machine (amuled a besoin du 443 sortant). **Si
-  vous avez ajouté un VPN**, c'est presque toujours le tunnel `gluetun` qui n'est pas monté : le
-  conteneur partage son réseau, donc tant que le tunnel est down, amuled n'a aucune sortie.
+  vous avez ajouté un VPN**, c'est presque toujours le tunnel `ed2k-gluetun` qui n'est pas monté :
+  le conteneur `ed2k` partage son réseau, donc tant que le tunnel est down, amuled n'a aucune
+  sortie.
   ```bash
-  docker compose -f gluetun.compose.yml logs gluetun
+  docker compose logs ed2k-gluetun
   ```
   Un tunnel sain affiche `[gluetun] [vpn] connected` et une IP publique qui n'est pas la vôtre.
   Sinon, corrigez la clé WireGuard et les autres variables VPN dans `.env`, puis redémarrez le seul
   processus amuled :
   ```bash
-  docker compose -f gluetun.compose.yml exec p2pwatch s6-svc -r /etc/services.d/amuled
+  docker compose exec ed2k s6-svc -r /etc/services.d/amuled
   ```
   Plus de détails dans la
   [fiche opérateur](troubleshooting.md#amuled-ne-se-connecte-à-aucun-serveur-ni-réseau-tunnel).
@@ -164,15 +171,12 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
   `verdict(s) changed` par recherche terminée. S'il signale `off its network`, voir
   [« amuled ne se connecte à rien »](#amuled-ne-se-connecte-à-rien).
 - **La page ne se charge pas du tout.** La webui est servie en intra-processus par le crawler, il
-  n'y a pas de service `webui` séparé. Et un conteneur `Up (healthy)` ne prouve pas que le crawler
-  est vivant, la sonde n'interroge qu'amuled. Vérifiez donc les deux :
+  n'y a pas de service `webui` séparé : c'est le conteneur `p2pwatch` qu'il faut regarder, pas
+  `ed2k`, dont le `healthy` ne parle que d'amuled.
   ```bash
   docker compose ps
   ```
-  ```bash
-  docker compose exec p2pwatch s6-svstat /etc/services.d/p2pwatch
-  ```
-  Conteneur pas `Up` → [« Un conteneur redémarre en boucle »](#un-conteneur-redémarre-en-boucle).
-  `s6-svstat` à `down` → relisez le journal. Tout `up` mais page inaccessible → confirmez l'adresse
-  (le port est peut-être remappé, voir [« Le port est déjà pris »](#le-port-est-déjà-pris)) et que
-  `webui.enabled` vaut `true` dans `crawler.yml`.
+  `p2pwatch` pas `Up` → [« Un conteneur redémarre en boucle »](#un-conteneur-redémarre-en-boucle).
+  `Up` mais page inaccessible → confirmez l'adresse (le port est peut-être remappé, voir
+  [« Le port est déjà pris »](#le-port-est-déjà-pris)) et que `webui.enabled` vaut `true` dans
+  `crawler.yml`.

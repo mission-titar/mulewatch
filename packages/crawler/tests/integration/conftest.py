@@ -15,10 +15,11 @@ PASSWORD_VAR = "P2PWATCH_TEST_API_PASSWORD"
 
 _SKIP_REASON = (
     f"{HOST_VAR} is not set: these suites need an amuleapi you provide. No third-party\n"
-    "image ships amuleapi, so the daemon to start is our own image:\n"
+    "image ships amuleapi, so the daemon to start is our own aMule image, built from the tree:\n"
+    "  docker build -f packages/amule/Dockerfile -t p2pwatch-amule:dev .\n"
     "  docker run -d --rm --name p2pwatch-test-amuled -p 4711:4711 \\\n"
     "      -e PUID=$(id -u) -e PGID=$(id -g) -e AMULE_EC_PASSWORD=indexer-ec-test \\\n"
-    "      -e AMULE_API_PASSWORD=indexer-api-test ghcr.io/mission-titar/p2pwatch:latest\n"
+    "      -e AMULE_API_PASSWORD=indexer-api-test p2pwatch-amule:dev\n"
     f"then export {HOST_VAR}=127.0.0.1 {PORT_VAR}=4711 {PASSWORD_VAR}=indexer-api-test\n"
     "(full instructions: docs/contributing/testing.md)"
 )

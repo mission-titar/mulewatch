@@ -13,8 +13,10 @@ accumulé, mais vous redémarrez d'un état connu.
 
 !!! info "Où lancer ces commandes"
 
-    Depuis votre dossier de travail, celui qui contient `compose.yml`. Sous la pile VPN,
-    ajoutez `-f gluetun.compose.yml` à chaque `docker compose ...`.
+    Depuis votre dossier de travail, celui qui contient `compose.yml`. Les mêmes commandes servent
+    les deux variantes : c'est la ligne `include:` de `compose.yml` qui choisit. Le crawler est le
+    service `p2pwatch`, le client eMule le service `ed2k`, et son tunnel `ed2k-gluetun` sous la
+    variante VPN.
 
 ---
 
@@ -26,9 +28,9 @@ accumulé, mais vous redémarrez d'un état connu.
   (`server.met`) et de nœuds Kad (`nodes.dat`) en faisant du DNS et du HTTPS sortant (443) à travers
   le VPN. Si gluetun n'est pas encore monté, ou si la sortie Internet est bloquée à ce moment, rien
   ne s'amorce et amuled reste sans serveurs ni nœuds.
-- **Solution.** Vérifiez d'abord l'état du tunnel gluetun, avant amuled :
+- **Solution.** Vérifiez d'abord l'état du tunnel, avant amuled :
   ```bash
-  docker compose -f gluetun.compose.yml logs gluetun   # le tunnel doit être « up », IP publique VPN
+  docker compose logs ed2k-gluetun   # le tunnel doit être « up », IP publique VPN
   ```
 
   **Ce que vous devez voir (tunnel sain) :**
@@ -42,68 +44,64 @@ accumulé, mais vous redémarrez d'un état connu.
   [gluetun] [vpn] cannot connect to ...   ← VPN provider/clé refusée
   [gluetun] [main] retrying in N seconds
   ```
-  Le conteneur p2pwatch **partage le réseau de gluetun** (`network_mode: service:gluetun`) : tant
-  que le tunnel est down, amuled n'a aucune sortie. Si le tunnel ne monte pas, corrigez le VPN (clé
-  WireGuard, fournisseur, `SERVER_COUNTRIES`) puis relancez. Une fois gluetun « up », redémarrez le
-  processus amuled sans coucher le reste :
+  Le conteneur `ed2k` **partage le réseau d'`ed2k-gluetun`** (`network_mode:
+  service:ed2k-gluetun`) : tant que le tunnel est down, amuled n'a aucune sortie. Le crawler, lui,
+  reste hors du tunnel. Si le tunnel ne monte pas, corrigez le VPN (clé WireGuard, fournisseur,
+  `SERVER_COUNTRIES`) puis relancez. Une fois `ed2k-gluetun` « up », redémarrez le processus amuled
+  sans coucher le reste :
   ```bash
-  docker compose -f gluetun.compose.yml exec p2pwatch s6-svc -r /etc/services.d/amuled
+  docker compose exec ed2k s6-svc -r /etc/services.d/amuled
   ```
-- **Version d'aMule.** Elle n'est plus un paramètre de déploiement : aMule est compilé sur Debian
-  dans notre propre image, depuis un commit git épinglé dans le `Dockerfile`. Il n'y a plus d'image
-  tierce à vérifier ni à épingler ; la version d'aMule suit celle de l'image p2pwatch. Pour savoir
-  laquelle tourne : `docker compose -f gluetun.compose.yml exec p2pwatch amuled --version` (sans
-  VPN : `compose.yml`). La commande sort en code 255 même quand tout va bien.
+- **Version d'aMule.** Elle n'est pas un paramètre de déploiement : aMule est compilé sur Debian
+  dans notre propre image, `p2pwatch-amule`, depuis un commit git épinglé dans son `Dockerfile`. Sa
+  version suit donc celle de l'image. Pour savoir laquelle tourne :
+  `docker compose exec ed2k amuled --version`. La commande sort en code 255 même quand tout va bien.
 
 ### s6 a redémarré un processus et le conteneur est resté debout
 
-- **Symptôme.** amuled réapparaît dans le journal (il se ré-annonce, recharge
-  `server.met`) alors que `docker compose ps` n'a jamais quitté `Up`. Ou bien : vous avez appuyé sur
-  le bouton de redémarrage du tableau de bord et rien ne semble être arrivé au conteneur.
-- **Cause. C'est normal.** s6 supervise chacun de ses deux services indépendamment et en relance un
-  sur place quand il meurt. amuleapi n'en fait pas partie : `amuled` le démarre et l'arrête avec
-  lui, donc un redémarrage d'`amuled` en entraîne un d'amuleapi. Le conteneur ne tombe que lorsque
-  le crawler sort en code non nul : son script `finish` demande alors à s6 de coucher tout l'arbre
-  de supervision, de sorte que `restart: unless-stopped` donne une boucle de backoff visible au lieu
-  d'un crash-loop silencieux.
-  Une sortie propre du crawler, exactement ce que demande le bouton de redémarrage du tableau de bord,
-  ramène le crawler seul ; amuled garde ses sessions eD2k et Kad, ce qui est tout l'intérêt.
+- **Symptôme.** amuled réapparaît dans `docker compose logs ed2k` (il se ré-annonce, recharge
+  `server.met`) alors que `docker compose ps` n'a jamais quitté `Up` pour `ed2k`.
+- **Cause. C'est normal.** Dans le conteneur `ed2k`, s6 supervise deux services, `amuled` et le
+  port-sync, et relance sur place celui qui meurt. amuleapi n'en fait pas partie : `amuled` le
+  démarre et l'arrête avec lui, donc un redémarrage d'`amuled` en entraîne un d'amuleapi. Le
+  crawler n'est pas sous s6 : c'est Docker qui relance le conteneur `p2pwatch` après chacune de ses
+  sorties, y compris celle que demande le bouton de redémarrage du tableau de bord. `ed2k` garde
+  alors ses sessions eD2k et Kad, ce qui est tout l'intérêt.
 - **Comment le confirmer.** `s6-svstat` affiche l'uptime du service en secondes : un petit nombre
-  signifie qu'il vient d'être redémarré.
+  signifie qu'il vient d'être redémarré. Pour le crawler, la colonne `STATUS` de `docker compose ps`
+  donne la même information.
   ```bash
-  docker compose exec p2pwatch s6-svstat /etc/services.d/p2pwatch
-  docker compose exec p2pwatch s6-svstat /etc/services.d/amuled
+  docker compose exec ed2k s6-svstat /etc/services.d/amuled
+  docker compose ps
   ```
-- **Conséquence à garder en tête.** Un conteneur en `Up (healthy)` ne prouve **pas** que le crawler
-  tourne : le healthcheck n'interroge qu'amuled, et le conteneur ne passe `unhealthy` que quand
-  amuled est arrêté. Dans le doute, interrogez `s6-svstat` sur `/etc/services.d/p2pwatch`, ou
-  cherchez des lignes `verdict(s) changed` dans le journal, une par recherche terminée.
+- **Conséquence à garder en tête.** `healthy` ne concerne que `ed2k`, et ne dit qu'une chose :
+  amuled tourne. Le crawler n'a pas de healthcheck. Un crawler qui tombe en boucle se voit en
+  `Restarting` dans `docker compose ps` ; un crawler vivant écrit des lignes `verdict(s) changed`
+  dans `docker compose logs p2pwatch`, une par recherche terminée.
 
 ### Le crawler refuse de démarrer : « environment variable '…' referenced but not set »
 
-- **Symptôme.** `docker compose logs p2pwatch` affiche
-  `Invalid config, refusing to start: … : environment variable 'AMULE_EC_PASSWORD' referenced but not set`,
+- **Symptôme.** `docker compose ps` montre `p2pwatch` en `Restarting`, et
+  `docker compose logs p2pwatch` affiche
+  `Invalid config, refusing to start: … : environment variable 'DISCORD_WEBHOOK_ID' referenced but not set`,
   alors que la variable est bien renseignée dans `.env`.
 - **Cause.** Compose ne lit `.env` que pour substituer les `${...}` **dans les fichiers compose**.
   Le crawler, lui, interpole les `${VAR}` de `crawler.yml` depuis son propre environnement de
   conteneur. Une variable référencée dans `crawler.yml` doit donc être injectée explicitement dans
-  le service `p2pwatch` (bloc `environment:` de `base.compose.yml`), sinon le process ne la voit
-  pas. `AMULE_EC_PASSWORD` y est câblé par défaut.
+  le service `p2pwatch` (bloc `environment:` de `compose.yml`), sinon le process ne la voit pas.
+  Seul `AMULE_API_PASSWORD` y est câblé par défaut.
 - **Solution.** Si vous ajoutez un nouveau `${VAR}` dans `crawler.yml`, typiquement en activant une
   URL de notification `notifications[].url: "discord://${DISCORD_WEBHOOK_ID}/…"`, ajoutez la même
   variable au bloc `environment:` du service `p2pwatch` :
-  ```yaml title="base.compose.yml"
+  ```yaml title="compose.yml"
   p2pwatch:
     environment:
-      PUID: ${PUID:?}
-      PGID: ${PGID:?}
-      AMULE_EC_PASSWORD: ${AMULE_EC_PASSWORD:?}
       AMULE_API_PASSWORD: ${AMULE_API_PASSWORD:?}
       DISCORD_WEBHOOK_ID: ${DISCORD_WEBHOOK_ID:?}     # ← nouvelle ligne par secret ajouté
       DISCORD_WEBHOOK_TOKEN: ${DISCORD_WEBHOOK_TOKEN:?}
   ```
-  Le mapping est **explicite** (et non `env_file: .env`) pour le moindre privilège : le conteneur
-  n'a pas à voir la clé WireGuard ni les autres secrets du déploiement.
+  Le mapping est **explicite** (et non `env_file: .env`) pour le moindre privilège : le crawler n'a
+  à voir ni la clé WireGuard, ni le mot de passe EC, ni les autres secrets du déploiement.
 
 ### Le statut « Low-ID » apparaît dans les logs
 
@@ -116,14 +114,14 @@ accumulé, mais vous redémarrez d'un état connu.
 
 ## Téléchargements
 
-### Un fichier terminé n'apparaît jamais dans `downloads/incoming`
+### Un fichier terminé n'apparaît jamais dans `ed2k/downloads/incoming`
 
 - **Ce qui se passe normalement.** amuled écrit un fichier terminé directement dans son
-  `IncomingDir`, que les piles compose atteignent par l'unique bind mount `./downloads:/downloads`
-  de votre dossier de travail. Le crawler détecte la complétion depuis la liste des fichiers
-  partagés d'amuled (le hash est partagé **et** a quitté la file de téléchargement), passe le
-  téléchargement en `completed` et notifie. Il ne déplace, n'ouvre ni n'inspecte jamais le fichier ;
-  sur `/downloads`, il ne fait jamais qu'un `statvfs`, pour le plancher d'espace libre.
+  `IncomingDir`, que le conteneur `ed2k` atteint par le bind mount `./downloads:/downloads` de son
+  dossier `ed2k/`. Le crawler détecte la complétion depuis la liste des fichiers partagés d'amuled
+  (le hash est partagé **et** a quitté la file de téléchargement), passe le téléchargement en
+  `completed` et notifie. Il ne déplace, n'ouvre ni n'inspecte jamais le fichier : il monte
+  `ed2k/downloads` en lecture seule, et n'y fait qu'un `statvfs`, pour le plancher d'espace libre.
 - **Regardez d'abord l'état que voit le crawler.** Si la webui montre encore le téléchargement en
   `downloading`, c'est qu'il n'est tout simplement pas fini : rien n'est cassé.
 - **Si le crawler dit `completed` mais que le dossier est vide**, amuled a posé le fichier ailleurs.
@@ -131,17 +129,17 @@ accumulé, mais vous redémarrez d'un état connu.
   1. **Une catégorie amuled redirige la destination.** Dans `amule.conf` (ou via l'interface
      d'aMule sur le port 4711), aucune catégorie ne doit porter un `Path=` non vide qui envoie le
      fichier terminé hors d'`IncomingDir`.
-  2. **`IncomingDir` ne pointe pas sur le chemin monté en bind.** Le one-shot de démarrage écrit
-     `IncomingDir=/downloads/incoming` et `TempDir=/downloads/temp` dans `amule.conf`, mais
+  2. **`IncomingDir` ne pointe pas sur le chemin monté en bind.** Le one-shot de démarrage d'`ed2k`
+     écrit `IncomingDir=/downloads/incoming` et `TempDir=/downloads/temp` dans `amule.conf`, mais
      seulement quand ce fichier est absent. Un nœud migré depuis une organisation plus ancienne
      porte son propre `amule.conf`, donc une vieille valeur survit à tous les redémarrages.
      `amule.conf` est un simple fichier de votre dossier de travail, lisez-le depuis l'hôte :
      ```bash
-     grep -E '^(Incoming|Temp)Dir' amule/amule.conf
+     grep -E '^(Incoming|Temp)Dir' ed2k/amule/amule.conf
      ```
      Corrigez les deux lignes, puis redémarrez amuled seul :
      ```bash
-     docker compose exec p2pwatch s6-svc -r /etc/services.d/amuled
+     docker compose exec ed2k s6-svc -r /etc/services.d/amuled
      ```
 - **Gardez amuled dédié au crawler.** Ses fichiers partagés sont lus à chaque cycle de
   téléchargement : ne pointez donc pas cet amuled sur une grande bibliothèque partagée
@@ -169,25 +167,26 @@ accumulé, mais vous redémarrez d'un état connu.
 - **`failed` n'est pas définitif.** amuled reste l'autorité : si le hash réapparaît dans sa file
   sans erreur, le crawler remet le téléchargement en `downloading` ; s'il apparaît dans les fichiers
   partagés, le téléchargement se termine et la notification part. Un fichier qu'amuled signale en
-  erreur reste `failed`, avec la raison `error` sur `/node`. Regardez `downloads/incoming` avant de conclure
-  que le fichier est perdu.
+  erreur reste `failed`, avec la raison `error` sur `/node`. Regardez `ed2k/downloads/incoming`
+  avant de conclure que le fichier est perdu.
 - **Pour en réessayer un à la main**, supprimez sa ligne : `is_downloaded()` ignore l'état, donc une
   ligne `failed` continue de bloquer la remise en file automatique, à dessein. Il n'existe pas de
   contrôle webui pour cela et la console SQL est en lecture seule : c'est donc une écriture manuelle
   sur `local.db`. Remplacez `<hash>` par le hash eD2k de la ligne à supprimer :
 
   ```bash
-  docker compose exec p2pwatch s6-svc -d /etc/services.d/p2pwatch # (1)!
-  docker compose exec --user amule p2pwatch python -c \
+  docker compose stop p2pwatch # (1)!
+  docker compose run --rm p2pwatch python -c \
     "import sqlite3; db = sqlite3.connect('/data/local.db', autocommit=True); \
      db.execute('DELETE FROM downloads WHERE native_id = ?', ('<hash>',))" # (2)!
-  docker compose exec p2pwatch s6-svc -u /etc/services.d/p2pwatch # (3)!
+  docker compose start p2pwatch # (3)!
   ```
 
-  1.  On arrête le crawler **seul** : il est l'écrivain unique de `local.db` par doctrine. amuled
+  1.  On arrête le crawler **seul** : il est l'écrivain unique de `local.db` par doctrine. `ed2k`
       continue de tourner, donc les sessions eD2k et Kad survivent.
-  2.  L'écriture se fait en tant qu'utilisateur `amule` du conteneur, pour que les fichiers WAL
-      créés par SQLite restent la propriété de `PUID:PGID`.
+  2.  Un conteneur jetable de la même image, avec les mêmes montages et sous le même `PUID:PGID`
+      que le crawler : les fichiers WAL créés par SQLite restent donc les vôtres. Il ne publie aucun
+      port et ne démarre rien d'autre.
   3.  Une fois le crawler relancé, le cycle suivant remet le fichier en file depuis la décision du
       catalogue, à condition qu'il corresponde toujours à une cible qui n'est pas `complete`.
 - **Pour abandonner un téléchargement**, l'annuler dans l'interface d'aMule ne suffit pas : amuled
@@ -199,8 +198,8 @@ accumulé, mais vous redémarrez d'un état connu.
 - **Si rien du tout ne se télécharge**, vérifiez le plancher disque avant de soupçonner le TTL. Une
   ligne de journal `candidate file=... → skip_disk_cap (skipped/deferred)` signifie que l'espace
   libre, moins ce qu'amuled doit encore récupérer, passerait sous `download.min_free_bytes`. Un
-  `output directory unmeasurable` signifie au contraire que le montage `./downloads:/downloads`
-  manque dans votre fichier compose.
+  `output directory unmeasurable` signifie au contraire que le montage
+  `./ed2k/downloads:/downloads:ro` manque au service `p2pwatch` de `compose.yml`.
 
 ---
 
@@ -213,63 +212,83 @@ accumulé, mais vous redémarrez d'un état connu.
 
 ### Le port-sync reste inopérant (toujours Low-ID alors qu'il est activé)
 
-Plusieurs causes, à vérifier dans cet ordre :
+Le port-sync tourne dans le conteneur `ed2k` et écrit chacune de ses actions et chacun de ses
+échecs dans `docker compose logs ed2k`. Plusieurs causes, à vérifier dans cet ordre :
 
-- **Pile directe au lieu de la pile VPN.** Le port-sync n'a de sens que sous
-  `gluetun.compose.yml` : il lit le port forwardé sur le serveur de contrôle de gluetun, à
-  `http://localhost:8000`, adresse qui n'existe que parce que le conteneur partage le réseau de
-  gluetun. Sous la pile directe, `port_sync.enabled: true` ne peut rien joindre.
-- **Fournisseur sans port forwarding.** Le High-ID exige un provider à port forwarding
-  (Proton/PIA/PrivateVPN/PerfectPrivacy) et `VPN_PORT_FORWARDING: "on"`.
-- **Le redémarrage d'amuled est refusé.** Le port-sync applique le nouveau port en redémarrant le
-  processus amuled (`s6-svc -r /etc/services.d/amuled`), ce qui suppose que le crawler ait pu poser
-  la permission de groupe sur la FIFO de contrôle d'amuled au démarrage. Si cette étape a échoué,
-  le journal du conteneur porte, dès le démarrage, la ligne :
+- **Il n'est pas démarré.** Il ne tourne que sous la variante VPN (`ed2k/vpn.compose.yml`), et
+  seulement quand `VPN_PORT_FORWARDING` l'allume : c'est son unique interrupteur, `crawler.yml`
+  n'y joue aucun rôle. Vérifiez-le :
+  ```bash
+  docker compose exec ed2k s6-svstat -o up,normallyup /etc/services.d/port-sync
   ```
-  p2pwatch: /etc/services.d/amuled/supervise/control never appeared; amuled restarts will be refused
+  `true true` : il tourne. `false false` : il est arrêté à dessein, soit parce que la ligne
+  `include:` désigne encore `ed2k/direct.compose.yml`, soit parce que `VPN_PORT_FORWARDING` vaut
+  `off` ou manque dans `.env`. Corrigez, puis `docker compose up -d`.
+- **Fournisseur sans port forwarding.** Le High-ID exige un fournisseur à port forwarding
+  (Proton/PIA/PrivateVPN/PerfectPrivacy). Le journal le montre à chaque tour :
   ```
-  et, à chaque tentative de port-sync, une erreur `s6-svc exited ...`. Le crawl, lui, continue
-  normalement. Remède : redémarrer le conteneur (`docker compose restart p2pwatch`) pour rejouer
-  la séquence de démarrage.
+  gluetun reports no forwarded port (...)
+  ```
+  Une ligne `gluetun's control server is unavailable (...)` signifie au contraire que le port-sync
+  ne joint pas gluetun du tout : `GLUETUN_CONTROL_URL` est faux, ou `ed2k-gluetun` n'est pas monté.
+- **`ed2k` redémarre en boucle.** Une valeur que le port-sync ne comprend pas fait sortir le
+  conteneur dès son démarrage, avant amuled, sur une seule ligne qui nomme la variable, par exemple
+  `PORT_SYNC must be one of enabled, yes, on, true, disabled, no, off, false, got 'maybe'`. Ici
+  `PORT_SYNC` reçoit `VPN_PORT_FORWARDING` tel quel : corrigez cette dernière dans `.env`.
+- **Le redémarrage d'amuled échoue.** Pour appliquer un nouveau port, le port-sync arrête amuled,
+  écrit le port dans `amule.conf`, puis le relance toujours. Une ligne
+  `s6-svc -wD -T 60000 -d exited ...` dit que l'arrêt n'a pas abouti : amuled a mis plus de
+  60 secondes à s'arrêter, ou le port-sync n'a pas reçu le droit de le piloter. Rien n'a été écrit,
+  amuled est relancé, et le port-sync réessaie après 5 minutes. Si la ligne revient à chaque
+  tentative, redémarrez le conteneur (`docker compose restart ed2k`) : le script de démarrage du
+  port-sync lui redonne ses droits sur amuled.
+- **`amule.conf` illisible.** `amule.conf's port is unreadable, amuled left as is (...)` : la ligne
+  `Port=` de la section `[eMule]` de `ed2k/amule/amule.conf` n'est pas un nombre, ou le fichier est
+  abîmé. Le port-sync ne touche à rien tant que vous ne l'avez pas corrigé.
 
+Un changement réussi s'annonce par `gluetun forwards <N>, amuled listens on <M>: restarting
+amuled`. Si la ligne revient toutes les minutes avec un port différent, voyez
+[« Le port forwardé change toutes les minutes »](high-id.md#le-port-forwardé-change-toutes-les-minutes-protonvpn-et-wireguard).
 
 ## Stockage & droits
 
 > ⚠️ **Prérequis pour cette section** : Linux + notions d'UID/GID et de droits de fichiers. Si vous
 > bloquez sur un de ces diagnostics et n'êtes pas à l'aise, l'option de repli sûre est de repartir
-> d'un `data/` vide, au prix du catalogue accumulé : `docker compose down`, puis supprimez le
-> dossier `data/` et relancez `docker compose up -d`. Lourd mais simple.
+> d'un `data/` vide, au prix du catalogue accumulé : voir
+> [« Je veux repartir de zéro »](#je-veux-repartir-de-zéro-catalogue-effacé).
 
-### amuled ne peut pas écrire dans les bind mounts (PUID / PGID)
+### Un conteneur ne peut pas écrire dans ses dossiers (PUID / PGID)
 
-- **Ce que fait l'image.** Il n'y a **plus aucun volume nommé** : tout est un bind mount relatif
-  dans votre dossier de travail (`data/`, `amule/`, `downloads/`, plus les trois `.yml` montés en
-  lecture seule). Au démarrage, le one-shot `p2pwatch_amule.config` tourne en root, crée
-  l'utilisateur `amule` avec `PUID:PGID`, puis donne les points de montage (`/home/amule/.aMule`,
-  `/downloads/incoming`, `/downloads/temp`) à cet utilisateur. Le crawler fait de même sur `/data`.
-- **Ce qu'il ne fait pas : ce `chown` n'est PAS récursif** sur `downloads/` ni sur `amule/`, et
-  c'est délibéré. Ces dossiers peuvent contenir des centaines de gigaoctets de part files, et leur
-  contenu appartient à l'opérateur.
-- **Symptôme.** Après un changement de `PUID`/`PGID`, ou après avoir migré un nœud depuis un ancien
-  déploiement, amuled journalise une erreur d'écriture ou de permission sur son dossier temp ou
-  incoming, ou ne reprend pas ses téléchargements en cours ; ou bien amuled ne relit pas son
-  `amule.conf`. Côté hôte, symptôme jumeau : `sqlite3 data/catalog.db` ou un simple `ls downloads/`
-  demande `sudo`.
-- **Cause.** Les contenus existants appartiennent encore à l'ancien uid/gid.
+- **Ce que font les deux images.** Il n'y a **aucun volume nommé** : tout est un bind mount relatif
+  dans votre dossier de travail (`data/`, `ed2k/amule/`, `ed2k/downloads/`, plus les trois `.yml`
+  montés en lecture seule). Le crawler tourne directement sous votre `PUID:PGID` (`user:` dans
+  `compose.yml`) et ne change la propriété de rien : `data/` doit déjà vous appartenir. Au démarrage
+  d'`ed2k`, le one-shot `p2pwatch_amule.config` tourne en root, crée l'utilisateur `amule` avec
+  `PUID:PGID`, puis lui donne les points de montage (`/home/amule/.aMule`, `/downloads/incoming`,
+  `/downloads/temp`).
+- **Ce qu'il ne fait pas : ce `chown` n'est PAS récursif** sur `ed2k/downloads/` ni sur
+  `ed2k/amule/`, et c'est délibéré. Ces dossiers peuvent contenir des centaines de gigaoctets de
+  part files, et leur contenu appartient à l'opérateur.
+- **Symptôme.** Le crawler redémarre en boucle sur `unable to open database file` : `data/`
+  manquait au premier `docker compose up`, et Docker l'a créé au nom de root. Ou bien, après un
+  changement de `PUID`/`PGID` ou la migration d'un ancien nœud, amuled journalise une erreur
+  d'écriture ou de permission sur son dossier temp ou incoming, ne reprend pas ses téléchargements
+  en cours, ou ne relit pas son `amule.conf`. Côté hôte, symptôme jumeau :
+  `sqlite3 data/catalog.db` ou un simple `ls ed2k/downloads/` demande `sudo`.
+- **Cause.** Les contenus existants appartiennent encore à un autre uid/gid, ou à root.
 - **Solution.** Alignez `PUID`/`PGID` sur VOTRE utilisateur (c'est leur raison d'être : garder ces
   dossiers lisibles sans `sudo`), puis reprenez la propriété des contenus, une seule fois :
   ```bash
   id -u ; id -g                        # les valeurs à mettre dans PUID / PGID
-  sudo chown -R "$(id -u):$(id -g)" data amule downloads
+  sudo chown -R "$(id -u):$(id -g)" data ed2k/amule ed2k/downloads
   docker compose up -d
   ```
-- **Posture de confinement, pour mémoire.** PID 1 tourne en **root** : il crée l'utilisateur et
-  prend possession des points de montage. Ce service ne porte donc ni `user:`, ni `read_only:`, ni
-  `cap_drop: ALL`, qui ne peuvent pas survivre à ce besoin. Décision documentée et signée
-  (spec 2026-09-16 §9), qui inverse la moitié « crawler » de la décision du 2026-06-17. Ce qui reste
-  est conservé et relevé pour trois processus : `no-new-privileges:true`, `pids_limit: 512`,
-  `mem_limit: 2g`. Risque résiduel accepté : un amuled compromis atteint les bind mounts de sortie.
-  Voir [Limites connues](limits.md).
+- **Posture de confinement, pour mémoire.** Le PID 1 d'`ed2k` tourne en **root** : il crée
+  l'utilisateur et prend possession des points de montage, ce qui exclut `user:`, `read_only:` et
+  `cap_drop: ALL` sur ce service. Le crawler tourne sous votre identifiant, sans `read_only:` ni
+  `cap_drop: ALL` non plus, par choix. Les deux gardent `no-new-privileges:true`,
+  `pids_limit: 512` et `mem_limit: 2g`. Le détail et le risque accepté sont dans
+  [Limites connues](limits.md#le-durcissement-des-conteneurs-sarrête-assez-bas).
 
 ---
 
@@ -281,21 +300,23 @@ Quelques scénarios « j'ai cassé quelque chose, comment je remonte ? » :
 
 - **Symptôme.** amuleapi n'arrive plus à joindre amuled : la page du port 4711 se charge mais ne
   montre aucun transfert, et le crawler journalise des `503 ec_unavailable`.
-- **Le piège.** Ce mot de passe ne sert plus qu'au lien interne entre amuleapi et amuled. Le
-  one-shot de démarrage l'aligne dans `amule/amule.conf` à chaque boot, donc le changer dans `.env`
-  suffit désormais : un redémarrage du nœud propage la nouvelle valeur des deux côtés.
+- **Le piège.** Ce mot de passe ne sert qu'au lien interne entre amuleapi et amuled, dans le
+  conteneur `ed2k`. Le one-shot de démarrage l'aligne dans `ed2k/amule/amule.conf` à chaque boot,
+  donc le changer dans `.env` suffit : un redémarrage du nœud propage la nouvelle valeur des deux
+  côtés.
 - **Solution.** Choisissez un nouveau mot de passe, mettez-le dans `.env`, puis :
   ```bash
   docker compose up -d --force-recreate
   ```
   Pas de perte de catalogue : le mot de passe ne protège que le canal interne, pas les données. Si
   vous avez oublié `AMULE_API_PASSWORD` à la place, la marche à suivre est la même : le one-shot le
-  réécrit dans `amule/amuleapi-passwords` à chaque boot. Pensez seulement à reporter la nouvelle
-  valeur partout où vous vous connectiez avec l'ancienne.
-- **Variante brutale.** Supprimer `amule/amule.conf` le fait régénérer au prochain démarrage, avec
-  le mot de passe de `.env`. Vous perdez en revanche tous les autres réglages aMule accumulés dans
-  ce fichier ; les serveurs eD2k et les nœuds Kad, eux, vivent dans `server.met` / `nodes.dat` et
-  survivent.
+  réécrit dans `ed2k/amule/amuleapi-passwords` à chaque boot, et la recréation le donne aussi au
+  crawler. Pensez seulement à reporter la nouvelle valeur partout où vous vous connectiez avec
+  l'ancienne.
+- **Variante brutale.** Supprimer `ed2k/amule/amule.conf` le fait régénérer au prochain démarrage,
+  avec le mot de passe de `.env`. Vous perdez en revanche tous les autres réglages aMule accumulés
+  dans ce fichier ; les serveurs eD2k et les nœuds Kad, eux, vivent dans `server.met` / `nodes.dat`
+  et survivent.
 
 ### J'ai mal édité `.env` et le compose refuse de démarrer
 
@@ -309,57 +330,57 @@ Quelques scénarios « j'ai cassé quelque chose, comment je remonte ? » :
 
 ### Où trouver un fichier téléchargé ?
 
-- **Réponse.** Dans `downloads/incoming`, à l'intérieur de votre dossier de travail. C'est un simple
-  dossier de votre disque, donc arrêter ou supprimer le conteneur n'y touche pas. Les fichiers
-  encore en cours de téléchargement sont dans `downloads/temp`.
+- **Réponse.** Dans `ed2k/downloads/incoming`, à l'intérieur de votre dossier de travail. C'est un
+  simple dossier de votre disque, donc arrêter ou supprimer les conteneurs n'y touche pas. Les
+  fichiers encore en cours de téléchargement sont dans `ed2k/downloads/temp`.
 - **Rien n'a inspecté ce fichier.** p2pwatch n'ouvre jamais un fichier téléchargé : pas de contrôle
   de type, pas de sonde média, pas d'analyse antivirus. Vérifiez-le vous-même avant de l'ouvrir.
 
 ### Je veux repartir de zéro (catalogue effacé)
 
-- **Solution destructive (irréversible).** Il n'y a plus de volume Docker à supprimer : les données
-  sont des dossiers de votre dossier de travail. Arrêtez la pile, puis effacez ce que vous voulez
-  perdre.
+- **Solution destructive (irréversible).** Il n'y a pas de volume Docker à supprimer : les données
+  sont des dossiers de votre dossier de travail. Arrêtez la pile, effacez ce que vous voulez perdre,
+  puis recréez `data/` vous-même : laissé à Docker, il serait créé au nom de root, et le crawler ne
+  pourrait pas y écrire.
   ```bash
   docker compose down
-  rm -rf data          # le catalogue + l'état local du nœud
+  rm -rf data && mkdir data   # le catalogue + l'état local du nœud
   ```
-  Ajoutez `amule/` pour repartir d'un aMule vierge (mot de passe, serveurs, nœuds Kad), et
-  `downloads/` pour jeter aussi les fichiers téléchargés ; ces deux-là sont indépendants du
-  catalogue. `docker compose down -v` n'efface **plus rien** de tout cela. Sauvegardez d'abord ce
-  que vous tenez à garder.
+  Videz aussi `ed2k/amule/` pour repartir d'un aMule vierge (mot de passe, serveurs, nœuds Kad), et
+  `ed2k/downloads/` pour jeter les fichiers téléchargés ; ces deux-là sont indépendants du
+  catalogue. `docker compose down -v` n'efface **rien** de tout cela. Sauvegardez d'abord ce que
+  vous tenez à garder.
 
 ---
 
 ## Outils de diagnostic
 
-### Piloter un processus dans le conteneur
+### Piloter un service du conteneur `ed2k`
 
-Deux services sont supervisés par s6 dans l'unique conteneur `p2pwatch` : ils se pilotent donc par
-service, et non par service compose. Depuis votre dossier de travail (`<svc>` vaut `amuled` ou
-`p2pwatch` ; amuleapi suit `amuled`, qui le démarre) :
+Dans `ed2k`, s6 supervise deux services, `amuled` et `port-sync` : ils se pilotent par service s6,
+et non par service compose. Depuis votre dossier de travail (`<svc>` vaut `amuled` ou `port-sync` ;
+amuleapi suit `amuled`, qui le démarre) :
 
 ```bash
-docker compose exec p2pwatch s6-svstat /etc/services.d/<svc>   # actif/arrêté + durée en secondes
-docker compose exec p2pwatch s6-svc -r /etc/services.d/<svc>   # le redémarrer
-docker compose exec p2pwatch s6-svc -d /etc/services.d/<svc>   # l'arrêter
-docker compose exec p2pwatch s6-svc -u /etc/services.d/<svc>   # le relancer
+docker compose exec ed2k s6-svstat /etc/services.d/<svc>   # actif/arrêté + durée en secondes
+docker compose exec ed2k s6-svc -r /etc/services.d/<svc>   # le redémarrer
+docker compose exec ed2k s6-svc -d /etc/services.d/<svc>   # l'arrêter
+docker compose exec ed2k s6-svc -u /etc/services.d/<svc>   # le relancer
 ```
 
-Deux choses à savoir avant de les utiliser :
-
-- Arrêter `p2pwatch` (le crawler) laisse amuled en marche, ce qui est bien ce que vous voulez pour
-  une écriture de maintenance sur les bases. Arrêter `amuled` rend le crawler aveugle, et emporte
-  amuleapi avec lui : il journalisera des échecs et fera du backoff jusqu'au retour d'amuled.
-- Une sortie **non nulle** du crawler couche tout le conteneur, à dessein. `s6-svc -d` est un arrêt
-  propre, donc il ne le fait pas.
+Le crawler, lui, se pilote en conteneur (`docker compose stop|start|restart p2pwatch`), sans toucher
+amuled. Arrêter `amuled` rend au contraire le crawler aveugle, et emporte amuleapi : il notifie
+au-delà de 2 minutes. Voir [Faire tourner un nœud](operate.md#redémarrer-une-pièce-plutôt-que-tout-le-nœud).
 
 ### Valider la configuration sans rien démarrer
 
 ```bash
-docker compose exec p2pwatch python -m p2pwatch validate-config
+docker compose run --rm p2pwatch python -m p2pwatch validate-config \
+  --config /app/config/crawler.yml --targets /app/config/targets.yml \
+  --matcher /app/config/matcher.yml
 ```
 
 Charge + valide les 3 configs et sort en erreur (code ≠ 0) si l'une est invalide, **sans rien
-démarrer**. À lancer **avant** un déploiement (entre les étapes 3 et 4 d'[Installer un nœud](install.md))
-ou après une modification de config.
+démarrer** : un conteneur jetable lit les fichiers montés, puis disparaît. Il marche aussi quand le
+crawler redémarre en boucle. À lancer **avant** un déploiement (entre les étapes 3 et 4
+d'[Installer un nœud](install.md)) ou après une modification de config.

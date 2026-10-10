@@ -34,11 +34,11 @@ Le projet a **deux niveaux** :
 
    ```bash
    uv run poe check     # le gate complet : lint-all + test (ce que lancent pre-push et la CI)
-   uv run poe test      # les 3 suites unitaires seules, chacune dans son processus
+   uv run poe test      # les 5 suites unitaires seules, chacune dans son processus
    ```
 
    > La tâche `test` reste **par paquet** : elle lance `pytest` avec `cwd = packages/<pkg>` pour
-   > chacun des 3 paquets, dans des processus séparés, afin de garder la coverage isolée. Un simple
+   > chacun des 5 paquets, dans des processus séparés, afin de garder la coverage isolée. Un simple
    > `uv run pytest` depuis la racine du dépôt n'est **pas** le gate (la racine n'a pas de config
    > pytest, et un `conftest.py` racine neutralise la collecte, donnant `exit 5`).
 
@@ -67,10 +67,10 @@ Le projet a **deux niveaux** :
 
 | Marker | Paquet | Ce qu'il valide | Docker ? | Autres prérequis | Commande |
 |---|---|---|---|---|---|
-| `api_integration` | crawler | L'adapter amuleapi (login, statut réseau, une recherche, get/set du port) face à un vrai démon | **Oui** (à lancer soi-même) | Un démon que vous fournissez, désigné par `P2PWATCH_TEST_API_HOST` (§3.0) | `( cd packages/crawler && uv run pytest -m api_integration --no-cov )` |
+| `api_integration` | crawler | L'adapter amuleapi (login, statut réseau, une recherche) face à un vrai démon | **Oui** (à lancer soi-même) | Un démon que vous fournissez, désigné par `P2PWATCH_TEST_API_HOST` (§3.0) | `( cd packages/crawler && uv run pytest -m api_integration --no-cov )` |
 | `download_integration` | crawler | La mécanique du téléchargement (`start`, puis le fichier listé par `downloads`) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m download_integration --no-cov )` |
 | `orchestration_integration` | crawler | Une boucle de crawl complète (une recherche menée par les tâches, puis un arrêt borné) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m orchestration_integration --no-cov )` |
-| `compose_integration` | crawler | Smoke e2e de la pile docker compose assemblée (sans VPN) : câblage uniquement | **Oui** (compose v2) | docker compose v2 ; un build d'image | `( cd packages/crawler && uv run pytest -m compose_integration --no-cov )` |
+| `compose_integration` | crawler | Smoke e2e des deux conteneurs assemblés (sans VPN), le port-sync, et le rendu des deux variantes de `deploy/` | **Oui** (compose v2) | docker compose v2 ; le build des deux images ; un utilisateur non root | `( cd packages/crawler && uv run pytest -m compose_integration --no-cov )` |
 
 ---
 
@@ -86,10 +86,11 @@ ce qui est inutilisable sur les hôtes où Docker ne peut pas créer de paire ve
 (veth...) <=> sandbox (veth...) pair interfaces: operation not supported`). Un simple `docker run`
 avec un port publié fonctionne partout.
 
-Depuis le passage à amuleapi, le démon à lancer est **notre propre image** : amuleapi n'existe que
+Le démon à lancer est **notre propre image d'aMule**, `p2pwatch-amule` : amuleapi n'existe que
 dans les versions récentes d'aMule, qu'aucune image tierce ne porte (la nôtre compile celle
-qu'épingle `ARG AMULE_VERSION` dans `packages/crawler/Dockerfile`). Elle démarre ses trois
-processus, donc les fichiers de config du smoke sont montés pour que le crawler reste debout.
+qu'épingle `ARG AMULE_VERSION` dans `packages/amule/Dockerfile`). Elle ne contient pas de crawler :
+elle démarre amuled, qui démarre amuleapi, et laisse le port-sync arrêté. Aucun fichier de config
+n'est à monter.
 
 | Variable | Requise | Défaut | Signification |
 |---|---|---|---|
@@ -97,16 +98,15 @@ processus, donc les fichiers de config du smoke sont montés pour que le crawler
 | `P2PWATCH_TEST_API_PORT` | Non | `4711` | Port HTTP d'amuleapi. |
 | `P2PWATCH_TEST_API_PASSWORD` | Non | `indexer-api-test` | Mot de passe admin d'amuleapi (`AMULE_API_PASSWORD` du démon). |
 
-Lancez un démon jetable, attendez qu'il réponde, lancez les suites, jetez-le :
+Construisez l'image depuis l'arbre, lancez un démon jetable, attendez qu'il réponde, lancez les
+suites, jetez-le :
 
 ```bash
+docker build -f packages/amule/Dockerfile -t p2pwatch-amule:dev .
 docker run -d --rm --name p2pwatch-test-amuled -p 4711:4711 \
     -e PUID="$(id -u)" -e PGID="$(id -g)" \
     -e AMULE_EC_PASSWORD=indexer-ec-test -e AMULE_API_PASSWORD=indexer-api-test \
-    -v "$PWD/tests/smoke/crawler.yml:/app/config/crawler.yml:ro" \
-    -v "$PWD/tests/smoke/targets.yml:/app/config/targets.yml:ro" \
-    -v "$PWD/deploy/matcher.yml:/app/config/matcher.yml:ro" \
-    ghcr.io/mission-titar/p2pwatch:latest
+    p2pwatch-amule:dev
 until curl -fsS http://127.0.0.1:4711/api/v1/health >/dev/null; do sleep 2; done
 
 export P2PWATCH_TEST_API_HOST=127.0.0.1
@@ -123,7 +123,7 @@ réutiliser un conteneur de longue durée.
 
 Ces trois suites n'ont **aucune exigence particulière sur le moteur Docker** : elles parlent à un
 démon par un port publié, rien de plus. Elles ont été lancées avec succès sur la machine de
-développement, sous Docker Desktop, le 2026-09-22 (9 tests). Toute note plus ancienne les déclarant
+développement, sous Docker Desktop, contre l'image `p2pwatch-amule`, le 2026-10-11 (6 tests). Toute note plus ancienne les déclarant
 impossibles à lancer localement décrivait l'ancien montage `testcontainers`, qui démarrait son propre
 conteneur et son propre Ryuk ; ce montage n'existe plus.
 
@@ -133,10 +133,7 @@ conteneur et son propre Ryuk ; ce montage n'existe plus.
 
 **Ce que ça prouve.** L'adapter parle à un **vrai démon** : le mot de passe admin écrit par
 `amuleapi --set-admin-pass` ouvre bien une session, un mauvais mot de passe est refusé, le statut
-réseau se décode, et une recherche ed2k (`search()`) va à son terme et rend ses résultats. Le
-second fichier (`test_amuled_preferences.py`) valide le **get/set du port d'écoute** (port-sync
-High-ID) : `get_listen_port()` lit un port plausible, et l'aller-retour `set -> get` renvoie la
-valeur qui a été posée.
+réseau se décode, et une recherche ed2k (`search()`) va à son terme et rend ses résultats.
 
 **Prérequis exacts.** Un démon lancé selon le **§3.0** et `P2PWATCH_TEST_API_HOST` exportée. Sans
 elle, la suite est ignorée (elle n'échoue jamais sur une absence, et ne passe jamais silencieusement).
@@ -150,8 +147,7 @@ elle, la suite est ignorée (elle n'échoue jamais sur une absence, et ne passe 
 ( cd packages/crawler && uv run pytest -m api_integration --no-cov )
 ```
 
-**Attendu.** 6 tests passés (4 dans `test_amuled_api.py` + 2 dans `test_amuled_preferences.py`),
-aucun skip. Une recherche refusée est tolérée en interne (le test passe quand même).
+**Attendu.** 4 tests passés (`test_amuled_api.py`), aucun skip. Une recherche refusée est tolérée en interne (le test passe quand même).
 
 ---
 
@@ -201,39 +197,43 @@ au catalogue, arrêt borné).
 
 ### 3.4 `compose_integration` : la pile smoke (crawler, **Docker + compose v2 requis**)
 
-**Ce que ça prouve.** La pile `docker compose` **assemblée** (**un seul** service depuis le
-2026-09-16, portant le crawler et amuled sous s6, amuled démarrant amuleapi) démarre et se câble
-correctement. **Aucun octet de contenu n'est jamais téléchargé** (amuled n'a ni serveur eD2k ni
-VPN ; seule son API est sollicitée). Quatre choses :
-1. `docker compose build` réussit (l'image se construit) ;
-2. le conteneur reste `Up`, devient **`healthy`**, `s6-svstat` signale les deux services up, la
-   webui in-process répond à `/health` et amuleapi répond à `/api/v1/health` (interrogées via
-   `docker compose exec`, donc aucun port hôte n'est nécessaire) ;
-3. un fichier qu'amuled partage et qui a quitté sa file est enregistré `completed` par le crawler :
-   le vrai chemin HTTP par loopback, face au vrai amuled de l'image livrée ;
-4. les deux points d'entrée de déploiement se rendent avec `docker compose config`, et la topologie
-   rendue est vérifiée : un service `p2pwatch`, la pile VPN n'ajoutant que `gluetun`, **rien** qui
-   subsiste de `crawler` / `amuled` / `docker-proxy`, et **aucun volume nommé** nulle part.
+**Ce que ça prouve.** Les **deux conteneurs** du nœud, construits depuis l'arbre et assemblés par
+`tests/smoke/compose.yaml` : `ed2k` (l'image `p2pwatch-amule`, amuled et le port-sync sous s6) et
+`p2pwatch` (le cœur, sous `user: PUID:PGID`, `/downloads` en lecture seule). **Aucun octet de
+contenu n'est jamais téléchargé** (amuled n'a ni serveur eD2k ni VPN ; seule son API est
+sollicitée). Cinq choses :
+
+1. `docker compose build` réussit (les deux images se construisent) ;
+2. les deux conteneurs tournent, `ed2k` devient **`healthy`**, le cœur joint amuleapi à
+   `ed2k:4711`, sa webui répond à `/health` et son tableau de bord montre une lecture d'`amuled`
+   (interrogés via `docker compose exec`, donc aucun port hôte n'est nécessaire), et
+   `data/catalog.db` appartient à `PUID`, lu dans le conteneur ;
+3. le port-sync reste arrêté sans `PORT_SYNC` (`false false false` pour `up`, `wantedup` et
+   `normallyup`, depuis 25 s au moins), puis, une fois lancé, ses droits laissent l'utilisateur
+   `amule` arrêter et relancer amuled par `s6-svc -wD -d` et `-wu -u`, avec un nouveau pid ;
+4. un fichier qu'amuled partage et qui a quitté sa file est enregistré `completed` par le cœur,
+   par le vrai chemin HTTP vers `ed2k:4711` ;
+5. `deploy/` se rend avec `docker compose config` dans ses deux variantes : services, alias,
+   `network_mode`, `PORT_SYNC`, montages d'`ed2k` sous `ed2k/`, **aucun volume nommé**.
 
 Le smoke sollicite **délibérément** le vrai chemin de propriété : l'état vit dans des **bind mounts**
 sous un répertoire jetable `SMOKE_STATE` créé sous l'utilisateur appelant, dont les uid/gid propres
-sont passés en `PUID`/`PGID`. Le PID 1 root du conteneur chowne ces points de montage et chaque
-service redescend ensuite vers l'utilisateur `amule`. Une régression là-dessus se manifeste par
-`unable to open database file`.
+sont passés en `PUID`/`PGID`. Le PID 1 root d'`ed2k` chowne ses points de montage et chaque service
+redescend ensuite vers l'utilisateur `amule` ; le cœur tourne sous `PUID:PGID` dès le départ. Une
+régression là-dessus se manifeste par `unable to open database file`. La suite **refuse de tourner
+en root** : un `PUID` à 0 ferait passer la vérification de propriété sur un fichier de root.
 
 **Prérequis exacts.**
 - **Docker** + **docker compose v2** (le test pilote `docker compose …` via `subprocess`).
+- Un utilisateur **non root**.
 - Les builds tournent **depuis la racine du dépôt** (le test fixe `cwd = racine du dépôt` et
   `--project-directory`).
-- Chaque variable interpolée est **bouchonnée par le test lui-même** : les quatre que l'image exige
-  absolument (`PUID`, `PGID`, `AMULE_EC_PASSWORD`, `AMULE_API_PASSWORD`, sans lesquelles le one-shot de
-  démarrage sort en 1 et le conteneur meurt), plus celles de gluetun (`WIREGUARD_PRIVATE_KEY`,
-  `SERVER_COUNTRIES`), que compose interpole au parse même quand gluetun ne fait pas partie de la
-  pile. Les ports et le tag d'image sont écrits en dur dans les fichiers compose de `deploy/`, ils
-  n'interpolent donc rien. **Rien à régler pour l'opérateur.**
-- Fichiers compose utilisés : `tests/smoke/compose.yaml` (autonome) plus `deploy/compose.yml` et
-  `deploy/gluetun.compose.yml` pour `test_entrypoint_config_renders` ; les configs du smoke vivent
-  sous `tests/smoke/`.
+- Chaque variable interpolée est **bouchonnée par le test lui-même** : `PUID`, `PGID`,
+  `AMULE_EC_PASSWORD`, `AMULE_API_PASSWORD` et `SMOKE_STATE` pour la pile smoke. Le test de rendu
+  copie les fichiers compose de `deploy/` dans un répertoire temporaire et y écrit son propre
+  `.env`, aux valeurs qu'aucun défaut ne produit (`PUID=4242`) : sans `PUID` dans l'environnement
+  du processus, `ed2k` ne peut le tenir que du `.env` du projet parent. Il n'écrit jamais
+  `deploy/.env`, qui porte les secrets d'un développeur. **Rien à régler pour l'opérateur.**
 - Le test n'importe **aucun** module `p2pwatch` (cela préserve les 100 % de couverture de branches
   du paquet).
 - **Un moteur dont les montages liés sont de vrais montages du noyau.** C'est la seule exigence qui
@@ -254,7 +254,8 @@ service redescend ensuite vers l'utilisateur `amule`. Une régression là-dessus
     processus, voit une ligne restée `downloading`. Mesuré le 2026-09-22 : la même scène passe dès
     que `/data` n'est plus un montage lié, et elle passe aussi sur le moteur Docker natif avec un
     vrai montage lié du noyau. Le même test échouait déjà avant la migration vers amuleapi
-    (vérifié en reconstruisant le commit précédent), donc ne le rediagnostiquez pas en bug de code.
+    (vérifié en reconstruisant le commit précédent), et de nouveau le 2026-10-11 sur les deux
+    conteneurs, tous les autres passant : ne le rediagnostiquez pas en bug de code. La CI fait foi.
 
     **L'échappatoire**, si votre machine fait tourner les deux : `DOCKER_CONTEXT` et `DOCKER_HOST`
     sont transmis à la CLI par le harnais (les deux seules variables de votre environnement qui le
@@ -269,22 +270,17 @@ service redescend ensuite vers l'utilisateur `amule`. Une régression là-dessus
     créer de réseau et `docker run` échoue sur
     `failed to add the host (veth…) <=> sandbox (veth…) pair interfaces: operation not supported`.
 
-**Attendu.** **7 tests passés** en local : les deux tests du harnais
-(`test_the_harness_hides_everything_but_the_daemon_selectors`,
+**Attendu.** **8 tests passés** sur un moteur aux vrais montages du noyau : les deux tests du
+harnais (`test_the_harness_hides_everything_but_the_daemon_selectors`,
 `test_a_chosen_daemon_that_answers_nothing_fails_the_call`), `test_build_succeeds`,
-`test_one_container_supervises_the_two_services`,
+`test_the_two_containers_work_together`,
+`test_port_sync_stays_down_then_its_rights_let_amule_restart_amuled`,
 `test_a_file_amuled_shares_is_recorded_completed`, et les 2 cas paramétrés de
-`test_entrypoint_config_renders` (`compose` et `gluetun`). En CI l'image est préconstruite et
-`IMAGE_TAG` est posée, si bien que `test_build_succeeds` est **ignoré** (6 passés, 1 skip) et que le
-`up` réutilise l'image préconstruite. Le teardown est un `docker compose down -v` plus le répertoire
-d'état jetable, dans un `finally`. Prévoyez plusieurs minutes (le build et le up tiennent sous des
-timeouts de 900 s).
-
-> **Jamais exécutée.** Au 2026-09-16 il n'y a aucun runtime de conteneurs sur la machine de
-> développement : cette suite (et l'image qu'elle construit) n'a donc pas été lancée une seule fois.
-> Voir le
-> [handoff mono-conteneur](https://github.com/mission-titar/p2pwatch/blob/main/agents/handoffs/2026-09-16%20-%20handoff%20-%20single%20container%20with%20embedded%20aMule.md),
-> section 5.
+`test_the_deploy_layout_renders` (`direct` et `vpn`). Sous Docker Desktop : 7 passés, 1 échec
+(l'encadré ci-dessus). En CI les images sont préconstruites et `IMAGE_TAG` est posée, si bien que
+`test_build_succeeds` est **ignoré** (7 passés, 1 skip) et que le `up` réutilise les images
+préconstruites. Le teardown est un `docker compose down -v` plus le répertoire d'état jetable, dans
+un `finally`. Prévoyez plusieurs minutes (le build et le up tiennent sous des timeouts de 1 800 s).
 
 ---
 
@@ -293,10 +289,12 @@ timeouts de 900 s).
 Pour pouvoir lancer **toutes** les suites :
 
 - **Docker** + **docker compose v2**. Les trois suites qui parlent au démon en veulent un que
-  **vous** lancez (§3.0, notre propre image) ; la suite compose pilote `docker compose` directement.
+  **vous** lancez (§3.0, notre image d'aMule) ; la suite compose pilote `docker compose`
+  directement.
 - Un **`.env`** (copié depuis `deploy/.env.example`) pour les commandes compose **manuelles** :
-  `WIREGUARD_PRIVATE_KEY`, `SERVER_COUNTRIES`, `AMULE_EC_PASSWORD`. À noter que le test
-  `compose_integration` **les bouchonne lui-même**, donc le `.env` n'est pas requis pour le lancer.
+  `PUID`, `PGID`, `AMULE_EC_PASSWORD`, `AMULE_API_PASSWORD`, plus `WIREGUARD_PRIVATE_KEY` pour la
+  variante VPN. Le test `compose_integration` **les bouchonne lui-même**, donc le `.env` n'est pas
+  requis pour le lancer.
 
 ---
 
@@ -307,26 +305,30 @@ Déjà en CI :
 - `.github/workflows/validate.yml` est le **gate** réutilisable, appelé par `pr.yml` (sur les pull
   requests) et par `release.yml` (sur un push de tag). Ses jobs :
   - `lint` : `uv run poe lint-all` (ruff, format, mypy, sqlfluff, vérification des templates) ;
-  - `test` : `uv run poe test` (les 3 suites unitaires par paquet, 100 % de branches chacune) ;
+  - `test` : `uv run poe test` (les 5 suites unitaires par paquet, 100 % de branches chacune) ;
   - `build-and-verify` : un job **par architecture sur son runner natif** (`amd64` sur
-    `ubuntu-latest`, `arm64` sur `ubuntu-24.04-arm`). Chacun construit l'image du crawler puis lance
-    **`compose_integration`** contre cette image construite localement (`IMAGE_TAG=ci-<sha>`), puis
-    démarre un conteneur jetable depuis cette même image et lance contre lui **`api_integration`,
-    `download_integration` et `orchestration_integration`** en un seul appel pytest. Le Docker du
+    `ubuntu-latest`, `arm64` sur `ubuntu-24.04-arm`). Chacun construit les **deux images**, le cœur
+    et `p2pwatch-amule` (caches `crawler-<arch>` et `amule-<arch>`). Sur l'image d'aMule, il vérifie
+    la version que rapportent `amuled` et `amuleapi` et la présence de `pkg:generic/amule` à la
+    version épinglée dans son SBOM. Il lance ensuite **`compose_integration`** contre les deux
+    images construites localement (`IMAGE_TAG=ci-<sha>`), puis démarre un conteneur jetable de
+    `p2pwatch-amule` et lance contre lui **`api_integration`, `download_integration` et
+    `orchestration_integration`** en un seul appel pytest. Il dépose enfin un digest par image
+    (`digest-crawler-<arch>`, `digest-amule-<arch>`), que `release.yml` assemble. Le Docker du
     runner sait créer un veth, donc la défaillance réseau qui bloque ces suites sur certaines
     machines de développement ne s'applique pas ;
   - `gate` : l'unique check d'agrégation exigé par la protection de branche.
 - `.github/workflows/pr.yml` lance aussi le job `vex-checks` (`poe vex-source-claims` +
   `poe vex-claim-coverage`).
-- `.github/workflows/grype-scan.yml` scanne quotidiennement l'image publiée et remonte dans Code
-  scanning.
+- `.github/workflows/grype-scan.yml` scanne quotidiennement les deux images publiées, chacune avec
+  sa VEX, et remonte dans Code scanning.
 
 Tous les markers tournent désormais en CI. Les seules suites encore absentes sont celles appartenant
 aux autres paquets (voir leurs sections ci-dessus).
 
 Ces trois suites tournent désormais sur **les deux arches**, puisqu'elles vivent dans
 `build-and-verify` : amuleapi n'existant que dans notre image, le démon qu'elles interrogent est
-celui que le job vient de construire, et il n'y a plus de raison de les cantonner à `ubuntu-latest`.
+l'image `p2pwatch-amule` que le job vient de construire, et il n'y a plus de raison de les cantonner à `ubuntu-latest`.
 
 ---
 
