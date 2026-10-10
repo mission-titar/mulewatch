@@ -31,7 +31,7 @@ def main(
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m amule_bump", description=__doc__)
-    parser.add_argument("--dockerfile", type=Path, default=Path("packages/crawler/Dockerfile"))
+    parser.add_argument("--dockerfile", type=Path, default=Path("packages/amule/Dockerfile"))
     parser.add_argument(
         "--body-file", type=Path, default=Path(tempfile.gettempdir()) / "amule-bump-pr-body.md"
     )

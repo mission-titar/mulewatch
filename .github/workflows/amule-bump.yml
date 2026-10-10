@@ -49,7 +49,7 @@ jobs:
           sign-commits: true
           base: main
           branch: chore/amule-${{ steps.bump.outputs.version }}
-          add-paths: packages/crawler/Dockerfile
+          add-paths: packages/amule/Dockerfile
           commit-message: 'chore(amule): bump to ${{ steps.bump.outputs.version }}'
           title: 'chore(amule): bump to ${{ steps.bump.outputs.version }}'
           body-path: ${{ steps.bump.outputs.body-path }}
