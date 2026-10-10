@@ -510,8 +510,7 @@ def test_a_file_amuled_shares_is_recorded_completed(project_files: tuple[Path, .
     )
     assert drop.returncode == 0, f"{drop.stdout}{drop.stderr}"
     # amuled only scans its IncomingDir at startup. It is an s6 service now, so the rescan is a
-    # process restart inside the container — the same `s6-svc -r` the port-sync restarter runs,
-    # and the container itself never goes down.
+    # process restart inside the container, and the container itself never goes down.
     restart = _run(
         "exec",
         "-T",
