@@ -36,7 +36,7 @@ from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.client_status import ClientStatus
-from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
+from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
 from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, FakeAmuleApi
 from tests.application.fakes import FakeClock, FakeMuleClient, RecordingSignal
@@ -650,31 +650,25 @@ async def test_backfill_skipped_when_marker_already_matches_fingerprint(
 
 
 class FakeDownloadClient(FakeMuleClient):
-    """Test download client: also satisfies add_link/download_queue (no-op).
+    """Test download client: also satisfies start/downloads (no-op).
 
-    ``queue_calls`` counts the queue polls: proof that a download-loop cycle DID
-    run (``download_queue`` is the only network ``await`` of an empty cycle)."""
+    ``queue_calls`` counts the list polls: proof that a download-loop cycle DID
+    run (``downloads`` is the only network ``await`` of an empty cycle)."""
 
     def __init__(self) -> None:
         super().__init__()
         self.queue_calls = 0
 
-    async def add_link(self, ed2k_link: str) -> None:
+    async def start(self, request: DownloadRequest) -> None:
         return None
 
-    async def download_queue(self) -> tuple[DownloadEntry, ...]:
+    async def downloads(self) -> tuple[DownloadStatus, ...]:
         self.queue_calls += 1
         return ()
 
-    async def shared_files(self) -> tuple[SharedFileEntry, ...]:
-        return ()
-
-    async def network_status(self) -> NetworkStatus:
-        return NetworkStatus(ed2k_id=1, ed2k_high=True, kad_status=KadStatus.CONNECTED)
-
 
 class _ShutdownOnQueueDownloadClient(FakeDownloadClient):
-    """Download client that fires the shutdown on the FIRST ``download_queue`` (1 cycle, stop).
+    """Download client that fires the shutdown on the FIRST ``downloads`` (1 cycle, stop).
 
     Bounds the run DETERMINISTICALLY on the DOWNLOAD loop itself: the shutdown is set
     ONLY once the download loop has run a cycle (queue poll) → proves that the
@@ -685,8 +679,8 @@ class _ShutdownOnQueueDownloadClient(FakeDownloadClient):
         super().__init__()
         self._app_holder = app_holder
 
-    async def download_queue(self) -> tuple[DownloadEntry, ...]:
-        result = await super().download_queue()
+    async def downloads(self) -> tuple[DownloadStatus, ...]:
+        result = await super().downloads()
         self._app_holder["app"]._on_signal()  # shutdown AFTER the 1st download cycle
         return result
 

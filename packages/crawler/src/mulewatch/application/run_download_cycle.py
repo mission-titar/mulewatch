@@ -2,14 +2,14 @@
 
 One serial task on the sole download session. ``run_download_cycle`` runs ONE iteration;
 ``download_loop`` repeats it until shutdown, waiting ``poll_interval`` or the decision nudge.
-Three things in it are not obvious and have each cost a field incident:
+Four things in it are not obvious:
 
-- **A completion is the shared list, never the bytes.** amuled shares PARTIAL downloads too, so
-  a hash is completed only once it is shared AND no longer transferring (2026-09-02: 065B was
-  stamped complete at 20.1 %). The queue alone stopped answering "still transferring" when it
-  began carrying completed-but-uncleared entries, hence ``is_complete``.
-- **Stamp presence BEFORE condemning.** ``last_seen_at`` is written for everything amuled still
-  knows, and only then does the TTL fail what it has not seen.
+- **A completion is the client's own signal, never the bytes** (2026-09-02: 065B was stamped
+  complete at 20.1 %). ``DownloadStatus.completed`` carries it.
+- **Stamp presence BEFORE condemning.** ``last_seen_at`` is written for everything the client
+  still lists, and only then does the TTL fail what it has not seen.
+- **A download the client does not list is started again**, once per round, until it is listed
+  or the TTL fails it: a client may forget its transfers on restart.
 - **Step 0 re-connects every iteration.** It is idempotent and nearly free, and it is what makes
   "the client reconnects next round" true (2026-09-04 to 09-11: 7 days of a dead loop).
 
@@ -22,14 +22,13 @@ import logging
 from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Protocol, assert_never
+from typing import Protocol
 
-from catalog_matching.ed2k_link import build_ed2k_link
 from catalog_matching.models import TargetSegment
 from mulewatch.application.edge_state import EdgeState
 from mulewatch.domain.download.policy import DownloadVerdict, download_policy
 from mulewatch.domain.download.states import DownloadState
-from mulewatch.domain.file_key import FileKey, Network
+from mulewatch.domain.file_key import FileKey
 from mulewatch.domain.observability.events import (
     DiskSpaceLow,
     DownloadCompleted,
@@ -41,11 +40,7 @@ from mulewatch.ports.client_errors import ClientUnreachableError, DownloadReject
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.decision_signal import DecisionSignal
 from mulewatch.ports.disk_space import DiskSpace
-from mulewatch.ports.mule_download_client import (
-    DownloadEntry,
-    MuleDownloadClient,
-    SharedFileEntry,
-)
+from mulewatch.ports.download_client import DownloadClient, DownloadRequest, DownloadStatus
 from mulewatch.ports.repository_errors import RepositoryError
 from mulewatch.ports.telemetry import Telemetry
 
@@ -108,7 +103,7 @@ class DownloadDeps:
     accepted.
     """
 
-    client: MuleDownloadClient
+    client: DownloadClient
     downloads: DownloadRepository
     catalog: CatalogReader
     targets: Sequence[TargetSegment]
@@ -138,21 +133,18 @@ def _target_status(targets: Sequence[TargetSegment], target_id: str) -> str:
     return "complete"
 
 
-def _key(ed2k_hash: str) -> FileKey:
-    """A file of the client's snapshot: ``MuleDownloadClient`` still names it by its hash."""
-    return FileKey(Network.ED2K, ed2k_hash)
-
-
 async def _monitor(
-    deps: DownloadDeps, states: dict[FileKey, DownloadState], queue: tuple[DownloadEntry, ...]
+    deps: DownloadDeps,
+    states: dict[FileKey, DownloadState],
+    listed: tuple[DownloadStatus, ...],
 ) -> None:
-    """Reconciles ``downloads`` with the queue: QUEUED→DOWNLOADING, and nothing else.
+    """Reconciles ``downloads`` with the client's list: QUEUED→DOWNLOADING, and nothing else.
 
-    ``FAILED`` is not a wall, since amuled is the authority on what it holds; ``COMPLETED`` is
-    one, so its notification never fires twice.
+    ``FAILED`` is not a wall, since the client is the authority on what it holds; ``COMPLETED``
+    is one, so its notification never fires twice.
     """
-    for entry in queue:
-        file = _key(entry.ed2k_hash)
+    for status in listed:
+        file = status.file
         current = states.get(file)
         if current is None:
             continue  # download outside the crawler: ignored
@@ -193,24 +185,20 @@ async def _record_completion(
 async def _handle_completions(
     deps: DownloadDeps,
     states: dict[FileKey, DownloadState],
-    transferring: frozenset[FileKey],
-    shared: tuple[SharedFileEntry, ...],
+    listed: tuple[DownloadStatus, ...],
 ) -> None:
-    """Completes each tracked hash that is SHARED **and** no longer transferring.
+    """Completes each tracked file the client reports ``completed``.
 
-    A ``failed`` hash completes too: the TTL can condemn a download that had in fact finished.
-    The queue predates this snapshot, so a file that finishes in between waits one cycle, which
-    the persistent shared signal makes harmless. A repo failure on one hash skips that hash only.
+    A ``failed`` file completes too: the TTL can condemn a download that had in fact finished.
+    A repo failure on one file skips that file only.
     """
-    for entry in shared:
-        file = _key(entry.ed2k_hash)
+    for status in listed:
+        file = status.file
         current = states.get(file)
-        if current is None:
-            continue  # shared file outside the crawler: ignored
+        if not status.completed or current is None:
+            continue  # not completed, or a download outside the crawler: ignored
         if current is DownloadState.COMPLETED:
             continue  # already completed: the notification fired once
-        if file in transferring:
-            continue  # still downloading (partial): NOT a completion
         try:
             await _record_completion(deps, file, states)
         except RepositoryError as error:
@@ -222,16 +210,15 @@ async def _handle_completions(
 
 
 def _expire_lost(deps: DownloadDeps) -> None:
-    """Fails the downloads amuled has not shown for ``lost_after_seconds`` (spec §2).
+    """Fails the downloads the client has not listed for ``lost_after_seconds`` (spec §2).
 
-    An entry stays in amuled's queue even with zero sources, so absence is a rare and strong
-    signal: the entry was removed, or the file completed and was moved out of IncomingDir
-    before the next poll. ``is_downloaded`` stays state-blind, so a ``failed`` row still blocks
-    automatic re-queuing; the manual retry is deleting the row.
+    It bounds a client that accepts ``start()`` without ever listing the download.
+    ``is_downloaded`` stays state-blind, so a ``failed`` row still blocks automatic re-queuing;
+    the manual retry is deleting the row.
     """
     for file in deps.downloads.expire_lost(deps.lost_after_seconds):
         _logger.warning(
-            "file=%s unseen by amuled for %ss: marked failed",
+            "file=%s unseen by the client for %ss: marked failed",
             file.native_id,
             deps.lost_after_seconds,
         )
@@ -240,7 +227,7 @@ def _expire_lost(deps: DownloadDeps) -> None:
 async def _queue_new_candidates(deps: DownloadDeps, outstanding: int) -> None:
     """Replays tier=download decisions missing from ``downloads`` (step 3, spec §5).
 
-    ``outstanding`` is what amuled's queue still has to transfer, measured from the cycle's
+    ``outstanding`` is what the client still has to transfer, measured from the cycle's
     snapshot; ``free`` is read once here. Both are MEASURED, never declared.
     """
     free = deps.disk.free_bytes()
@@ -273,49 +260,37 @@ async def _queue_new_candidates(deps: DownloadDeps, outstanding: int) -> None:
                 "candidate file=%s → %s (skipped/deferred)", candidate.file.native_id, verdict.value
             )
             continue
-        # record_queued ONLY here (sync DB write); the ed2k link is built and emitted by
-        # _add_links (network I/O) for every 'queued' - the write precedes the network, and an
-        # add_link that raises leaves the download 'queued' in the DB (caught up next round).
+        # record_queued ONLY here (sync DB write); _start_unlisted sends it (network I/O): the
+        # write precedes the network, and a start that raises leaves it 'queued' for next round.
         deps.downloads.record_queued(candidate.file, candidate.target_id, observation.size_bytes)
-        outstanding += observation.size_bytes  # not in amuled's queue yet: carried in memory
+        outstanding += observation.size_bytes  # not listed by the client yet: carried in memory
         _logger.info("candidate file=%s queued for download", candidate.file.native_id)
         await deps.telemetry.emit(DownloadQueued(target_id=candidate.target_id))
 
 
-async def _add_links(deps: DownloadDeps) -> None:
-    """Emits the ``add_link`` calls for ``queued`` downloads with no link sent yet.
+async def _start_unlisted(deps: DownloadDeps, listed: frozenset[FileKey]) -> None:
+    """Starts every ``queued`` or ``downloading`` download the client does not list (D13).
 
-    Split from ``_queue_new_candidates`` so the (sync) DB write precedes the (async) network
-    I/O: a ``ClientUnreachableError`` at ``add_link`` leaves the download ``queued`` in the DB
-    (the next round's monitor catches up). We re-emit the link for every known ``queued``.
-
-    Two ``add_link`` failures to distinguish (spec §9):
-      - ``DownloadRejectedError`` (the daemon answered ``EC_OP_FAILED`` - link explicitly
-        REJECTED): we mark THIS hash ``failed`` (log + ``set_state``) and ``continue`` to the
-        next. Retrying would only re-emit the same rejected link in a loop.
-      - ``ClientUnreachableError`` (daemon out of reach): we let it PROPAGATE - the top capture of
-        ``run_download_cycle`` skips the whole iteration (a dead daemon makes everything fail).
+    A new download and a forgotten one are the same case. ``DownloadRejectedError`` fails THAT
+    download, since retrying would resend a refused request; ``ClientUnreachableError``
+    propagates and the caller skips the iteration.
     """
-    # FRESH re-read of active_states: _queue_new_candidates wrote new QUEUED rows this cycle,
-    # absent from the dict passed to _monitor/_handle_completions (frozen at the start).
+    # FRESH re-read: _queue_new_candidates wrote new QUEUED rows this cycle.
     states = deps.downloads.active_states()
     for file, state in states.items():
-        if state is not DownloadState.QUEUED:
+        if state not in {DownloadState.QUEUED, DownloadState.DOWNLOADING} or file in listed:
             continue
         observation = deps.catalog.last_observation(file)
         if observation is None:
             continue
-        match file.network:
-            case Network.ED2K:
-                link = build_ed2k_link(observation.filename, observation.size_bytes, file.native_id)
-            case _:  # pragma: no cover
-                assert_never(file.network)
         try:
-            await deps.client.add_link(link)
+            await deps.client.start(
+                DownloadRequest(file, observation.filename, observation.size_bytes)
+            )
         except DownloadRejectedError as error:
             deps.downloads.set_state(file, DownloadState.FAILED)
             _logger.warning(
-                "add_link rejected by amuled for file=%s (%s): marked failed",
+                "start rejected by the client for file=%s (%s): marked failed",
                 file.native_id,
                 error,
             )
@@ -326,14 +301,13 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
 
     Two distinct error DOCTRINES (item I2 - anti-starvation):
 
-    - ``ClientUnreachableError`` (daemon out of reach, from step 0, ``_handle_completions`` or
-      ``_add_links``) = dead daemon → ABORT the iteration ("a dead daemon makes everything
-      fail", cf. ``_add_links``). We skip the rest; the next iteration retries (amuled persists
-      the downloads).
+    - ``ClientUnreachableError`` (client out of reach, from step 0 or ``_start_unlisted``) =
+      dead client → ABORT the iteration ("a dead client makes everything fail"). We skip the
+      rest; the next iteration retries.
     - ``RepositoryError`` (persistence failure, NO client I/O) → ISOLATED PER STEP: a repo
       failure in one step must NOT starve the others. Each step that can raise
       ``RepositoryError`` (monitor/completions/candidates) is wrapped separately (log +
-      ``continue`` to the next step). ``_add_links`` re-reads ``active_states`` FRESHLY, so it
+      ``continue`` to the next step). ``_start_unlisted`` re-reads ``active_states`` FRESHLY, so it
       runs even if an upstream step partially failed. "NEVER abandon a stalled download": the
       1→2→3→4 order is preserved, each step is best-effort.
 
@@ -346,7 +320,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     unavailability is handled by the next cycle's retry + the warning log. Intentional
     asymmetry.
     """
-    # Step 0 - CONNECT + QUEUE SNAPSHOT: client I/O → ClientUnreachableError = dead daemon = ABORT.
+    # Step 0 - CONNECT + SNAPSHOT: client I/O → ClientUnreachableError = dead daemon = ABORT.
     # ``connect()`` is IDEMPOTENT (the adapter no-ops when its transport is live) and is the ONLY
     # thing that re-arms a stream the adapter discarded after a failed read. SKIPPING IT WEDGES
     # THE LOOP: amuled is restarted by the port-sync on every VPN renegotiation, and nothing else
@@ -354,44 +328,36 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     # Same guard as ``SearchWorker._ensure_connected`` and ``run_port_sync_cycle``.
     try:
         await deps.client.connect()
-        queue = await deps.client.download_queue()
+        listed = await deps.client.downloads()
     except ClientUnreachableError as error:
         _logger.warning("download daemon unreachable (%s): iteration skipped, retry", error)
         return
-    queued = frozenset(_key(entry.ed2k_hash) for entry in queue)
-    # `status=all` puts amuled's completed-but-not-yet-cleared entries in the snapshot too, so
-    # "in the queue" is no longer "still transferring". The completion rule needs the narrower
-    # set; presence (step 2b) and the disk cap keep the whole queue.
-    transferring = frozenset(_key(entry.ed2k_hash) for entry in queue if not entry.is_complete)
-    outstanding = sum(entry.remaining_bytes for entry in queue)
-    # Step 1 - MONITOR: NO client I/O left (the queue came from step 0) → only RepositoryError.
-    # Steps 1 and 2 share that ONE snapshot: a second read could only contradict the first.
+    listed_files = frozenset(status.file for status in listed)
+    # Clamped at 0: a nascent download (total not known yet) must not invent free space.
+    outstanding = sum(max(status.bytes_total - status.bytes_done, 0) for status in listed)
+    # Step 1 - MONITOR: NO client I/O left (the list came from step 0) → only RepositoryError.
+    # Every step shares that ONE snapshot: a second read could only contradict the first.
     try:
         states = deps.downloads.active_states()
-        await _monitor(deps, states, queue)
+        await _monitor(deps, states, listed)
     except RepositoryError as error:
         _logger.error("download monitor repo failure (%s): step skipped, continues", error)
     # Step 2 - COMPLETIONS: we RE-READ ``active_states`` FRESHLY (logic-download#2). Without it,
-    # a failure in step 1 left ``states`` frozen/empty → every shared hash → ``states.get is
+    # a failure in step 1 left ``states`` frozen/empty → every completed file → ``states.get is
     # None`` → ignored → NO completion recorded the entire cycle. The re-read is also better
     # aligned than ``states={}`` with the nominal case (fresh states), at the cost of one extra
     # repo call (idempotent). A failure of the re-read itself is caught downstream.
     # Steps 2 & 3 - NO client I/O → only RepositoryError possible, ISOLATED per step (I2):
     # a repo failure in one must NOT prevent the other from running.
     try:
-        shared = await deps.client.shared_files()
-    except ClientUnreachableError as error:
-        _logger.warning("download daemon unreachable (%s): iteration skipped, retry", error)
-        return
-    try:
         fresh_states = deps.downloads.active_states()
-        await _handle_completions(deps, fresh_states, transferring, shared)
+        await _handle_completions(deps, fresh_states, listed)
     except RepositoryError as error:
         _logger.error("download completions repo failure (%s): step skipped, continues", error)
     # Step 2b - PRESENCE + TTL: stamp FIRST, condemn after. The reverse order would fail a row
-    # amuled is showing us right now.
+    # the client is showing us right now.
     try:
-        deps.downloads.mark_seen(queued | {_key(entry.ed2k_hash) for entry in shared})
+        deps.downloads.mark_seen(listed_files)
         _expire_lost(deps)
     except RepositoryError as error:
         _logger.error("download presence repo failure (%s): step skipped, continues", error)
@@ -403,14 +369,14 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
         # A missing or unreadable output mount: refuse to admit anything rather than take down
         # the crawler, which also catalogues. Conservative, loud, and retried next cycle.
         _logger.error("output directory unmeasurable (%s): no candidate admitted, retry", error)
-    # Step 4 - ADD_LINKS: client I/O → ClientUnreachableError = dead daemon = ABORT. Re-reads
+    # Step 4 - START: client I/O → ClientUnreachableError = dead daemon = ABORT. Re-reads
     # ``active_states`` FRESHLY, so it runs even if step 3 partially failed.
     try:
-        await _add_links(deps)
+        await _start_unlisted(deps, listed_files)
     except ClientUnreachableError as error:
         _logger.warning("download daemon unreachable (%s): iteration skipped, retry", error)
     except RepositoryError as error:
-        _logger.error("add_link download repo failure (%s): step skipped, retry", error)
+        _logger.error("download start repo failure (%s): step skipped, retry", error)
 
 
 async def _sleep_or_nudge(deps: DownloadLoopDeps) -> None:

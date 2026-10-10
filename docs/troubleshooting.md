@@ -142,7 +142,7 @@ accumulé, mais vous redémarrez d'un état connu.
      ```bash
      docker compose exec mulewatch s6-svc -r /etc/services.d/amuled
      ```
-- **Gardez amuled dédié au crawler.** `shared_files()` est interrogé à chaque cycle de
+- **Gardez amuled dédié au crawler.** Ses fichiers partagés sont lus à chaque cycle de
   téléchargement : ne pointez donc pas cet amuled sur une grande bibliothèque partagée
   préexistante, la détection de complétion en deviendrait plus lente et plus bruyante. Contexte et
   sources :
@@ -153,15 +153,18 @@ accumulé, mais vous redémarrez d'un état connu.
 ### Un téléchargement est bloqué, puis passe en `failed`
 
 - **Ce que fait le crawler.** Chaque cycle de téléchargement horodate `last_seen_at` pour chaque
-  hash suivi qu'amuled rapporte, que ce soit dans sa file de téléchargement ou dans ses fichiers
-  partagés. Un téléchargement encore `queued` ou `downloading` qu'amuled n'a plus rapporté depuis
-  `download.lost_after_seconds` (24 h par défaut) est marqué `failed`, avec une ligne de journal :
-  `hash=... unseen by amuled for 86400.0s: marked failed`.
+  fichier suivi qu'amuled rapporte, que ce soit dans sa file de téléchargement ou dans ses fichiers
+  partagés. Un téléchargement `queued` ou `downloading` qu'amuled ne rapporte pas lui est renvoyé à
+  chaque cycle, jusqu'à ce qu'il le rapporte de nouveau. S'il ne l'a plus rapporté depuis
+  `download.lost_after_seconds` (24 h par défaut), il est marqué `failed`, avec une ligne de
+  journal : `file=... unseen by the client for 86400.0s: marked failed`.
 - **Pourquoi c'est sans danger.** Une entrée reste dans la file d'amuled même avec **zéro source** :
   elle devient dormante, mais elle ne disparaît pas. Un téléchargement de lost media qui stagne à
   0 % pendant des mois n'est donc jamais menacé. Une absence côté amuled signifie que l'entrée a
-  réellement été retirée, ou que le fichier a fini et a été déplacé hors d'`IncomingDir` avant
-  l'interrogation suivante.
+  réellement été retirée, et le crawler la remet alors en file.
+- **Ne sortez pas un fichier d'`IncomingDir` avant que le téléchargement soit `completed`.**
+  Absent à la fois de la file et des fichiers partagés, il serait renvoyé à amuled et téléchargé de
+  nouveau en entier.
 - **`failed` n'est pas définitif.** amuled reste l'autorité : si le hash réapparaît dans sa file, le
   crawler remet le téléchargement en `downloading` ; s'il apparaît dans les fichiers partagés, le
   téléchargement se termine et la notification part. Regardez `downloads/incoming` avant de conclure
@@ -185,8 +188,14 @@ accumulé, mais vous redémarrez d'un état connu.
       créés par SQLite restent la propriété de `PUID:PGID`.
   3.  Une fois le crawler relancé, le cycle suivant remet le fichier en file depuis la décision du
       catalogue, à condition qu'il corresponde toujours à une cible qui n'est pas `complete`.
+- **Pour abandonner un téléchargement**, l'annuler dans l'interface d'aMule ne suffit pas : amuled
+  accepte de nouveau le lien d'un fichier annulé, et le cycle suivant le lui renvoie. Marquez aussi
+  sa ligne `failed`, qu'aucun cycle ne relance : arrêtez le crawler comme ci-dessus, annulez le
+  téléchargement dans aMule, puis lancez la même commande avec cette écriture à la place du
+  `DELETE`, qui ferait l'inverse, et relancez le crawler :
+  `db.execute('UPDATE downloads SET state = ? WHERE native_id = ?', ('failed', '<hash>'))`.
 - **Si rien du tout ne se télécharge**, vérifiez le plancher disque avant de soupçonner le TTL. Une
-  ligne de journal `candidate hash=... -> skip_disk_cap (skipped/deferred)` signifie que l'espace
+  ligne de journal `candidate file=... → skip_disk_cap (skipped/deferred)` signifie que l'espace
   libre, moins ce qu'amuled doit encore récupérer, passerait sous `download.min_free_bytes`. Un
   `output directory unmeasurable` signifie au contraire que le montage `./downloads:/downloads`
   manque dans votre fichier compose.
