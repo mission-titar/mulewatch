@@ -6,17 +6,18 @@ Before any change, exits naming the first variable missing or invalid, port-sync
 import grp
 import hashlib
 import os
+import pathlib
 import pwd
 import subprocess
 import sys
 import unicodedata
 from collections.abc import Callable
 
-from p2pwatch_amule.config.conf import INCOMING_DIR, TEMP_DIR, reconcile_conf
+from p2pwatch_amule.config.conf import CONFIG_DIR, INCOMING_DIR, TEMP_DIR, reconcile_conf
 from p2pwatch_amule.port_sync import settings
 
 HOME_DIR = "/home/amule"
-CONFIG_DIR = "/home/amule/.aMule"
+PORT_SYNC_DOWN = "/etc/services.d/port-sync/down"
 
 
 def _required(name: str) -> str:
@@ -55,7 +56,8 @@ def main() -> None:
     pgid = _required_id("PGID")
     ec_password = _password("AMULE_EC_PASSWORD")
     api_password = _password("AMULE_API_PASSWORD")
-    if settings.enabled(os.environ):
+    port_sync = settings.enabled(os.environ)
+    if port_sync:
         settings.load(os.environ)
 
     # -o tolerates a uid/gid a Debian system account already holds: PUID/PGID only have to match
@@ -97,6 +99,12 @@ def main() -> None:
         env={**os.environ, "HOME": HOME_DIR},
         check=True,
     )
+
+    # s6's own way to keep a service down: its run script never starts.
+    if port_sync:
+        pathlib.Path(PORT_SYNC_DOWN).unlink(missing_ok=True)
+    else:
+        pathlib.Path(PORT_SYNC_DOWN).touch()
 
 
 if __name__ == "__main__":  # pragma: no cover
