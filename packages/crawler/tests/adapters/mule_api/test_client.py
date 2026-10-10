@@ -1,5 +1,6 @@
 """``AmuleApiClient``: auth, search, status, preferences (spec amuleapi §4)."""
 
+import asyncio
 import json
 from datetime import datetime
 
@@ -92,6 +93,22 @@ async def test_connect_is_idempotent() -> None:
     await client.close()
 
     assert api.logins == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_connects_log_in_once() -> None:
+    api = FakeAmuleApi()
+
+    async def round_trip(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0)  # suspends like a real request, letting the other callers in
+        return api.handle(request)
+
+    transport = httpx.MockTransport(round_trip)
+    client = AmuleApiClient("amuled.test", 4711, PASSWORD, transport=transport, clock=api.clock)
+    await asyncio.gather(*(client.connect() for _ in range(5)))
+    await client.close()
+
+    assert api.logins == 1  # one session: no AsyncClient opened for nothing
 
 
 @pytest.mark.asyncio

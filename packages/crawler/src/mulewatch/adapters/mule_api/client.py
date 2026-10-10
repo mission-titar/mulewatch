@@ -83,6 +83,7 @@ class AmuleApiClient:
         self._transport = transport
         self._clock = clock or AsyncioClock()
         self._http: httpx.AsyncClient | None = None
+        self._connect_lock = asyncio.Lock()
         # Held from an ed2k start to its end: aMule's core keeps one ed2k search anchor.
         self._ed2k_lock = asyncio.Lock()
         self._ed2k_next_start = _LONG_AGO
@@ -91,23 +92,24 @@ class AmuleApiClient:
         self.skipped_entries_total = 0
 
     async def connect(self) -> None:
-        """Opens the session and logs in. IDEMPOTENT: the worker re-calls this on every task,
-        and composition has already connected once at wiring time."""
-        if self._http is not None:
-            return
-        if not self._password:
-            raise ApiAuthError("empty amuleapi password (refused before asking the daemon)")
-        http = httpx.AsyncClient(
-            base_url=self._base_url,
-            timeout=httpx.Timeout(self._timeout),
-            transport=self._transport,
-        )
-        try:
-            await self._login(http)
-        except Exception:
-            await http.aclose()
-            raise
-        self._http = http
+        """Opens the session and logs in. IDEMPOTENT, and serialized: callers arriving during a
+        login wait for it rather than open a session each."""
+        async with self._connect_lock:
+            if self._http is not None:
+                return
+            if not self._password:
+                raise ApiAuthError("empty amuleapi password (refused before asking the daemon)")
+            http = httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=httpx.Timeout(self._timeout),
+                transport=self._transport,
+            )
+            try:
+                await self._login(http)
+            except Exception:
+                await http.aclose()
+                raise
+            self._http = http
 
     async def close(self) -> None:
         """Revokes the token, then closes the session. Bypasses the 401 rule on purpose: a
