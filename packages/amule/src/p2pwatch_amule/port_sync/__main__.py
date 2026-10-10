@@ -3,6 +3,7 @@
 Each round puts gluetun's forwarded port in amule.conf, restarting amuled through s6 around it.
 """
 
+import configparser
 import logging
 import os
 import subprocess
@@ -24,7 +25,13 @@ def sync(config: settings.Settings, last_restart: float | None, now: float) -> f
     if port is None:
         return last_restart
     with open(CONF_PATH) as handle:
-        current = listen_port(handle.read())
+        conf = handle.read()
+    try:
+        current = listen_port(conf)
+    except (ValueError, configparser.Error) as error:
+        # The operator's file: a crash would only make s6 respawn port-sync every second.
+        _logger.error("amule.conf's port is unreadable, amuled left as is (%s)", error)
+        return last_restart
     if port == current:
         return last_restart
     if last_restart is not None and now - last_restart < config.restart_min_seconds:
