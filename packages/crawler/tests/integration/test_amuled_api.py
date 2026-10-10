@@ -9,7 +9,6 @@ import pytest
 from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.client import AmuleApiClient
 from mulewatch.adapters.mule_api.errors import ApiAuthError, ApiRejectedError
-from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.api_integration
@@ -34,15 +33,14 @@ async def test_real_login_fails_with_wrong_password(amuled: ApiEndpoint) -> None
 
 
 @pytest.mark.asyncio
-async def test_real_network_status(amuled: ApiEndpoint) -> None:
+async def test_real_status(amuled: ApiEndpoint) -> None:
     client = AmuleApiClient(
         amuled.host, amuled.port, amuled.password, timeout=30.0, clock=AsyncioClock()
     )
     await client.connect()
     try:
-        status = await client.network_status()
-        assert isinstance(status, NetworkStatus)
-        assert status.kad_status in set(KadStatus)  # any real state, but DECODED
+        status = await client.status()
+        assert [channel.channel for channel in status.channels] == ["ed2k", "kad"]
     finally:
         await client.close()
 

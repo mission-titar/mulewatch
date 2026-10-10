@@ -26,7 +26,6 @@ from mulewatch.adapters.mule_api.errors import (
 from mulewatch.adapters.mule_api.mapping import (
     map_client_status,
     map_download_status,
-    map_network_status,
     map_search_results,
     map_shared_download,
 )
@@ -35,7 +34,6 @@ from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
-from mulewatch.ports.port_sync import NetworkStatus
 
 # Rows asked for per list request. Every list route caps at 100 when `limit` is omitted, which
 # would silently truncate the shared-file sweep completion detection depends on (§7.5).
@@ -195,10 +193,6 @@ class AmuleApiClient:
         if status.get("ec_connected") is not True:
             raise ApiUnreachableError("GET /status: amuleapi does not reach amuled")
         return map_client_status(status, await self._call("GET", "/version"))
-
-    async def network_status(self) -> NetworkStatus:
-        """Network status: the one GET that carries both networks and our own eD2k id."""
-        return map_network_status(await self._call("GET", "/status"))
 
     async def get_listen_port(self) -> int:
         """amuled's current eD2k TCP listen port (port-sync High-ID, design §2.3/§4.2)."""

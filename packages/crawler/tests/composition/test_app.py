@@ -45,7 +45,6 @@ from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
-from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, FakeAmuleApi
 from tests.application.fakes import FakeClock, FakeMuleClient, RecordingSignal
 from tests.catalog_rows import observation_node_ids
@@ -1026,7 +1025,7 @@ async def test_emits_crawler_started_full_mode(
 
 
 class _PortSyncCapableClient(FakeMuleClient):
-    """Test port-sync EC client: satisfies get/set_listen_port + network_status (High-ID)."""
+    """Test port-sync EC client: satisfies get/set_listen_port; status() reads High-ID."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -1039,9 +1038,6 @@ class _PortSyncCapableClient(FakeMuleClient):
     async def set_listen_port(self, port: int) -> None:
         self.set_ports.append(port)
         self.listen_port = port
-
-    async def network_status(self) -> NetworkStatus:
-        return NetworkStatus(ed2k_id=0x02000001, ed2k_high=True, kad_status=KadStatus.CONNECTED)
 
 
 class _ShutdownOnPollReader:

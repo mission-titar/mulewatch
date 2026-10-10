@@ -52,7 +52,9 @@ class FakeAmuleApi:
         self.results = results if results is not None else []
         self.downloads = downloads if downloads is not None else []
         self.shared = shared if shared is not None else []
-        self.status = status if status is not None else {"ed2k": {}, "kad": {}}
+        self.status = (
+            status if status is not None else {"ec_connected": True, "ed2k": {}, "kad": {}}
+        )
         self.version = version if version is not None else {"daemon_version": "3.0.1"}
         self.preferences = (
             preferences if preferences is not None else {"connection": {"tcp_port": 4662}}

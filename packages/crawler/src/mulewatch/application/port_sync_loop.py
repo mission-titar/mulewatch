@@ -25,10 +25,10 @@ from mulewatch.domain.observability.events import (
     PortSyncTriggered,
 )
 from mulewatch.ports.client_errors import ClientError
+from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.mule_restarter import MuleRestarter, RestarterError
 from mulewatch.ports.port_forwarding import PortForwardingReader
-from mulewatch.ports.port_sync import NetworkStatus
 from mulewatch.ports.telemetry import Telemetry
 
 _logger = logging.getLogger("mulewatch.application.port_sync_loop")
@@ -45,7 +45,7 @@ class PortPreferences(Protocol):
 
     async def set_listen_port(self, port: int) -> None: ...
 
-    async def network_status(self) -> NetworkStatus: ...
+    async def status(self) -> ClientStatus: ...
 
 
 @dataclass
@@ -111,8 +111,7 @@ async def run_port_sync_cycle(deps: PortSyncDeps, state: _PortSyncState) -> None
             # touching it - a failed restart keeps its alert lit instead of being masked by the
             # written preference (test-gaps#0). Low-ID tolerated: no re-restart (the
             # rate-limit/alert handle recovery).
-            status = await deps.ports.network_status()
-            if status.ed2k_high:
+            if _high_id(await deps.ports.status()):
                 deps.edge.leave(_MISMATCH)
             await deps.clock.sleep(deps.poll_interval_seconds)
             return
@@ -138,11 +137,10 @@ async def run_port_sync_cycle(deps: PortSyncDeps, state: _PortSyncState) -> None
             return
         state.record_restart(now, live)
         # --- re-check High-ID after restart (DECISION 4): DO NOT LOOP if not High-ID ---
-        # we allow a bounded delay (amuled rebind) then read the connstate; if ed2k_high is
-        # False, we emit the alert and return - the rate-limit prevents an immediate re-restart.
+        # we allow a bounded delay (amuled rebind) then read the status; if it is not High-ID,
+        # we emit the alert and return - the rate-limit prevents an immediate re-restart.
         await deps.clock.sleep(deps.poll_interval_seconds)
-        status = await deps.ports.network_status()
-        if status.ed2k_high:
+        if _high_id(await deps.ports.status()):
             deps.edge.leave(_MISMATCH)
             await deps.telemetry.emit(HighIdRecovered(port=live))
         else:
@@ -152,12 +150,17 @@ async def run_port_sync_cycle(deps: PortSyncDeps, state: _PortSyncState) -> None
                 )
             )
     except ClientError as error:
-        # get/set_listen_port / network_status failed (amuled down, amuleapi down, or the
+        # get/set_listen_port / status failed (amuled down, amuleapi down, or the
         # operation refused) → tolerated: we catch the port ANCESTOR ``ClientError``, which
         # covers unreachable AND application failure, without importing the adapter (dependency
         # rule §4). Backoff, no crash (top-level net §4.4).
         _logger.warning("amuleapi failed during port-sync (%s): tolerated, backoff", error)
         await deps.clock.sleep(deps.poll_interval_seconds)
+
+
+def _high_id(status: ClientStatus) -> bool:
+    """High-ID is the eD2k channel being connectable; Kad's reachability does not count."""
+    return any(c.channel == "ed2k" and c.connectable is True for c in status.channels)
 
 
 @dataclass
