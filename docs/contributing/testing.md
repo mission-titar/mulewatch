@@ -67,9 +67,9 @@ Le projet a **deux niveaux** :
 
 | Marker | Paquet | Ce qu'il valide | Docker ? | Autres prérequis | Commande |
 |---|---|---|---|---|---|
-| `api_integration` | crawler | L'adapter amuleapi (login, statut réseau, cycle de recherche, get/set du port) face à un vrai démon | **Oui** (à lancer soi-même) | Un démon que vous fournissez, désigné par `MULEWATCH_TEST_API_HOST` (§3.0) | `( cd packages/crawler && uv run pytest -m api_integration --no-cov )` |
+| `api_integration` | crawler | L'adapter amuleapi (login, statut réseau, une recherche, get/set du port) face à un vrai démon | **Oui** (à lancer soi-même) | Un démon que vous fournissez, désigné par `MULEWATCH_TEST_API_HOST` (§3.0) | `( cd packages/crawler && uv run pytest -m api_integration --no-cov )` |
 | `download_integration` | crawler | La mécanique du téléchargement (`start`, puis le fichier listé par `downloads`) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m download_integration --no-cov )` |
-| `orchestration_integration` | crawler | Une boucle de crawl complète (un cycle plus un arrêt borné) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m orchestration_integration --no-cov )` |
+| `orchestration_integration` | crawler | Une boucle de crawl complète (une recherche menée par les tâches, puis un arrêt borné) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m orchestration_integration --no-cov )` |
 | `compose_integration` | crawler | Smoke e2e de la pile docker compose assemblée (sans VPN) : câblage uniquement | **Oui** (compose v2) | docker compose v2 ; un build d'image | `( cd packages/crawler && uv run pytest -m compose_integration --no-cov )` |
 
 ---
@@ -133,7 +133,7 @@ conteneur et son propre Ryuk ; ce montage n'existe plus.
 
 **Ce que ça prouve.** L'adapter parle à un **vrai démon** : le mot de passe admin écrit par
 `amuleapi --set-admin-pass` ouvre bien une session, un mauvais mot de passe est refusé, le statut
-réseau se décode, et le cycle complet recherche, progression, récupération, arrêt se déroule. Le
+réseau se décode, et une recherche ed2k (`search()`) va à son terme et rend ses résultats. Le
 second fichier (`test_amuled_preferences.py`) valide le **get/set du port d'écoute** (port-sync
 High-ID) : `get_listen_port()` lit un port plausible, et l'aller-retour `set -> get` renvoie la
 valeur qui a été posée.
