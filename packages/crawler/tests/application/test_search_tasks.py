@@ -19,7 +19,7 @@ from mulewatch.adapters.persistence_sqlite.connection import open_local
 from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
     SqliteSchedulerStateRepository,
 )
-from mulewatch.application.search_tasks import run_search_tasks
+from mulewatch.application.search_tasks import SearchTasks
 from mulewatch.application.search_worker import (
     BackoffRegistry,
     SearchWorker,
@@ -101,14 +101,14 @@ class _Tasks:
         self.resumed.set()
 
     def searching(self, client: Any, keywords: list[str]) -> Coroutine[Any, Any, None]:
-        return run_search_tasks(
+        return SearchTasks(
             workers=[SearchWorker("amuled", client, self.deps)],
             keywords=keywords,
             resumed=self.resumed,
             backoff=self.deps.backoff,
             scheduler_state=self.state,
             clock=LoopClock(),
-        )
+        ).run()
 
     def run_for(
         self, seconds: float, client: Any, keywords: list[str], *beside: Coroutine[Any, Any, None]
