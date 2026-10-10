@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- aMule stage: build amuled + amuleapi from a pinned git commit, on the runtime's Debian ---
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS amule
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS amule
 
 # The single source of truth for the aMule version: the bump workflow rewrites these two lines.
 ARG AMULE_VERSION=3.1.0
@@ -34,10 +34,10 @@ RUN sed "s/@AMULE_VERSION@/${AMULE_VERSION}/g" /tmp/amule.cdx.json \
 
 # Keep the stage: Dependabot only reads FROM lines, so inlining it as a COPY --from=<image>
 # would freeze this digest with no update path.
-FROM ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177335345d43845cd4165e43b711 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 
 # --- Python stage: build /app/.venv against Debian's python3, the same one the runtime holds ---
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS python
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS python
 
 # Product version, computed from the git tag on the CI runner and injected here. The build
 # context has no .git (.dockerignore excludes it), so hatch-vcs/setuptools-scm reads
@@ -73,7 +73,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-editable --package p2pwatch
 
 # --- Runtime: one image, two supervised services (amuled itself starts amuleapi) ---
-FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
 
 # ARG after FROM only lives in the stage that declares it, hence the re-declaration.
 ARG VERSION=0.0.0
