@@ -1,10 +1,12 @@
-"""`reconcile_conf`: the amule.conf the container boots with, from the operator's file (if any)."""
+"""amule.conf: the file the container boots with (`reconcile_conf`), and its listen port."""
 
 import configparser
 import io
 
 INCOMING_DIR = "/downloads/incoming"
 TEMP_DIR = "/downloads/temp"
+# aMule's DEFAULT_TCP_PORT (src/Preferences.cpp), what amuled binds when `Port` is absent.
+DEFAULT_PORT = 4662
 
 
 class _CaseSensitiveParser(configparser.RawConfigParser):
@@ -15,9 +17,7 @@ class _CaseSensitiveParser(configparser.RawConfigParser):
 
 def reconcile_conf(existing: str | None, ec_digest: str) -> str:
     """Return `existing` (None when absent) with our keys reconciled, every other key kept."""
-    # RawConfigParser: no %-interpolation, so a password or a path containing % survives.
-    # strict=False: a hand-edited file with a duplicate key must not abort the boot.
-    parser = _CaseSensitiveParser(strict=False)
+    parser = _parser()
     if existing is None:
         # An absent key takes aMule's declared default: only the wrong ones go in (ECPort is fine).
         parser["eMule"] = {"IncomingDir": INCOMING_DIR, "TempDir": TEMP_DIR}
@@ -35,7 +35,33 @@ def reconcile_conf(existing: str | None, ec_digest: str) -> str:
     if not parser.has_section("AmuleApi"):
         parser.add_section("AmuleApi")
     parser["AmuleApi"].update({"Enabled": "1", "BindAddress": "0.0.0.0", "HttpPort": "4711"})
+    return _written(parser)
 
+
+def listen_port(conf: str) -> int:
+    """Return the TCP port amuled binds, `[eMule] Port`."""
+    parser = _parser()
+    parser.read_string(conf)
+    return parser.getint("eMule", "Port", fallback=DEFAULT_PORT)
+
+
+def with_listen_port(conf: str, port: int) -> str:
+    """Return `conf` with `[eMule] Port` and `UDPPort` set to `port`, every other key kept."""
+    parser = _parser()
+    parser.read_string(conf)
+    if not parser.has_section("eMule"):
+        parser.add_section("eMule")
+    parser["eMule"].update({"Port": str(port), "UDPPort": str(port)})
+    return _written(parser)
+
+
+def _parser() -> _CaseSensitiveParser:
+    # RawConfigParser: no %-interpolation, so a password or a path containing % survives.
+    # strict=False: a hand-edited file with a duplicate key must not abort the boot.
+    return _CaseSensitiveParser(strict=False)
+
+
+def _written(parser: _CaseSensitiveParser) -> str:
     # aMule writes `Key=value`, not `Key = value`.
     out = io.StringIO()
     parser.write(out, space_around_delimiters=False)

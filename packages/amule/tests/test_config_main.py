@@ -1,4 +1,4 @@
-"""config main: env check, user creation, mount point ownership, amule.conf, admin pass."""
+"""config main: env check, port-sync's variables, user, mount points, amule.conf, admin pass."""
 
 import grp
 import hashlib
@@ -22,6 +22,12 @@ ENV = {
     "AMULE_EC_PASSWORD": "hunter2",
     "AMULE_API_PASSWORD": "s3cret",
 }
+PORT_SYNC_VARIABLES = [
+    "PORT_SYNC",
+    "GLUETUN_CONTROL_URL",
+    "PORT_SYNC_POLL_SECONDS",
+    "PORT_SYNC_RESTART_MIN_SECONDS",
+]
 
 Call = tuple[list[str], dict[str, Any]]
 
@@ -40,6 +46,8 @@ class Boot:
         self.chowns: list[tuple[str, int, int]] = []
         for name, value in ENV.items():
             monkeypatch.setenv(name, value)
+        for name in PORT_SYNC_VARIABLES:
+            monkeypatch.delenv(name, raising=False)
         monkeypatch.setattr(entry, "HOME_DIR", str(self.home))
         monkeypatch.setattr(entry, "CONFIG_DIR", str(self.config))
         monkeypatch.setattr(entry, "INCOMING_DIR", str(self.incoming))
@@ -144,3 +152,31 @@ def test_an_empty_variable_counts_as_missing(boot: Boot, monkeypatch: pytest.Mon
     monkeypatch.setenv("AMULE_EC_PASSWORD", "")
     with pytest.raises(SystemExit, match="^AMULE_EC_PASSWORD is required$"):
         entry.main()
+
+
+@pytest.mark.parametrize(
+    ("variables", "message"),
+    [
+        ({"PORT_SYNC": "maybe"}, "PORT_SYNC must be one of "),
+        ({"PORT_SYNC": "on", "PORT_SYNC_POLL_SECONDS": "0"}, "PORT_SYNC_POLL_SECONDS must be "),
+        ({"PORT_SYNC": "yes", "GLUETUN_CONTROL_URL": "gluetun"}, "GLUETUN_CONTROL_URL must be "),
+    ],
+)
+def test_a_bad_port_sync_variable_aborts_the_boot_before_any_change(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch, variables: dict[str, str], message: str
+) -> None:
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+    with pytest.raises(SystemExit, match=f"^{message}"):
+        entry.main()
+    assert boot.calls == []
+    assert not boot.home.exists()
+
+
+def test_port_sync_off_leaves_its_other_variables_unread(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PORT_SYNC", "off")
+    monkeypatch.setenv("PORT_SYNC_POLL_SECONDS", "0")
+    entry.main()
+    assert boot.calls[-1] == boot.set_admin_pass()

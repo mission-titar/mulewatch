@@ -1,6 +1,6 @@
 """Entry point `python -m p2pwatch_amule.config`: run once by the entrypoint, as root.
 
-Before any change, exits naming the first variable missing or, for PUID/PGID, not a numeric id.
+Before any change, exits naming the first variable missing or invalid, port-sync's included.
 """
 
 import grp
@@ -12,6 +12,7 @@ import sys
 from collections.abc import Callable
 
 from p2pwatch_amule.config.conf import INCOMING_DIR, TEMP_DIR, reconcile_conf
+from p2pwatch_amule.port_sync import settings
 
 HOME_DIR = "/home/amule"
 CONFIG_DIR = "/home/amule/.aMule"
@@ -45,6 +46,8 @@ def main() -> None:
     pgid = _required_id("PGID")
     ec_password = _required("AMULE_EC_PASSWORD")
     api_password = _required("AMULE_API_PASSWORD")
+    if settings.enabled(os.environ):
+        settings.load(os.environ)
 
     # -o tolerates a uid/gid a Debian system account already holds: PUID/PGID only have to match
     # the host's ownership of the bind mounts.
