@@ -1,11 +1,18 @@
 import asyncio
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from catalog_matching.models import TargetSegment
-from mulewatch.application.run_download_cycle import DownloadDeps, run_download_cycle
+from mulewatch.adapters.persistence_sqlite.connection import open_local
+from mulewatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
+from mulewatch.application.run_download_cycle import (
+    DownloadDeps,
+    DownloadRepository,
+    run_download_cycle,
+)
 from mulewatch.domain.download.states import DownloadState
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import (
@@ -248,7 +255,7 @@ def _started(client: FakeDownloadClient) -> list[str]:
 def _deps(
     *,
     client: FakeDownloadClient,
-    downloads: FakeDownloadRepo,
+    downloads: DownloadRepository,
     catalog: FakeCatalogReads,
     free: int = 1_000_000,
     min_free: int = 0,
@@ -1273,14 +1280,18 @@ async def test_a_failure_the_client_reports_stays_failed_round_after_round() -> 
 
 
 @pytest.mark.asyncio
-async def test_waiting_for_sources_is_not_failing() -> None:
+async def test_waiting_for_sources_is_not_failing_for_a_simulated_year(tmp_path: Path) -> None:
+    # The real TTL of one day, a month between rounds, the client listing the download each one.
+    clock = FakeClock()
+    connection = open_local(tmp_path / "local.db")
+    downloads = SqliteDownloadRepository(connection, clock=clock.now)
+    downloads.record_queued(_key(_A), "062A", 10)
     waiting = _status(_A, total=10, waiting=WaitingReason.NO_SOURCE)
     client = FakeDownloadClient(listed=[(waiting,)] * 12)
-    downloads = FakeDownloadRepo()
-    downloads.states[_A] = DownloadState.QUEUED
-    deps = _deps(client=client, downloads=downloads, catalog=FakeCatalogReads())
+    deps = _deps(client=client, downloads=downloads, catalog=FakeCatalogReads(), lost_after=86400.0)
     for _ in range(12):
+        await clock.sleep(30 * 86400.0)
         await run_download_cycle(deps)
-    assert downloads.states[_A] is DownloadState.DOWNLOADING
-    assert downloads.waiting[_A] is WaitingReason.NO_SOURCE
-    assert downloads.failures[_A] is None
+    row = connection.execute("SELECT state, waiting_reason, failure_reason FROM downloads")
+    assert row.fetchall() == [("downloading", "no_source", None)]
+    connection.close()
