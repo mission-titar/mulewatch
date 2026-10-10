@@ -323,6 +323,25 @@ async def test_transport_failure_marks_instance_down(
 
 
 @pytest.mark.asyncio
+async def test_the_client_backoff_grows_until_a_search_succeeds(
+    catalog: SqliteCatalogRepository, engine: MatchingEngine
+) -> None:
+    # The adapter's connect() succeeds without touching the network: only a search proves reach.
+    clock = FakeClock()
+    registry = _registry(clock)
+    client = FakeMuleClient(search_failures=[make_unreachable()] * 4, results=[(_obs(),)])
+    worker = SearchWorker("amule-1", client, _deps(catalog, engine, registry))
+    delays = []
+    for _ in range(4):
+        await worker.run_task(SearchTask(keyword="k", channel="ed2k"))
+        delays.append(registry.remaining("amule-1"))
+        clock.advance(registry.remaining("amule-1"))
+    assert delays == [2.0, 4.0, 8.0, 16.0]
+    await worker.run_task(SearchTask(keyword="k", channel="ed2k"))
+    assert "amule-1" not in registry.snapshot()
+
+
+@pytest.mark.asyncio
 async def test_a_task_is_one_search_given_the_cores_budget(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
