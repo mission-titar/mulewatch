@@ -48,7 +48,7 @@ jobs:
           save-cache: 'false'  # restore only; validate is the x86 cache writer
 
       - name: Download the per-arch image digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digest-*
           path: /tmp/digests
@@ -60,7 +60,7 @@ jobs:
       # arm64 index with "no child with platform linux/amd64". The merged /tmp/digests above keeps
       # both arches for the manifest-list creation later.
       - name: Download the amd64 digest for the pre-publish SBOM
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: digest-amd64
           path: /tmp/amd64-digest
@@ -106,7 +106,7 @@ jobs:
           echo "ref=${{ env.IMAGE }}@sha256:${digest}" >> "$GITHUB_OUTPUT"
 
       - name: Generate the Syft-JSON SBOM (native, for the checks and the VEX-aware daily scan)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         env:
           SYFT_SELECT_CATALOGERS: +sbom-cataloger
         with:
@@ -118,7 +118,7 @@ jobs:
           registry-password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Generate the CycloneDX SBOM (portable, for external consumers)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         env:
           SYFT_SELECT_CATALOGERS: +sbom-cataloger
         with:
