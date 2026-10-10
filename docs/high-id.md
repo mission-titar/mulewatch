@@ -18,32 +18,45 @@ gardez ou non un VPN devant le trafic P2P.
 ## Route A, recommandée : le port forwarding de votre VPN
 
 gluetun sait demander un **port forwarding** à votre fournisseur VPN. Le port joignable est alors
-celui du VPN, et tout le trafic reste dans le tunnel. Le crawler interroge le serveur de contrôle de
-gluetun, et quand le port a changé, il redémarre aMule pour qu'il écoute sur le nouveau.
+celui du VPN, et tout le trafic d'aMule reste dans le tunnel. Le **port-sync**, un service qui
+tourne à côté d'amuled dans le conteneur `ed2k`, interroge chaque minute le serveur de contrôle de
+gluetun. Quand le port a changé, il arrête amuled, écrit le nouveau port (TCP et UDP) dans
+`amule.conf`, puis le redémarre, au plus une fois toutes les 5 minutes.
 
-Ce redémarrage est local au conteneur : le crawler et aMule y sont deux processus voisins, donc rien
-ne passe par Docker. Il n'y a ni socket Docker, ni proxy, ni service supplémentaire dans la boucle.
+Ce redémarrage reste dans le conteneur `ed2k`, par son superviseur s6 : ni socket Docker, ni
+proxy, ni mot de passe, et le crawler n'y prend aucune part.
 
-**Deux réglages solidaires :**
+**Un seul réglage :** un fournisseur VPN **qui gère le port forwarding**, et
+`VPN_PORT_FORWARDING=on` dans votre `.env`. Cherchez les fournisseurs marqués
+`PORT_FORWARDING: yes` dans la
+[liste gluetun](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers). Cette variable
+allume aussi le port-sync, et elle seule : `crawler.yml` n'a plus de section `port_sync:`, et la
+refuse.
 
-1. Un fournisseur VPN **qui gère le port forwarding**, et `VPN_PORT_FORWARDING=on` dans votre
-   `.env`. Cherchez les fournisseurs marqués `PORT_FORWARDING: yes` dans la
-   [liste gluetun](https://github.com/qdm12/gluetun-wiki/tree/main/setup/providers).
-2. Dans `crawler.yml`, `port_sync.enabled: true`. Le bloc est déjà présent, avec
-   `gluetun_control_url` pointant sur `http://localhost:8000`.
+Le port-sync n'existe que sous la [variante VPN](vpn.md). Dans la variante directe, il reste
+arrêté. Ses autres réglages ont des valeurs par défaut :
 
-Cette route n'a de sens que sous `gluetun.compose.yml`. Dans la pile par défaut il n'y a pas de
-serveur de contrôle gluetun à joindre, donc le port-sync tournera dans le vide : il le signale et
-n'arrête pas le nœud pour autant.
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `GLUETUN_CONTROL_URL` | `http://localhost:8000` | Le serveur de contrôle de gluetun. |
+| `PORT_SYNC_POLL_SECONDS` | `60` | L'intervalle entre deux lectures du port. |
+| `PORT_SYNC_RESTART_MIN_SECONDS` | `300` | L'intervalle minimal entre deux redémarrages d'amuled. |
 
-Une fois actif, surveillez les événements `port-sync` dans les journaux et les métriques
-`emule_port_sync_triggered`, `emule_high_id_recovered` et `emule_port_mismatch`.
+Pour en changer un, ajoutez-le sous `environment:` du service `ed2k` dans `ed2k/vpn.compose.yml`.
+Une valeur invalide arrête le conteneur `ed2k` au démarrage, en nommant la variable.
+
+Une fois actif, le port-sync écrit chaque changement et chaque échec dans
+`docker compose logs ed2k`. Le High-ID se lit sur le tableau de bord (le canal `ed2k` joignable
+par les pairs) et dans la jauge `p2pwatch_channel_connectable`. Un canal non joignable depuis
+5 minutes est notifié sur le canal *operations*. Pendant un redémarrage, le crawler voit aMule
+injoignable, mais ne le notifie qu'au-delà de 2 minutes.
 
 ## Route B : ouvrir un port vous-même
 
-Si votre fournisseur ne fait pas de port forwarding, redirigez le port `4662` (en TCP **et** en UDP)
-depuis votre box vers cette machine, pour que les pairs joignent aMule directement. Si vous changez
-de numéro de port, changez-le aussi dans la section `ports:` de `compose.yml`.
+Si votre fournisseur ne fait pas de port forwarding, redirigez `4662/tcp` (eD2k) et `4672/udp`
+(Kad) depuis votre box vers cette machine, dans la variante directe, pour que les pairs joignent
+aMule directement. Si vous changez de numéro de port, changez-le aussi dans la section `ports:` de
+`ed2k/direct.compose.yml`.
 
 C'est une option parfaitement viable. Le choix relève surtout de votre tolérance au risque, sur deux
 points :
@@ -59,7 +72,7 @@ La route A garde tout derrière le VPN sans rien ouvrir chez vous.
 
 ## Le port forwardé change toutes les minutes (ProtonVPN et WireGuard)
 
-**Symptôme.** Dans les journaux de `gluetun`, un `port forwarded is <N>` **différent à chaque
+**Symptôme.** Dans les journaux d'`ed2k-gluetun`, un `port forwarded is <N>` **différent à chaque
 renouvellement**, toutes les 45 à 60 secondes, chaque fois précédé de
 `ERROR [port forwarding] refreshing port mapping … external port requested as X but received Y`. Le
 port-sync ne peut jamais converger : la cible bouge plus vite qu'il ne peut aligner aMule. Résultat,
@@ -67,7 +80,7 @@ un Low-ID permanent alors même que le port-sync fonctionne.
 
 **Cause.** Le renouvellement NAT-PMP, obligatoire chez Proton, passe en UDP dans le tunnel
 WireGuard. Sur une clé mal configurée, la passerelle ne préserve pas le mapping au renouvellement et
-réassigne un port neuf. C'est un problème entre gluetun et Proton, pas un problème du crawler (voir
+réassigne un port neuf. C'est un problème entre gluetun et Proton, pas un problème de p2pwatch (voir
 [gluetun#3196](https://github.com/qdm12/gluetun/issues/3196)). `PORT_FORWARD_ONLY` seul ne suffit
 pas : vérifié sur le terrain, le phénomène persiste sur les serveurs P2P.
 
@@ -80,15 +93,15 @@ causes connues d'un coup :
 3. **Une clé propre à ce nœud.** Une même clé réutilisée par un autre gluetun ou un autre appareil
    fait s'écraser mutuellement les renouvellements NAT-PMP.
 
-Remplacez ensuite `WIREGUARD_PRIVATE_KEY` dans `.env` et recréez les deux services. Le conteneur
-p2pwatch vit dans le namespace réseau de gluetun, il doit donc être recréé avec lui :
+Remplacez ensuite `WIREGUARD_PRIVATE_KEY` dans `.env` et recréez les deux services d'aMule. Le
+conteneur `ed2k` vit dans le namespace réseau d'`ed2k-gluetun`, il doit donc être recréé avec lui :
 
 ```bash
-docker compose -f gluetun.compose.yml up -d --force-recreate
+docker compose up -d --force-recreate ed2k-gluetun ed2k
 ```
 
 Gardez `PORT_FORWARD_ONLY: "on"`, qui est correct, juste insuffisant seul. Pour valider, observez
-`gluetun` : le port doit apparaître **une fois**, puis rester silencieux plusieurs cycles (plus de
+`ed2k-gluetun` : le port doit apparaître **une fois**, puis rester silencieux plusieurs cycles (plus de
 5 minutes), sans `requested X but received Y`.
 
 Si le port-sync ne fait rien du tout, c'est un autre problème :

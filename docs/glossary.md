@@ -24,17 +24,17 @@ High-ID
     directement. C'est le bon cas : plus de sources, des téléchargements plus rapides.
 
 Low-ID
-:   Votre nœud n'est pas joignable de l'extérieur — pare-feu, box, ou VPN sans port ouvert. Tout
+:   Votre nœud n'est pas joignable de l'extérieur : pare-feu, box, ou VPN sans port ouvert. Tout
     fonctionne quand même, simplement avec moins de sources. C'est l'état par défaut, et il
     convient parfaitement pour cataloguer.
 
 IncomingDir
 :   Le dossier où le client eMule dépose un fichier une fois terminé. Ici, il correspond à
-    `downloads/incoming` dans votre dossier de travail.
+    `ed2k/downloads/incoming` dans votre dossier de travail.
 
 s6
-:   Le petit superviseur qui, à l'intérieur du conteneur, fait tourner deux programmes (`amuled` et
-    `p2pwatch`) et en relance un s'il meurt. Vous le croisez surtout dans les journaux.
+:   Le petit superviseur qui, dans le conteneur `ed2k`, fait tourner deux programmes (`amuled` et
+    le port-sync) et en relance un s'il meurt. Vous le croisez surtout dans les journaux.
 
 amuleapi
 :   L'interface web et REST livrée avec aMule, qu'`amuled` démarre et arrête avec lui. C'est elle
@@ -44,30 +44,38 @@ amuleapi
 
 EC
 :   *External Connection*, le canal interne par lequel `amuleapi` parle à `amuled`. Les deux sont
-    dans le même conteneur ; `AMULE_EC_PASSWORD` est ce qui les relie.
+    dans le conteneur `ed2k` ; `AMULE_EC_PASSWORD` est ce qui les relie.
+
+port-sync
+:   Le service qui, dans le conteneur `ed2k`, aligne le port d'aMule sur celui que le VPN lui
+    forwarde. Il ne tourne que sous la variante VPN, avec `VPN_PORT_FORWARDING=on`.
 
 ## Vocabulaire du projet
 
 Des mots courants employés dans un sens précis. Le contexte suffit en général.
 
 pile
-:   Le ou les conteneurs que `docker compose` démarre ensemble, décrits par un fichier compose.
-    La pile par défaut n'en a qu'un ; la pile VPN ajoute `gluetun`.
+:   Les conteneurs que `docker compose` démarre ensemble, décrits par les fichiers compose.
+    La variante directe en a deux, `p2pwatch` et `ed2k` ; la variante VPN ajoute `ed2k-gluetun`.
+
+variante
+:   La façon dont aMule rejoint son réseau : `direct`, ou `vpn` derrière gluetun. La ligne
+    `include:` de `compose.yml` la choisit.
 
 service
-:   Une brique de la pile : un conteneur géré par `docker compose`. Un nœud est un service,
-    `p2pwatch`, deux avec le VPN.
+:   Une brique de la pile : un conteneur géré par `docker compose`. Un nœud a deux services,
+    `p2pwatch` et `ed2k`, trois avec le VPN.
 
 dossier de travail
-:   Le dossier qui contient votre `compose.yml`, votre `.env` et vos données (`data/`, `amule/`,
-    `downloads/`). Toutes les commandes de la documentation se lancent depuis là.
+:   Le dossier qui contient votre `compose.yml`, votre `.env` et vos données (`data/`, et `ed2k/`
+    pour aMule). Toutes les commandes de la documentation se lancent depuis là.
 
 --8<-- [start:abbr]
 *[eD2k]: eDonkey2000, le réseau eMule à serveurs centraux
 *[Kad]: Kademlia, le réseau eMule décentralisé, sans serveur
 *[High-ID]: Nœud joignable depuis l'extérieur : plus de sources, téléchargements plus rapides
 *[Low-ID]: Nœud non joignable de l'extérieur : moins de sources, mais tout fonctionne
-*[IncomingDir]: Le dossier où le client eMule dépose un fichier terminé, ici downloads/incoming
-*[s6]: Le superviseur qui fait tourner les trois programmes du conteneur et les relance
-*[EC]: External Connection, le canal par lequel p2pwatch pilote le client eMule
+*[IncomingDir]: Le dossier où le client eMule dépose un fichier terminé, ici ed2k/downloads/incoming
+*[s6]: Le superviseur qui fait tourner amuled et le port-sync dans le conteneur ed2k, et les relance
+*[EC]: External Connection, le canal interne par lequel amuleapi parle à amuled
 --8<-- [end:abbr]

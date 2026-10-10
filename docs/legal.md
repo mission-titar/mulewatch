@@ -26,7 +26,7 @@ Ce qui n'y entre jamais :
 - **Aucune IP de pair.** Le crawler passe par le protocole EC d'aMule, qui dit combien de pairs ont
   une copie, jamais qui.
 - **Aucune trace utilisateur.** Ni cookie, ni session, ni journal d'accès : la WebUI est en lecture
-  seule et n'authentifie personne — exposée, elle exige un reverse proxy pour l'authentification.
+  seule et n'authentifie personne. Exposée, elle exige un reverse proxy pour l'authentification.
 - **Aucune télémétrie sortante.** Rien ne part vers un service tiers ; `/metrics` est un endpoint
   local, à scraper si vous le voulez, sans Prometheus ni Grafana dans la pile.
 - **Aucun contenu de fichier.** Même en téléchargement actif, p2pwatch ne lit jamais les octets
@@ -60,14 +60,14 @@ Trois niveaux d'exposition :
 
 En pratique, le risque reste **faible mais non nul** : la surveillance du P2P se concentre sur les
 nouveautés à forte valeur commerciale, et eD2k est un réseau vieillissant où la cible de ce projet
-— un dessin animé de 2008 jamais réédité — n'intéresse personne. C'est une affaire de probabilité,
+(un dessin animé de 2008 jamais réédité) n'intéresse personne. C'est une affaire de probabilité,
 pas de légalité. Là où une procédure est engagée, « j'utilisais un VPN » n'est pas une défense,
 seulement une piste plus dure à remonter.
 
 ## Ce qu'un VPN protège, et ce qu'il ne protège pas
 
-Un VPN bien configuré ([gluetun](vpn.md)) masque **votre IP domestique face aux pairs** — ils voient
-celle du serveur VPN — et **vos flux face à votre FAI**, qui ne voit qu'un tunnel chiffré.
+Un VPN bien configuré ([gluetun](vpn.md)) masque **votre IP domestique face aux pairs** (ils voient
+celle du serveur VPN) et **vos flux face à votre FAI**, qui ne voit qu'un tunnel chiffré.
 
 Il ne protège pas contre :
 
@@ -78,9 +78,9 @@ Il ne protège pas contre :
 - **Une corrélation de timing.** Seul en France à télécharger une œuvre obscure à 3 h du matin, vous
   restez identifiable par analyse de flux côté FAI malgré le VPN. De la science-fiction ici : cible
   trop banale, volume trop faible.
-- **Un compromis de votre machine.** Le conteneur héberge trois processus et n'est durci que
-  partiellement ([risque accepté](limits.md)) : qui en compromet un atteint `downloads/`, `data/`
-  (votre catalogue) et `amule/`. Votre IP reste masquée par le VPN, leur contenu non.
+- **Un compromis de votre machine.** Les conteneurs ne sont durcis que partiellement
+  ([risque accepté](limits.md)) : qui compromet aMule atteint `ed2k/`, qui compromet le crawler
+  atteint `data/` (votre catalogue). Votre IP reste masquée par le VPN, leur contenu non.
 
 ## En pratique
 

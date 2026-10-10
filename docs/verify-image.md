@@ -8,6 +8,10 @@ description: "Vérifier la signature cosign et les attestations d'une image p2pw
 Chaque image publiée est signée et attestée par la CI (cosign, keyless OIDC). Avant de
 lancer une image tirée de GHCR, on peut vérifier qu'elle vient bien de notre pipeline.
 
+Un nœud tire deux images, signées par la même identité : `p2pwatch`, le crawler, et
+`p2pwatch-amule`, le client eMule. Vérifiez les deux, en relançant les commandes ci-dessous avec
+`IMAGE=ghcr.io/mission-titar/p2pwatch-amule:latest`.
+
 Prérequis : [cosign](https://github.com/sigstore/cosign) installé.
 
 L'identité attendue est le workflow de release du dépôt :
@@ -47,11 +51,12 @@ substitué (image malveillante) n'aurait pas d'attestation signée par notre ide
 La signature étant `--recursive`, la vérification fonctionne aussi bien par tag (index) que
 par digest d'architecture. Le détail de la chaîne et du triage VEX est dans `SECURITY.md`.
 
-> **Deux noms qui ne bougent pas, exprès.** Le fichier de claims reste
-> `security/crawler.vex.openvex.json` et les catégories SARIF gardent leur suffixe `-crawler`
-> (`grype-crawler`, `vex-image-claims-crawler`, `vex-stale-claims-crawler`) : renommer une
-> catégorie Code scanning rend ses findings existants orphelins. Seul le *produit* VEX a suivi le
-> renommage de l'image.
+> **Des noms qui ne suivent pas celui de l'image, exprès.** Chaque image a son fichier de claims
+> et ses catégories SARIF, nommés d'après son paquet : `security/crawler.vex.openvex.json` et le
+> suffixe `-crawler` pour `p2pwatch`, `security/amule.vex.openvex.json` et le suffixe `-amule` pour
+> `p2pwatch-amule` (`grype-crawler`, `vex-image-claims-crawler`, `vex-stale-claims-crawler`, et
+> leurs équivalents `-amule`). Renommer une catégorie Code scanning rend ses findings existants
+> orphelins. Seul le *produit* VEX porte le nom de l'image.
 
 ---
 

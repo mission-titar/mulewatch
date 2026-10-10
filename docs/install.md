@@ -6,12 +6,20 @@ description: "Monter un nœud en cinq étapes et une quinzaine de minutes : Dock
 
 Cinq étapes, une quinzaine de minutes une fois Docker en place. À la fin, un catalogue web sur
 `http://localhost:8080` et un nœud qui cherche, catalogue, vous notifie et télécharge ce qu'il
-identifie avec certitude, dans un dossier `downloads/` posé à côté de votre fichier compose.
+identifie avec certitude, dans un dossier `ed2k/downloads/` posé à côté de votre fichier compose.
 
-!!! warning "Vous mettez à niveau un nœud 1.x ?"
+!!! warning "Pas encore de version p2pwatch publiée"
 
-    Lisez d'abord [Migrer un nœud 1.x](migration-1x.md), et ne lancez rien avant : la migration se
-    fait à la main, une fois.
+    Cette page décrit la branche principale, dont le dossier `deploy` tire des images qui n'existent
+    qu'à partir de la première version p2pwatch. D'ici là, il ne démarre pas. Prenez plutôt le ZIP
+    de la [version 4.1.0](https://github.com/mission-titar/p2pwatch/releases/tag/v4.1.0)
+    (**`Source code (zip)`**), et suivez la documentation de son dossier `docs/`.
+
+!!! warning "Vous mettez à niveau un nœud existant ?"
+
+    Lisez d'abord [Migrer un nœud 4.x](migration-4x.md), et ne lancez rien avant : la migration se
+    fait à la main, une fois. Un nœud plus ancien passe d'abord par
+    [Migrer un nœud 1.x](migration-1x.md) ou [Migrer un nœud 2.x](migration-2x.md).
 
 !!! info "Votre adresse IP sera visible des autres pairs"
 
@@ -42,11 +50,17 @@ Décompressez, et gardez **uniquement le dossier `deploy`** : copiez-le où vous
 votre goût. C'est votre **[dossier de travail](glossary.md#vocabulaire-du-projet)** ; toutes les commandes qui suivent s'y lancent. Le
 reste du ZIP peut être supprimé.
 
-Vous y trouvez les fichiers compose, les réglages du nœud (`crawler.yml`, `targets.yml`,
-`matcher.yml`) et trois dossiers vides qui se rempliront seuls : `data/` (votre catalogue), `amule/`
-(l'état du client eMule) et `downloads/` (`incoming/` pour les fichiers terminés, `temp/` pour les
-partiels). **Ce sont de simples dossiers sur votre disque**, pas des volumes Docker : les
-sauvegarder, c'est les copier.
+Vous y trouvez `compose.yml`, les réglages du nœud (`crawler.yml`, `targets.yml`, `matcher.yml`),
+un dossier `data/` vide pour votre catalogue, et un dossier `ed2k/` pour le client eMule : ses
+fichiers compose, `amule/` (l'état du client) et `downloads/` (`incoming/` pour les fichiers
+terminés, `temp/` pour les partiels). **Ce sont de simples dossiers sur votre disque**, pas des
+volumes Docker : les sauvegarder, c'est les copier.
+
+!!! note "Sous Linux, `data/` doit exister et vous appartenir avant le premier lancement"
+
+    Le ZIP le fournit : ne le supprimez pas, et décompressez sans `sudo`. Un dossier manquant
+    serait créé par Docker au nom de root, et le crawler, qui tourne sous votre identifiant,
+    ne pourrait pas y écrire.
 
 ## 3. Choisir vos mots de passe
 
@@ -82,7 +96,7 @@ en place** : ce sont des mots de passe en clair, donc des portes ouvertes.
 docker compose up -d
 ```
 
-Au premier lancement, Docker télécharge l'image, ce qui peut prendre quelques minutes.
+Au premier lancement, Docker télécharge les deux images, ce qui peut prendre quelques minutes.
 
 !!! success "Point de contrôle"
 
@@ -90,8 +104,9 @@ Au premier lancement, Docker télécharge l'image, ce qui peut prendre quelques 
     docker compose ps
     ```
 
-    Doit montrer **un seul service**, `p2pwatch`, dont l'état commence par `Up`. Au bout d'une
-    demi-minute environ, il passe à `Up (healthy)` : le client eMule tourne vraiment à l'intérieur.
+    Doit montrer **deux services** dont l'état commence par `Up` : `p2pwatch`, le crawler, et
+    `ed2k`, le client eMule. Au bout d'une demi-minute environ, `ed2k` passe à `Up (healthy)` : le
+    client eMule tourne vraiment.
 
 ## 5. Ouvrir le catalogue
 

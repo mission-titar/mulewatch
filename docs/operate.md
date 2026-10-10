@@ -13,12 +13,17 @@ quoi regarder quand il ne catalogue plus. Si vous n'avez pas encore de nœud, co
 
 ## Cycle de vie & données
 
-Un nœud est **un seul conteneur**, le service compose `p2pwatch`. Dedans, le superviseur s6 fait
-tourner deux services : `amuled` et `p2pwatch`, le crawler, qui sert aussi le catalogue web sur un
-thread dédié. `amuled` démarre à son tour `amuleapi`, l'interface web d'aMule : cela fait trois
-processus, mais deux services supervisés. Au démarrage, le conteneur crée l'utilisateur `amule` à
-partir de `PUID` et `PGID`, prend possession des dossiers montés, puis écrit un `amule.conf`
-**seulement s'il n'y en a pas**.
+Un nœud est **deux conteneurs**, deux services compose :
+
+- `p2pwatch`, le crawler, qui sert aussi le catalogue web sur un thread dédié. Il tourne
+  directement sous votre `PUID:PGID`.
+- `ed2k`, le client eMule. Dedans, le superviseur s6 fait tourner deux services : `amuled`, qui
+  démarre à son tour `amuleapi`, l'interface web d'aMule, et le port-sync, arrêté hors de la
+  [variante VPN](vpn.md). Au démarrage, le conteneur crée l'utilisateur `amule` à partir de `PUID`
+  et `PGID`, prend possession des dossiers montés, puis écrit un `amule.conf` **seulement s'il n'y
+  en a pas**.
+
+Le crawler joint aMule par le nom `ed2k`, dans les deux variantes.
 
 Quatre variables sont obligatoires : `PUID`, `PGID`, `AMULE_EC_PASSWORD` et `AMULE_API_PASSWORD`.
 Si l'une manque, `docker compose up` échoue avec un message clair, plutôt que de démarrer un
@@ -26,7 +31,8 @@ conteneur qui meurt aussitôt.
 
 **Persistance.** Tout vit dans des dossiers de votre dossier de travail, jamais dans des volumes
 Docker : le catalogue et l'état local dans `data/` (`catalog.db`, `local.db`), la configuration
-d'aMule dans `amule/`, les téléchargements dans `downloads/incoming` et `downloads/temp`.
+d'aMule dans `ed2k/amule/`, les téléchargements dans `ed2k/downloads/incoming` et
+`ed2k/downloads/temp`.
 `docker compose down` n'y touche pas, et aucun `-v` ne peut effacer le catalogue par accident : pour
 l'effacer, vous supprimez `data/` vous-même. Corollaire voulu, `sqlite3 data/catalog.db` marche
 directement depuis l'hôte, sans `sudo` : c'est le rôle de `PUID` et `PGID`.
@@ -38,42 +44,46 @@ docker compose pull
 docker compose up -d
 ```
 
-Sous la pile VPN, ajoutez `-f gluetun.compose.yml` à chaque commande.
+Les commandes sont les mêmes sous les deux variantes : la ligne `include:` de `compose.yml` choisit.
 
-**Redémarrage de l'hôte.** Le conteneur revient seul au boot, aucune commande à relancer, à
+**Redémarrage de l'hôte.** Les conteneurs reviennent seuls au boot, aucune commande à relancer, à
 condition que Docker démarre en service système. Vérifiez avec `docker compose ps`.
+
+**Nœud 4.x.** Suivez [Migrer un nœud 4.x](migration-4x.md) avant de lancer la 5.0 : elle range
+les dossiers d'aMule sous `ed2k/`, et refuse la section `port_sync:` de `crawler.yml`.
 
 **Nœud 1.x.** Ne lancez pas la 2.0 par-dessus un nœud 1.x sans avoir suivi
 [Migrer un nœud 1.x](migration-1x.md) : les volumes nommés ne sont pas lus par la nouvelle pile, et
 le nœud semblera avoir perdu son catalogue. Les données, elles, sont toujours dans les volumes.
 
-### Redémarrer un processus plutôt que le conteneur
+### Redémarrer une pièce plutôt que tout le nœud
 
-`docker compose up -d`, `restart` et `down` agissent sur **tout le conteneur**, les trois processus
-d'un coup. Pour n'en toucher qu'un, adressez-vous à s6 :
+`docker compose restart p2pwatch` ne redémarre que le crawler, `docker compose restart ed2k` que le
+client eMule. Dans `ed2k`, pour ne toucher qu'amuled, adressez-vous à s6 :
 
 ```bash
-docker compose exec p2pwatch s6-svstat /etc/services.d/amuled   # état
-docker compose exec p2pwatch s6-svc -r /etc/services.d/amuled   # redémarrer
-docker compose exec p2pwatch s6-svc -d /etc/services.d/amuled   # arrêter
-docker compose exec p2pwatch s6-svc -u /etc/services.d/amuled   # démarrer
+docker compose exec ed2k s6-svstat /etc/services.d/amuled   # état
+docker compose exec ed2k s6-svc -r /etc/services.d/amuled   # redémarrer
+docker compose exec ed2k s6-svc -d /etc/services.d/amuled   # arrêter
+docker compose exec ed2k s6-svc -u /etc/services.d/amuled   # démarrer
 ```
 
-Remplacez `amuled` par `p2pwatch`. Il n'existe pas de service compose `amuled`, donc
-`docker compose restart amuled` ne veut rien dire. `amuleapi` n'est pas un service s6 non plus :
-c'est `amuled` qui le démarre, donc redémarrer `amuled` le redémarre avec lui.
+`amuleapi` n'est pas un service s6 : c'est `amuled` qui le démarre, donc redémarrer `amuled` le
+redémarre avec lui. Un amuled arrêté par `-d` le reste jusqu'au `-u`, ou jusqu'au prochain
+redémarrage du conteneur `ed2k`.
 
-Un détail qui compte : si le crawler s'arrête proprement, comme le fait le bouton de redémarrage du
-tableau de bord, s6 le relance seul et aMule garde ses sessions eD2k et Kad. S'il plante, tout le
-conteneur redescend, pour que la panne soit visible plutôt que silencieuse. aMule, lui, est
-simplement relancé sur place.
+Quand le crawler s'arrête, quelle qu'en soit la raison, Docker le relance (`restart:
+unless-stopped`), et aMule garde ses sessions eD2k et Kad. C'est ce que fait le bouton de
+redémarrage du tableau de bord. Une configuration invalide le fait donc redémarrer en boucle :
+`docker compose ps` le montre `Restarting`, et l'erreur est dans son journal. Si amuled tombe, s6 le
+relance sur place.
 
 ### Quand le nœud ne catalogue plus
 
-Les deux services supervisés partagent un seul flux de journaux, `docker compose logs p2pwatch`,
-et chaque ligne est préfixée par le service qui l'a émise. C'est toujours le premier endroit à
-regarder. amuleapi fait exception : démarré par `amuled` plutôt que par s6, il écrit dans
-`amule/amuleapi.log` de votre dossier de travail. Pour aller du symptôme à la cause, voyez
+Le crawler écrit dans `docker compose logs p2pwatch`, amuled et le port-sync dans
+`docker compose logs ed2k`. C'est toujours le premier endroit à regarder. amuleapi fait exception :
+démarré par `amuled` plutôt que par s6, il écrit dans `ed2k/amule/amuleapi.log` de votre dossier de
+travail. Pour aller du symptôme à la cause, voyez
 [Diagnostics avancés](troubleshooting.md).
 
 ### Planification disque
@@ -82,20 +92,20 @@ Des ordres de grandeur, à ajuster selon votre trafic eMule réel et le nombre d
 
 - **`data/catalog.db`** grossit lentement, de l'ordre de 0,25 Go par trimestre au rythme d'un nœud
   réel (estimation du 2026-10-09).
-- **`downloads/`** s'accumule sans borne, rien ne le purge. Le crawler mesure l'espace libre et
+- **`ed2k/downloads/`** s'accumule sans borne, rien ne le purge. Le crawler mesure l'espace libre et
   refuse un nouveau candidat si cela passerait sous `download.min_free_bytes` (10 Gio par défaut).
   C'est un **plancher**, pas un ménage : il bloque les nouveaux téléchargements quand le disque se
   tend, il n'efface rien. Le tri reste à votre charge. La jauge `p2pwatch_download_disk_free_bytes`
   publie l'espace libre mesuré à chaque cycle, et le canal *operations* est notifié une fois quand
   il passe sous le plancher, puis de nouveau seulement après être remonté au-dessus.
-- **`amule/`** tient en quelques mégaoctets : `amule.conf`, `server.met`, `nodes.dat`, préférences.
+- **`ed2k/amule/`** tient en quelques mégaoctets : `amule.conf`, `server.met`, `nodes.dat`, préférences.
 
 Le crawler ne fait qu'un `statvfs` sur `/downloads`, il n'ouvre jamais un fichier téléchargé. C'est
-aussi pourquoi `./downloads` est monté en entier plutôt que par ses deux sous-dossiers : sans cela,
-la mesure porterait sur le mauvais système de fichiers.
+aussi pourquoi `./ed2k/downloads` lui est monté en entier, et en lecture seule, plutôt que par ses
+deux sous-dossiers : sans cela, la mesure porterait sur le mauvais système de fichiers.
 
-Si votre machine approche de la saturation, lancez `du -sh downloads/ data/ amule/` pour identifier
-le coupable, puis faites le ménage dans `downloads/incoming`.
+Si votre machine approche de la saturation, lancez `du -sh ed2k/downloads/ data/ ed2k/amule/` pour
+identifier le coupable, puis faites le ménage dans `ed2k/downloads/incoming`.
 
 ---
 
@@ -116,7 +126,7 @@ idempotente et n'écrase rien sans `--force` ; `--into <source>` fusionne dans u
 Le cycle de partage est décrit sur la [page d'accueil](index.md#partage).
 
 ```bash
-docker compose exec --user amule p2pwatch python -m p2pwatch.merge \
+docker compose exec p2pwatch python -m p2pwatch.merge \
   --output /data/catalog-merged.db /data/catalog.db /data/source-b.db
 ```
 
@@ -126,7 +136,7 @@ source. Migrez-la d'abord en la fusionnant dans elle-même, qui l'ouvre et la me
 de préférence sur une copie, puisqu'une version plus ancienne ne pourra plus la lire :
 
 ```bash
-docker compose exec --user amule p2pwatch python -m p2pwatch.merge \
+docker compose exec p2pwatch python -m p2pwatch.merge \
   --into /data/source-b.db /data/source-b.db
 ```
 
@@ -163,8 +173,6 @@ non.
 Le canal *operations* reçoit l'état du nœud, et rien d'autre :
 
 - le démarrage de l'instance ;
-- le retour du High-ID, et un High-ID qui ne revient pas après une synchronisation du port (une seule
-  fois) ;
 - l'espace disque passé sous le plancher (voir [Planification disque](#planification-disque)) ;
 - un canal d'un client (`ed2k` ou `kad` pour aMule) **hors de son réseau** ou **non joignable par
   les pairs** depuis 5 minutes, puis son retour ;
@@ -209,14 +217,13 @@ une connexion en écriture. Toute tentative d'écriture est refusée par SQLite 
 disque, ce qui protège votre catalogue même d'une régression du code.
 
 Pour le couper sans couper le crawl, mettez `webui.enabled: false` dans `crawler.yml`. Pour couper
-le crawl en gardant aMule vivant, c'est
-`docker compose exec p2pwatch s6-svc -d /etc/services.d/p2pwatch`.
+le crawl en gardant aMule vivant, c'est `docker compose stop p2pwatch`.
 
 ### Routes disponibles
 
 | Route | Description |
 |---|---|
-| `/` | Tableau de bord : état de chaque client (version, API joignable, et par canal : sur le réseau, joignable par les pairs), d'après la dernière lecture de moins de deux minutes ; état du crawl, avec les boutons pause, reprise et redémarrage du crawler seul (le conteneur reste debout, aMule garde ses sessions) ; couverture par cible (épisodes trouvés et manquants) |
+| `/` | Tableau de bord : état de chaque client (version, API joignable, et par canal : sur le réseau, joignable par les pairs), d'après la dernière lecture de moins de deux minutes ; état du crawl, avec les boutons pause, reprise et redémarrage du crawler seul (aMule garde ses sessions) ; couverture par cible (épisodes trouvés et manquants) |
 | `/files` | Liste paginée des fichiers ; filtres `?target=`, `?tier=`, `?q=` |
 | `/files/{file_id}` | Détail d'un fichier, désigné par son `file_id` en 32 caractères hexadécimaux minuscules, tel que la console SQL l'affiche : réseau, identifiant natif, observations, décisions, explication du matching |
 | `/targets/{target_id}` | Fichiers d'une cible (alias de `/files?target=`) |
@@ -260,7 +267,7 @@ compose qui gouverne l'accès.
 | `local_db_path` | `crawler.yml` | `/data/local.db` | Base état local, lue en lecture seule (= `data/local.db` côté hôte) |
 | `webui.amule_url` | `crawler.yml` | `http://localhost:4711` | Cible du lien « aMule » dans la navigation. À changer uniquement derrière un reverse proxy : c'est le navigateur qui résout cette URL, pas le conteneur. |
 | port publié du catalogue | `compose.yml` (`ports:`) | `8080` | Dans le mapping `"8080:8080"`, changez le nombre de gauche pour publier ailleurs. Ne change pas le port d'écoute interne. |
-| port publié d'amuleapi | `compose.yml` (`ports:`) | `4711` | Idem pour amuleapi. Sous la pile VPN, les deux mappings sont portés par le service `gluetun`. |
+| port publié d'amuleapi | `ed2k/direct.compose.yml` (`ports:`) | `4711` | Idem pour amuleapi. Sous la variante VPN, il est porté par le service `ed2k-gluetun`, dans `ed2k/vpn.compose.yml`. |
 
 ### Exposition derrière un reverse proxy
 

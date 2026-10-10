@@ -19,18 +19,19 @@ cataloguer et être notifié, sans qu'aucun fichier n'atterrisse sur votre disqu
    docker compose up -d
    ```
 
-Rien d'autre ne change. Le même conteneur démarre, les mêmes trois processus tournent, le catalogue
-web est servi pareil et les notifications partent toujours. Seule la boucle de téléchargement n'est
-pas câblée, donc `downloads/incoming` reste vide.
+Rien d'autre ne change. Les mêmes conteneurs démarrent, le catalogue web est servi pareil et les
+notifications partent toujours. Seule la boucle de téléchargement n'est pas câblée, donc
+`ed2k/downloads/incoming` reste vide.
 
 C'est un simple réglage, pas une autre façon de monter le nœud : il n'y a aucun profil compose à
 ajouter ni à retirer.
 
 ## Changer un port
 
-Les ports ne sont pas des variables : ils sont écrits en clair dans la section `ports:` du fichier
-de votre pile, `compose.yml`, ou `gluetun.compose.yml` si vous êtes derrière un VPN (ils y sont
-publiés par le service `gluetun`). Le `8080` sert le catalogue, le `4711` l'interface d'aMule.
+Les ports ne sont pas des variables : ils sont écrits en clair dans les sections `ports:` des
+fichiers compose. Le `8080`, le catalogue, est dans `compose.yml`. Le `4711`, l'interface d'aMule,
+est dans `ed2k/direct.compose.yml`, avec les ports eD2k et Kad, ou dans `ed2k/vpn.compose.yml` si
+vous êtes derrière un VPN (il y est publié par le service `ed2k-gluetun`).
 
 Ne changez que **le nombre de gauche**, celui côté hôte : `"8090:8080"` publie le catalogue sur
 8090. Dans le conteneur, les ports sont figés.
@@ -55,12 +56,9 @@ dans `crawler.yml` (`9090` par défaut, actif par défaut). **Ni Prometheus ni G
 avec la pile** : si vous voulez des tableaux de bord, faites pointer votre propre Prometheus sur le
 nœud.
 
-Ce port n'est pas publié sur l'hôte, et il n'y a pas de réseau interne à rejoindre. La seule route
-est donc de le publier vous-même, en ajoutant `"9090:9090"` à la liste `ports:` du fichier de pile
-que vous utilisez réellement : sous le service `p2pwatch` dans `compose.yml`, ou sous le service
-`gluetun` dans `gluetun.compose.yml`. Ne l'ajoutez **jamais** à `base.compose.yml` : compose fusionne
-les `ports` de façon additive et ne sait pas retirer une entrée apportée par un fragment, ce
-pourquoi ce fragment n'en déclare aucune.
+Ce port n'est pas publié sur l'hôte. Pour le joindre, publiez-le vous-même en ajoutant
+`"9090:9090"` à la liste `ports:` du service `p2pwatch` dans `compose.yml`, sous les deux
+variantes : le crawler n'est jamais derrière le VPN.
 
 Traitez ce port comme le 8080 : **aucune authentification**, donc gardez-le hors de l'Internet
 ouvert.

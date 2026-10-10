@@ -56,10 +56,10 @@ rien d'autre.
 Comptez une quinzaine de minutes pour l'installation, une fois Docker en place. Installer Docker est
 de loin l'étape la plus longue ; le reste tient en une commande et un mot de passe à choisir.
 
-Un nœud, c'est **un seul conteneur**. À l'intérieur tournent trois programmes : `amuled`, le client
-eMule ; `amuleapi`, son interface web, qu'`amuled` démarre lui-même ; et `p2pwatch`, qui cherche,
-catalogue et sert le catalogue web. Vous n'avez normalement pas à le savoir, mais cela compte dès
-que vous lisez les journaux ou redémarrez une pièce, et les pages le rappellent là où ça se voit.
+Un nœud, c'est **deux conteneurs**. `p2pwatch` cherche, catalogue et sert le catalogue web.
+`ed2k` fait tourner `amuled`, le client eMule, et `amuleapi`, son interface web, qu'`amuled` démarre
+lui-même. Vous n'avez normalement pas à le savoir, mais cela compte dès que vous lisez les journaux
+ou redémarrez une pièce, et les pages le rappellent là où ça se voit.
 
 ## Partager un catalogue entre chercheurs {#partage}
 
