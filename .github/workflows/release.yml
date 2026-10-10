@@ -12,11 +12,8 @@ on:
 permissions:
   contents: read
 
-env:
-  IMAGE: ghcr.io/mission-titar/p2pwatch
-
 jobs:
-  # Full gate + per-arch build/integration/push-by-digest (push: true). The image is
+  # Full gate + per-arch build/integration/push-by-digest (push: true). Both images are
   # pushed by digest only; no consumable tag exists yet.
   validate:
     permissions:
@@ -26,7 +23,8 @@ jobs:
     with:
       push: true
 
-  # Fan-in: combine the per-arch digests into one multi-arch manifest and tag it.
+  # Fan-in, one leg per image: combine its per-arch digests into one multi-arch manifest and tag
+  # it. fail-fast is off so a failing leg never cancels the other halfway through signing.
   # A consumable tag, its signature, and its attestations are all published only AFTER the VEX
   # honesty gate below passes. `validate` (build + integration) has already succeeded, and the
   # per-arch layers exist in ghcr by digest only (no tag, no signature), so nothing a consumer
@@ -38,6 +36,17 @@ jobs:
       contents: read
       packages: write
       id-token: write  # keyless OIDC for cosign sign/attest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: crawler
+            image: ghcr.io/mission-titar/p2pwatch
+          - package: amule
+            image: ghcr.io/mission-titar/p2pwatch-amule
+    env:
+      IMAGE: ${{ matrix.image }}
+      VEX: security/${{ matrix.package }}.vex.openvex.json
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +59,7 @@ jobs:
       - name: Download the per-arch image digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: digest-*
+          pattern: digest-${{ matrix.package }}-*
           path: /tmp/digests
           merge-multiple: true
 
@@ -62,7 +71,7 @@ jobs:
       - name: Download the amd64 digest for the pre-publish SBOM
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: digest-amd64
+          name: digest-${{ matrix.package }}-amd64
           path: /tmp/amd64-digest
 
       - name: Set up Docker Buildx
@@ -132,6 +141,7 @@ jobs:
       # aMule is declared by a file only the sbom-cataloger reads, and that cataloger is off unless
       # selected (the SYFT_SELECT_CATALOGERS above): a regression is SILENT, Grype scores it zero.
       - name: Gate that aMule is in the SBOM under its CPE-matching declaration
+        if: matrix.package == 'amule'
         run: |
           for sbom in /tmp/sbom.syft.json /tmp/sbom.cyclonedx.json; do
             if ! grep -q '"pkg:generic/amule@' "$sbom"; then
@@ -152,7 +162,7 @@ jobs:
         run: >
           uv run python -m vex_guards.check_image_claims
           --sbom /tmp/sbom.syft.json
-          --vex security/crawler.vex.openvex.json
+          --vex "$VEX"
           --format fail
 
       # --- Publish (reached only when every gate above passed) -------------------------------
@@ -192,12 +202,13 @@ jobs:
           cosign attest --yes --type https://syft.dev/bom \
             --predicate /tmp/sbom.syft.json "$ref"
           cosign attest --yes --type openvex \
-            --predicate security/crawler.vex.openvex.json "$ref"
+            --predicate "$VEX" "$ref"
 
       - name: Inspect the published manifest
         run: docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
 
-  # The GitHub release page, written from the annotated tag once the image is signed and attested.
+  # The GitHub release page, written from the annotated tag once both images are signed and
+  # attested: `needs` on a matrix job waits for every leg.
   github-release:
     needs: publish-manifest
     if: github.ref_type == 'tag'

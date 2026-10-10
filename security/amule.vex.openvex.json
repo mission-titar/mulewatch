@@ -1,0 +1,85 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/mission-titar/p2pwatch/blob/main/security/amule.vex.openvex.json",
+  "author": "mission-titar",
+  "timestamp": "2026-10-11T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2025-15366"
+      },
+      "timestamp": "2026-10-11T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/p2pwatch-amule",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The imaplib module is not imported or used by the application."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2025-15367"
+      },
+      "timestamp": "2026-10-11T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/p2pwatch-amule",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/python"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The poplib module is not imported or used by the application."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2006-2691"
+      },
+      "timestamp": "2026-10-11T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/p2pwatch-amule",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/amule"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "This aMuleWeb flaw was fixed in aMule 2.1.2. The image builds a later aMule from a pinned commit, and does not build amuleweb at all."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2006-2692"
+      },
+      "timestamp": "2026-10-11T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/p2pwatch-amule",
+          "subcomponents": [
+            {
+              "@id": "pkg:generic/amule"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_present",
+      "impact_statement": "This aMuleWeb flaw was fixed in aMule 2.1.2. The image builds a later aMule from a pinned commit, and does not build amuleweb at all."
+    }
+  ]
+}

@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       push:
-        description: If true, the build-and-verify job also pushes the image to ghcr by digest.
+        description: If true, the build-and-verify job also pushes both images to ghcr by digest.
         type: boolean
         default: false
 
@@ -34,9 +34,9 @@ jobs:
       - name: Unit tests
         run: uv run poe test
 
-  # One job per arch on its native runner: build the images (loaded locally, the crawler's
-  # pushed by digest when inputs.push), run the compose smoke stack against both images and
-  # the daemon-facing suites against the aMule image, then upload the digest for the
+  # One job per arch on its native runner: build the images (loaded locally, both pushed by
+  # digest when inputs.push), run the compose smoke stack against both images and
+  # the daemon-facing suites against the aMule image, then upload one digest per image for the
   # release merge. The push exporter runs during the build, but only publish-manifest
   # publishes a tag, and it is downstream of this job's integration step, so no tag ever
   # references an image that failed integration.
@@ -92,12 +92,14 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
       - name: Build the aMule image (${{ matrix.arch }})
+        id: amule-image
         uses: ./.github/actions/docker-image
         with:
           package: amule
           platform: linux/${{ matrix.arch }}
           image: ${{ env.AMULE_IMAGE }}
           local-tag: ci-${{ github.sha }}
+          push: ${{ inputs.push }}
           cache-scope: amule-${{ matrix.arch }}
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
@@ -175,19 +177,29 @@ jobs:
       - name: Stop the throwaway daemon (${{ matrix.arch }})
         if: ${{ always() }}
         run: docker rm -f amuled || true
-      - name: Export the digest
+      - name: Export the digests
         if: ${{ inputs.push }}
         run: |
-          mkdir -p /tmp/digests
-          touch "/tmp/digests/${CRAWLER_DIGEST#sha256:}"
+          mkdir -p /tmp/digests/crawler /tmp/digests/amule
+          touch "/tmp/digests/crawler/${CRAWLER_DIGEST#sha256:}"
+          touch "/tmp/digests/amule/${AMULE_DIGEST#sha256:}"
         env:
           CRAWLER_DIGEST: ${{ steps.crawler.outputs.digest }}
+          AMULE_DIGEST: ${{ steps.amule-image.outputs.digest }}
       - name: Upload the crawler digest
         if: ${{ inputs.push }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: digest-${{ matrix.arch }}
-          path: /tmp/digests/*
+          name: digest-crawler-${{ matrix.arch }}
+          path: /tmp/digests/crawler/*
+          if-no-files-found: error
+          retention-days: 1
+      - name: Upload the aMule digest
+        if: ${{ inputs.push }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digest-amule-${{ matrix.arch }}
+          path: /tmp/digests/amule/*
           if-no-files-found: error
           retention-days: 1
 

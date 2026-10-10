@@ -11,12 +11,20 @@ permissions:
   packages: read
   security-events: write  # required to upload SARIF to GitHub code scanning
 
-env:
-  IMAGE: ghcr.io/mission-titar/p2pwatch
-
 jobs:
   scan:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: crawler
+            image: ghcr.io/mission-titar/p2pwatch
+          - package: amule
+            image: ghcr.io/mission-titar/p2pwatch-amule
+    env:
+      IMAGE: ${{ matrix.image }}
+      VEX: security/${{ matrix.package }}.vex.openvex.json
     steps:
       - name: Check out the repository (for the vex_guards consistency checks)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,7 +78,7 @@ jobs:
         run: >
           uv run python -m vex_guards.check_image_claims
           --sbom /tmp/sbom.syft.json
-          --vex security/crawler.vex.openvex.json
+          --vex "$VEX"
           --format sarif --output /tmp/image-claims.sarif
 
       - name: Upload image-claims SARIF to code scanning
@@ -78,13 +86,13 @@ jobs:
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: /tmp/image-claims.sarif
-          category: vex-image-claims-crawler
+          category: vex-image-claims-${{ matrix.package }}
 
       - name: Check for stale VEX entries no longer reported by Grype
         run: >
           uv run python -m vex_guards.check_stale_claims
           --sbom /tmp/sbom.syft.json
-          --vex security/crawler.vex.openvex.json
+          --vex "$VEX"
           --format sarif --output /tmp/stale.sarif
 
       - name: Upload stale-claims SARIF to code scanning
@@ -92,7 +100,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: /tmp/stale.sarif
-          category: vex-stale-claims-crawler
+          category: vex-stale-claims-${{ matrix.package }}
 
       # Scans the SBOM (not the live image) so results are reproducible, applying the
       # OpenVEX pulled from the image. fail-build is false: findings are surfaced via
@@ -111,4 +119,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
-          category: grype-crawler
+          category: grype-${{ matrix.package }}

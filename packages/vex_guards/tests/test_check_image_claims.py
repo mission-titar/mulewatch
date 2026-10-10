@@ -19,6 +19,7 @@ from vex_guards.repo import repo_root
 # branch) while the guards stay under test control.
 _CRAWLER_VEX = repo_root() / "security" / "crawler.vex.openvex.json"
 _CRAWLER_VEX_RELPATH = "security/crawler.vex.openvex.json"
+_AMULE_VEX = repo_root() / "security" / "amule.vex.openvex.json"
 
 _CLAIMED_IMAGE_CVE = "CVE-2025-15367"
 _CLAIMED_SOURCE_CVE = "CVE-2025-15366"
@@ -131,7 +132,7 @@ def test_the_real_amule_claims_fail_on_an_amule_older_than_the_fix(
         ],
     )
 
-    rc = check_image_claims.main(["--sbom", str(sbom), "--vex", str(_CRAWLER_VEX)])
+    rc = check_image_claims.main(["--sbom", str(sbom), "--vex", str(_AMULE_VEX)])
 
     assert rc == 1
     out = capsys.readouterr().out
