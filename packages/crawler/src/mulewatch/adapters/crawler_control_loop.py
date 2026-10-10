@@ -46,3 +46,7 @@ class LoopCrawlerControl:
     def restart(self) -> None:
         """Request the crawler's graceful shutdown (the container restarts it)."""
         self._loop.call_soon_threadsafe(self._shutdown.set)
+
+    def is_paused(self) -> bool:
+        """A read, safe from another thread: ``is_set`` only returns a flag."""
+        return not self._resumed.is_set()

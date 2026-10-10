@@ -6,6 +6,7 @@ delay later.
 """
 
 import asyncio
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -21,13 +22,38 @@ from mulewatch.domain.observability.events import (
     InstanceUnreachable,
 )
 from mulewatch.ports.client_errors import ClientUnreachableError
-from mulewatch.ports.client_status import StatusClient
+from mulewatch.ports.client_status import ClientStatus, StatusClient
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.telemetry import Telemetry
 
 STATUS_PERIOD_SECONDS = 60.0
 CHANNEL_ALERT_SECONDS = 300.0
 UNREACHABLE_ALERT_SECONDS = 120.0
+CURRENT_FOR_SECONDS = 2 * STATUS_PERIOD_SECONDS
+
+
+@dataclass(frozen=True)
+class ClientReading:
+    read_at: datetime
+    status: ClientStatus | None  # None: the client's API did not answer
+
+
+class StatusBoard:
+    """Each client's last reading, published by its loop and read on the webui's thread (D21)."""
+
+    def __init__(self, clients: Iterable[str], clock: Clock) -> None:
+        self._clock = clock
+        self._readings: Mapping[str, ClientReading | None] = dict.fromkeys(clients)
+
+    def publish(self, client: str, reading: ClientReading) -> None:
+        # A new map, never a mutation: the other thread reads one whole snapshot, no lock needed.
+        self._readings = {**self._readings, client: reading}
+
+    def readings(self) -> Mapping[str, ClientReading | None]:
+        return self._readings
+
+    def is_current(self, reading: ClientReading) -> bool:
+        return (self._clock.now() - reading.read_at).total_seconds() <= CURRENT_FOR_SECONDS
 
 
 @dataclass
@@ -37,6 +63,7 @@ class StatusLoopDeps:
     clock: Clock
     telemetry: Telemetry
     shutdown: asyncio.Event
+    board: StatusBoard
 
 
 class _Watch:
@@ -77,6 +104,7 @@ async def status_loop(deps: StatusLoopDeps) -> None:
             await deps.client.connect()  # nothing else may connect a shared session (a pause)
             status = await deps.client.status()
         except ClientUnreachableError:
+            deps.board.publish(deps.name, ClientReading(deps.clock.now(), None))
             await deps.telemetry.emit(InstanceUnreachable(deps.name))
             # Every channel is unknown while the API is: only the API's own alert can fire.
             readings: list[tuple[str, bool | None, bool | None]] = [
@@ -84,6 +112,7 @@ async def status_loop(deps: StatusLoopDeps) -> None:
             ]
             reachable = False
         else:
+            deps.board.publish(deps.name, ClientReading(deps.clock.now(), status))
             readings = [(c.channel, c.on_network, c.connectable) for c in status.channels]
             reachable = True
         await watch(

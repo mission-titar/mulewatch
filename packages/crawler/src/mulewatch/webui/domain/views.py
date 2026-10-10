@@ -51,6 +51,26 @@ class TargetCoverageRow:
     file_count: int
 
 
+@dataclass(frozen=True)
+class ChannelLine:
+    """Dashboard row: one channel of a client, each field "yes", "no" or "unknown"."""
+
+    channel: str
+    on_network: str
+    connectable: str
+
+
+@dataclass(frozen=True)
+class ClientLine:
+    """Dashboard block: one client; an old or missing reading has no channel line."""
+
+    name: str
+    reading: str
+    version: str
+    api_reachable: str
+    channels: tuple[ChannelLine, ...]
+
+
 # ---------------------------------------------------------------------------
 # File explorer
 # ---------------------------------------------------------------------------

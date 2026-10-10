@@ -63,8 +63,8 @@ Remplacez `amuled` par `mulewatch`. Il n'existe pas de service compose `amuled`,
 `docker compose restart amuled` ne veut rien dire. `amuleapi` n'est pas un service s6 non plus :
 c'est `amuled` qui le démarre, donc redémarrer `amuled` le redémarre avec lui.
 
-Un détail qui compte : si le crawler s'arrête proprement, comme le fait le bouton de redémarrage de
-`/controls`, s6 le relance seul et aMule garde ses sessions eD2k et Kad. S'il plante, tout le
+Un détail qui compte : si le crawler s'arrête proprement, comme le fait le bouton de redémarrage du
+tableau de bord, s6 le relance seul et aMule garde ses sessions eD2k et Kad. S'il plante, tout le
 conteneur redescend, pour que la panne soit visible plutôt que silencieuse. aMule, lui, est
 simplement relancé sur place.
 
@@ -181,7 +181,7 @@ Un nœud publie deux surfaces web, qui n'ont pas la même posture :
 | **4711** | amuleapi, l'interface propre à aMule | le mot de passe admin `AMULE_API_PASSWORD` |
 
 **Le port 8080 n'a aucune authentification, d'aucune sorte.** Quiconque l'atteint obtient le
-catalogue, les contrôles de `/controls` qui modifient l'état, et une console SQL en lecture seule.
+catalogue, les contrôles du tableau de bord qui modifient l'état, et une console SQL en lecture seule.
 `AMULE_API_PASSWORD` ne protège que le 4711. Mettez le 8080 derrière un reverse proxy ou un VPN, ou
 gardez-le sur un réseau de confiance, et ne le posez jamais sur l'Internet ouvert.
 
@@ -199,18 +199,18 @@ le crawl en gardant aMule vivant, c'est
 
 | Route | Description |
 |---|---|
-| `/` | Tableau de bord : couverture par cible (épisodes trouvés et manquants) |
+| `/` | Tableau de bord : état de chaque client (version, API joignable, et par canal : sur le réseau, joignable par les pairs), d'après la dernière lecture de moins de deux minutes ; état du crawl, avec les boutons pause, reprise et redémarrage du crawler seul (le conteneur reste debout, aMule garde ses sessions) ; couverture par cible (épisodes trouvés et manquants) |
 | `/files` | Liste paginée des fichiers ; filtres `?target=`, `?tier=`, `?q=` |
 | `/files/{file_id}` | Détail d'un fichier, désigné par son `file_id` en 32 caractères hexadécimaux minuscules, tel que la console SQL l'affiche : réseau, identifiant natif, observations, décisions, explication du matching |
 | `/targets/{target_id}` | Fichiers d'une cible (alias de `/files?target=`) |
-| `/node` | État du crawler : `node_id`, entrées du `scheduler_state` et téléchargements (voir [Suivre un téléchargement](#suivre-un-téléchargement)). N'expose pas l'état réseau d'aMule. |
-| `/controls` | Mettre en pause ou reprendre la surveillance, redémarrer le crawler seul (le conteneur reste debout, aMule garde ses sessions). |
+| `/node` | État du crawler : `node_id`, entrées du `scheduler_state` et téléchargements (voir [Suivre un téléchargement](#suivre-un-téléchargement)). |
+| `POST /controls/pause`, `/controls/resume`, `/controls/restart` | Les boutons du tableau de bord, qui y renvoient. |
 | `/console` | Console SQL en lecture seule : un unique `SELECT` sur `catalog.db` ou `local.db`, avec export CSV. Toujours active. |
 | `/health` | Healthcheck JSON : répond `{"status": "ok"}` si le service est opérationnel |
 
-`/controls` déclenche des actions qui modifient l'état, sans jeton CSRF ni authentification, par
-conception. `/console` est structurellement en lecture seule et bornée contre le déni de service
-(délai maximum, plafond de lignes rendues, une seule instruction). **Ces deux surfaces ne sont
+Les `POST /controls/*` déclenchent des actions qui modifient l'état, sans jeton CSRF ni
+authentification, par conception. `/console` est structurellement en lecture seule et bornée contre
+le déni de service (délai maximum, plafond de lignes rendues, une seule instruction). **Ces deux surfaces ne sont
 défendables que derrière votre propre périmètre** : réseau privé, VPN ou reverse proxy authentifié,
 jamais sur Internet.
 

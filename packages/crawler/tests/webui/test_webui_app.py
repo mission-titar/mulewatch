@@ -12,7 +12,9 @@ from starlette.applications import Starlette
 from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
+from mulewatch.application.status_loop import ClientReading, StatusBoard
 from mulewatch.domain.file_key import FileKey, Network
+from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from mulewatch.webui.composition.app import (
     _normalize_dir,
     _normalize_sort,
@@ -29,6 +31,7 @@ from mulewatch.webui.domain.views import (
     FileRow,
     HiddenInput,
 )
+from tests.application.fakes import FakeClock
 from tests.catalog_rows import SEEN_AT, file_id, insert_decision, insert_file, insert_observation
 
 # ---------------------------------------------------------------------------
@@ -37,6 +40,7 @@ from tests.catalog_rows import SEEN_AT, file_id, insert_decision, insert_file, i
 
 TEST_HASH = "aabbccdd00112233aabbccdd00112233"
 _AMULE_URL = "http://localhost:4711"
+_NO_STATUS = StatusBoard((), FakeClock())  # never published to
 
 
 def _detail_url(ed2k_hash: str) -> str:
@@ -50,6 +54,10 @@ class _RecordingControl:
 
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.paused = False
+
+    def is_paused(self) -> bool:
+        return self.paused
 
     def pause(self) -> None:
         self.calls.append("pause")
@@ -142,6 +150,7 @@ def populated_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -184,6 +193,7 @@ def app_no_decision(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -238,6 +248,7 @@ def app_retracted_decision(catalog_db: Path, local_db: Path) -> tuple[Starlette,
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -273,6 +284,7 @@ def app_no_observations(catalog_db: Path, local_db: Path) -> tuple[Starlette, st
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -316,6 +328,7 @@ def app_unknown_target(catalog_db: Path, local_db: Path) -> tuple[Starlette, str
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -359,6 +372,7 @@ def app_download_tier_known_target(catalog_db: Path, local_db: Path) -> tuple[St
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -402,6 +416,7 @@ def app_download_tier_unknown_target(catalog_db: Path, local_db: Path) -> tuple[
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -646,6 +661,7 @@ def app_vetoed_alias(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
         templates_dir=webui_dir / "templates",
         static_dir=webui_dir / "static",
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -894,6 +910,7 @@ def app_with_media_obs(catalog_db: Path, local_db: Path) -> tuple[Starlette, str
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -953,6 +970,7 @@ def app_with_hostile_filename(catalog_db: Path, local_db: Path) -> tuple[Starlet
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -1029,6 +1047,7 @@ async def test_files_page_shows_pagination_navigation(catalog_db: Path, local_db
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -1346,6 +1365,7 @@ def app_whole_episode(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, TEST_HASH
@@ -1397,107 +1417,94 @@ async def test_file_detail_whole_episode_shows_both_targets(
 
 
 # ---------------------------------------------------------------------------
-# Runtime controls (phase P6a): GET renders, each POST dispatches one intent and
-# redirects (PRG), the ?done banner maps a known code to a message (both branches).
+# Dashboard controls and client status (stage 2 D20): each POST dispatches one intent and
+# redirects (PRG) to the dashboard, whose ?done banner maps a known code to a message.
 # ---------------------------------------------------------------------------
+
+
+def _dashboard_app(
+    catalog_db: Path, local_db: Path, control: _RecordingControl, status: StatusBoard
+) -> Starlette:
+    import mulewatch.webui
+
+    webui_dir = Path(mulewatch.webui.__file__).parent
+    return build_app(
+        catalog_db=catalog_db,
+        local_db=local_db,
+        matcher_config=_matcher(),
+        targets=_targets(),
+        templates_dir=webui_dir / "adapters" / "templates",
+        static_dir=webui_dir / "adapters" / "static",
+        control=control,
+        status=status,
+        amule_url=_AMULE_URL,
+    )
 
 
 @pytest.fixture
 def controls_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, _RecordingControl]:
-    """App wired with a recording control, for the runtime-control route tests. The controls
-    routes never read the DB, so no seeding is needed."""
-    matcher_config = _matcher()
-    targets = _targets()
-
-    import mulewatch.webui
-
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    """App wired with a recording control, for the runtime-control route tests."""
     control = _RecordingControl()
-    app = build_app(
-        catalog_db=catalog_db,
-        local_db=local_db,
-        matcher_config=matcher_config,
-        targets=targets,
-        templates_dir=templates_dir,
-        static_dir=static_dir,
-        control=control,
-        amule_url=_AMULE_URL,
-    )
-    return app, control
+    return _dashboard_app(catalog_db, local_db, control, _NO_STATUS), control
 
 
-@pytest.mark.asyncio
-async def test_controls_get_renders_the_three_action_forms(
-    controls_app: tuple[Starlette, _RecordingControl],
-) -> None:
-    """GET /controls -> 200 with a POST form for each of the three in-scope controls."""
-    app, _ = controls_app
+async def _dashboard(app: Starlette) -> str:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/controls")
+        resp = await client.get("/")
     assert resp.status_code == 200
-    assert "force-cycle" not in resp.text
-    assert 'action="/controls/pause"' in resp.text
-    assert 'action="/controls/resume"' in resp.text
-    assert 'action="/controls/restart"' in resp.text
-    # P6b controls are explicitly out of scope: no re-evaluate / requeue actions here.
-    assert "reevaluate" not in resp.text
-    assert "requeue" not in resp.text
+    return resp.text
 
 
 @pytest.mark.asyncio
-async def test_controls_nav_entry_links_from_elsewhere_and_is_active_on_controls(
+async def test_dashboard_renders_the_three_action_forms_and_the_running_crawl(
     controls_app: tuple[Starlette, _RecordingControl],
 ) -> None:
-    """The base nav carries a Controls entry: a link (href="/controls") from any other page, and
-    the active non-link on /controls itself, where that href is gone by construction."""
     app, _ = controls_app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        elsewhere = await client.get("/")
-        on_controls = await client.get("/controls")
-    assert elsewhere.status_code == 200
-    assert '<a href="/controls">Controls</a>' in elsewhere.text
-    assert on_controls.status_code == 200
-    assert '<span aria-current="page">Controls</span>' in on_controls.text
-    assert '<a href="/controls">Controls</a>' not in on_controls.text
+    text = await _dashboard(app)
+    assert 'action="/controls/pause"' in text
+    assert 'action="/controls/resume"' in text
+    assert 'action="/controls/restart"' in text
+    assert "The crawl is running." in text
 
 
 @pytest.mark.asyncio
-async def test_controls_get_without_done_shows_no_banner(
+async def test_dashboard_shows_a_paused_crawl(
     controls_app: tuple[Starlette, _RecordingControl],
 ) -> None:
-    """GET /controls (no ?done) renders no status banner (empty messages tuple)."""
-    app, _ = controls_app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/controls")
-    assert resp.status_code == 200
-    assert "control-banner" not in resp.text
+    app, control = controls_app
+    control.paused = True
+    assert "The crawl is paused." in await _dashboard(app)
 
 
 @pytest.mark.asyncio
-async def test_controls_get_unknown_done_shows_no_banner(
+async def test_the_controls_page_and_its_nav_entry_are_gone(
     controls_app: tuple[Starlette, _RecordingControl],
 ) -> None:
-    """An unknown ?done code maps to no message -> no banner (covers the mapping's miss branch)."""
     app, _ = controls_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/controls?done=bogus")
+        page = await client.get("/controls")
+        dashboard = await client.get("/")
+    assert page.status_code == 404
+    assert 'href="/controls"' not in dashboard.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_without_done_shows_no_banner(
+    controls_app: tuple[Starlette, _RecordingControl],
+) -> None:
+    app, _ = controls_app
+    assert "control-banner" not in await _dashboard(app)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_unknown_done_shows_no_banner(
+    controls_app: tuple[Starlette, _RecordingControl],
+) -> None:
+    app, _ = controls_app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.get("/?done=bogus")
     assert resp.status_code == 200
     assert "control-banner" not in resp.text
-
-
-@pytest.mark.asyncio
-async def test_controls_get_known_done_shows_banner_message(
-    controls_app: tuple[Starlette, _RecordingControl],
-) -> None:
-    """A known ?done code renders its human message in a banner (covers the mapping's hit
-    branch)."""
-    app, _ = controls_app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.get("/controls?done=resumed")
-    assert resp.status_code == 200
-    assert "control-banner" in resp.text
-    assert "Crawl resumed." in resp.text
 
 
 @pytest.mark.asyncio
@@ -1512,55 +1519,102 @@ async def test_there_is_no_force_cycle_control(
 
 
 @pytest.mark.asyncio
-async def test_post_pause_dispatches_and_redirects(
-    controls_app: tuple[Starlette, _RecordingControl],
+@pytest.mark.parametrize(
+    ("action", "done"), [("pause", "paused"), ("resume", "resumed"), ("restart", "restart")]
+)
+async def test_each_control_dispatches_and_redirects_to_the_dashboard(
+    controls_app: tuple[Starlette, _RecordingControl], action: str, done: str
 ) -> None:
     app, control = controls_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/controls/pause")
+        resp = await client.post(f"/controls/{action}")
     assert resp.status_code == 303
-    assert resp.headers["location"] == "/controls?done=paused"
-    assert control.calls == ["pause"]
+    assert resp.headers["location"] == f"/?done={done}"
+    assert control.calls == [action]
 
 
 @pytest.mark.asyncio
-async def test_post_resume_dispatches_and_redirects(
+async def test_post_pause_followed_lands_on_the_dashboard_banner(
     controls_app: tuple[Starlette, _RecordingControl],
 ) -> None:
-    app, control = controls_app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/controls/resume")
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/controls?done=resumed"
-    assert control.calls == ["resume"]
-
-
-@pytest.mark.asyncio
-async def test_post_restart_dispatches_and_redirects(
-    controls_app: tuple[Starlette, _RecordingControl],
-) -> None:
-    app, control = controls_app
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        resp = await client.post("/controls/restart")
-    assert resp.status_code == 303
-    assert resp.headers["location"] == "/controls?done=restart"
-    assert control.calls == ["restart"]
-
-
-@pytest.mark.asyncio
-async def test_post_pause_followed_lands_on_banner(
-    controls_app: tuple[Starlette, _RecordingControl],
-) -> None:
-    """Following the redirect lands on the controls page with the pause banner (end-to-end
-    PRG)."""
     app, control = controls_app
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test", follow_redirects=True
     ) as client:
         resp = await client.post("/controls/pause")
     assert resp.status_code == 200
+    assert "control-banner" in resp.text
     assert "Crawl paused. Searches in flight finish, then the crawler idles." in resp.text
     assert control.calls == ["pause"]
+
+
+_CHANNELS = (ChannelStatus("ed2k", True, False), ChannelStatus("x", False, None))
+
+
+async def _clients_section(
+    catalog_db: Path, local_db: Path, reading: ClientReading | None, *, age_seconds: float = 0
+) -> str:
+    clock = FakeClock()
+    board = StatusBoard(("amuled",), clock)
+    if reading is not None:
+        board.publish("amuled", reading)
+    clock.advance(age_seconds)
+    text = await _dashboard(_dashboard_app(catalog_db, local_db, _RecordingControl(), board))
+    return text[text.index("<h2>Clients</h2>") : text.index("<h2>Crawl</h2>")]
+
+
+def _read_now(status: ClientStatus | None) -> ClientReading:
+    return ClientReading(FakeClock().now(), status)
+
+
+@pytest.mark.asyncio
+async def test_dashboard_shows_each_client_and_channel_of_a_current_reading(
+    catalog_db: Path, local_db: Path
+) -> None:
+    section = await _clients_section(
+        catalog_db, local_db, _read_now(ClientStatus("2.3.3", _CHANNELS)), age_seconds=120
+    )
+    assert "<h3>amuled</h3>" in section
+    assert "<dd>2.3.3</dd>" in section
+    assert "<dt>API reachable</dt><dd>yes</dd>" in section
+    assert "<dd>Read at 2026-06-12 00:00Z.</dd>" in section
+    assert "<td>ed2k</td><td>yes</td><td>no</td>" in section
+    assert "<td>x</td><td>no</td><td>unknown</td>" in section
+
+
+@pytest.mark.asyncio
+async def test_dashboard_shows_an_unknown_version(catalog_db: Path, local_db: Path) -> None:
+    section = await _clients_section(catalog_db, local_db, _read_now(ClientStatus(None, ())))
+    assert "<dt>Version</dt><dd>unknown</dd>" in section
+    assert "No current channel reading." in section
+
+
+@pytest.mark.asyncio
+async def test_dashboard_shows_an_unreachable_client(catalog_db: Path, local_db: Path) -> None:
+    section = await _clients_section(catalog_db, local_db, _read_now(None))
+    assert "<dt>API reachable</dt><dd>no</dd>" in section
+    assert "No current channel reading." in section
+
+
+@pytest.mark.asyncio
+async def test_dashboard_never_shows_an_old_reading_as_current(
+    catalog_db: Path, local_db: Path
+) -> None:
+    section = await _clients_section(
+        catalog_db, local_db, _read_now(ClientStatus("2.3.3", _CHANNELS)), age_seconds=121
+    )
+    assert "<dd>Out of date: last reading at 2026-06-12 00:00Z.</dd>" in section
+    assert "2.3.3" not in section
+    assert "<dt>API reachable</dt><dd>unknown</dd>" in section
+    assert "<td>ed2k</td>" not in section
+
+
+@pytest.mark.asyncio
+async def test_dashboard_shows_a_client_not_read_yet(catalog_db: Path, local_db: Path) -> None:
+    section = await _clients_section(catalog_db, local_db, None)
+    assert "<h3>amuled</h3>" in section
+    assert "<dd>No reading yet.</dd>" in section
+    assert "<dt>API reachable</dt><dd>unknown</dd>" in section
 
 
 # ---------------------------------------------------------------------------
@@ -1626,6 +1680,7 @@ def sortable_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, list[str]
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url=_AMULE_URL,
     )
     return app, [big, mid, small]
@@ -1784,13 +1839,12 @@ async def test_target_page_has_no_filter_bar(
 # Top nav: active state + the page titles it replaces
 # ---------------------------------------------------------------------------
 
-# The five nav destinations, in render order: (path, label). Mirrors the table wired in
+# The four nav destinations, in render order: (path, label). Mirrors the table wired in
 # composition.app; a test that drifts from it fails on the label or the href.
 _NAV_ENTRIES: tuple[tuple[str, str], ...] = (
     ("/", "Dashboard"),
     ("/files", "Files"),
     ("/node", "Nodes"),
-    ("/controls", "Controls"),
     ("/console", "Console"),
 )
 
@@ -1842,6 +1896,7 @@ async def test_nav_amule_link_uses_the_configured_base(catalog_db: Path, local_d
         templates_dir=webui_dir / "adapters" / "templates",
         static_dir=webui_dir / "adapters" / "static",
         control=_RecordingControl(),
+        status=_NO_STATUS,
         amule_url="https://mule.example.org/amule",
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -1869,7 +1924,7 @@ async def test_nav_on_a_non_nav_path_renders_every_entry_as_a_link(
 async def test_nav_pages_render_no_page_title(
     populated_app: tuple[Starlette, str], path: str
 ) -> None:
-    """The five nav destinations carry no <h1>: the title duplicated the nav, whose bold current
+    """The four nav destinations carry no <h1>: the title duplicated the nav, whose bold current
     entry now names the page. Their <h2> section headings stay."""
     app, _ = populated_app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
