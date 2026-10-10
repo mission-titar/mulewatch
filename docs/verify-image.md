@@ -52,9 +52,6 @@ par digest d'architecture. Le détail de la chaîne et du triage VEX est dans `S
 > (`grype-crawler`, `vex-image-claims-crawler`, `vex-stale-claims-crawler`) : renommer une
 > catégorie Code scanning rend ses findings existants orphelins. Seul le *produit* VEX a suivi le
 > renommage de l'image.
->
-> **L'ancien paquet GHCR `mulewatch-crawler` ne doit pas être supprimé** : il reste en 1.x et
-> c'est le chemin de retour arrière pendant la migration.
 
 ---
 
