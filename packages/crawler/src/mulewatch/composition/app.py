@@ -8,7 +8,7 @@ COMPOSITION layer (the only one allowed to import adapters AND application). Bui
 - ONE ``MuleClient`` + ``SearchWorker`` on the container's single amuled (design §6), whose
   session the status loop shares.
 
-Loops: the search tasks (``run_search_tasks``), the status loop, and the download and port-sync
+Loops: the search tasks (``SearchTasks``), the status loop, and the download and port-sync
 loops when configured.
 OBSERVABLE & BOUNDED shutdown (spec §6): ``loop.add_signal_handler`` (NOT ``KeyboardInterrupt``,
 which would preempt a sync function mid-write); 1st ^C → human line on stderr +
@@ -68,7 +68,7 @@ from mulewatch.application.run_download_cycle import (
     DownloadLoopDeps,
     download_loop,
 )
-from mulewatch.application.search_tasks import run_search_tasks
+from mulewatch.application.search_tasks import SearchTasks
 from mulewatch.application.search_worker import (
     BackoffRegistry,
     SearchWorker,
@@ -373,14 +373,14 @@ class CrawlerApp:
         async with asyncio.TaskGroup() as group:
             tasks = [
                 group.create_task(
-                    run_search_tasks(
+                    SearchTasks(
                         workers=workers,
                         keywords=self._crawler_config.search_keywords,
                         resumed=self._resumed,
                         backoff=backoff,
                         scheduler_state=scheduler_state,
                         clock=self._clock,
-                    )
+                    ).run()
                 ),
                 group.create_task(status_loop(status_deps)),
             ]

@@ -17,44 +17,54 @@ from mulewatch.ports.scheduler_state_repository import SchedulerStateRepository
 _logger = logging.getLogger("mulewatch.application.search_tasks")
 
 
-async def run_search_tasks(
-    *,
-    workers: Sequence[SearchWorker],
-    keywords: Sequence[str],
-    resumed: asyncio.Event,
-    backoff: BackoffRegistry,
-    scheduler_state: SchedulerStateRepository,
-    clock: Clock,
-) -> None:
-    """Runs every task until cancelled."""
-    saved = backoff.snapshot()
+class SearchTasks:
+    """The backoff last saved is the state the tasks share."""
 
-    def save() -> None:
-        nonlocal saved
-        current = backoff.snapshot()
-        if current == saved:
+    def __init__(
+        self,
+        *,
+        workers: Sequence[SearchWorker],
+        keywords: Sequence[str],
+        resumed: asyncio.Event,
+        backoff: BackoffRegistry,
+        scheduler_state: SchedulerStateRepository,
+        clock: Clock,
+    ) -> None:
+        self._workers = workers
+        self._keywords = keywords
+        self._resumed = resumed
+        self._backoff = backoff
+        self._scheduler_state = scheduler_state
+        self._clock = clock
+        self._saved = backoff.snapshot()
+
+    async def run(self) -> None:
+        """Runs every task until cancelled."""
+        texts = [keyword.text for keyword in generate_keywords(self._keywords)]
+        async with asyncio.TaskGroup() as group:
+            for worker in self._workers:
+                for channel in worker.channels:
+                    for text in texts:
+                        group.create_task(self._search_forever(worker, SearchTask(text, channel)))
+
+    async def _search_forever(self, worker: SearchWorker, task: SearchTask) -> None:
+        while True:
+            await self._resumed.wait()
+            wait = worker.seconds_until_ready(task.channel)
+            if wait > 0:
+                await self._clock.sleep(wait)
+                continue
+            await worker.run_task(task)
+            self._save()
+            await asyncio.sleep(0)  # a search that never suspends must not starve the loop
+
+    def _save(self) -> None:
+        current = self._backoff.snapshot()
+        if current == self._saved:
             return
         try:
-            scheduler_state.save_channel_backoff(current)
+            self._scheduler_state.save_channel_backoff(current)
         except RepositoryError as error:
             _logger.error("backoff not saved (%s): retried after the next search", error)
             return
-        saved = current
-
-    async def search_forever(worker: SearchWorker, task: SearchTask) -> None:
-        while True:
-            await resumed.wait()
-            wait = worker.seconds_until_ready(task.channel)
-            if wait > 0:
-                await clock.sleep(wait)
-                continue
-            await worker.run_task(task)
-            save()
-            await asyncio.sleep(0)  # a search that never suspends must not starve the loop
-
-    texts = [keyword.text for keyword in generate_keywords(keywords)]
-    async with asyncio.TaskGroup() as group:
-        for worker in workers:
-            for channel in worker.channels:
-                for text in texts:
-                    group.create_task(search_forever(worker, SearchTask(text, channel)))
+        self._saved = current
