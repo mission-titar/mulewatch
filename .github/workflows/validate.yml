@@ -13,6 +13,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/mission-titar/p2pwatch
+  AMULE_IMAGE: ghcr.io/mission-titar/p2pwatch-amule
 
 jobs:
   lint:
@@ -33,11 +34,12 @@ jobs:
       - name: Unit tests
         run: uv run poe test
 
-  # One job per arch on its native runner: build the image (loaded locally, and pushed
-  # by digest when inputs.push), run the compose smoke stack and the daemon-facing suites
-  # against the local image, then upload the digest for the release merge. The push exporter runs during the build, but
-  # only publish-manifest publishes a tag, and it is downstream of this job's integration
-  # step, so no tag ever references an image that failed integration.
+  # One job per arch on its native runner: build the images (loaded locally, the crawler's
+  # pushed by digest when inputs.push), run the compose smoke stack against the crawler image
+  # and the daemon-facing suites against the aMule image, then upload the digest for the
+  # release merge. The push exporter runs during the build, but only publish-manifest
+  # publishes a tag, and it is downstream of this job's integration step, so no tag ever
+  # references an image that failed integration.
   build-and-verify:
     needs: [lint, test]
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
@@ -89,6 +91,16 @@ jobs:
           cache-scope: crawler-${{ matrix.arch }}
           build-args: |
             VERSION=${{ steps.version.outputs.value }}
+      - name: Build the aMule image (${{ matrix.arch }})
+        uses: ./.github/actions/docker-image
+        with:
+          package: amule
+          platform: linux/${{ matrix.arch }}
+          image: ${{ env.AMULE_IMAGE }}
+          local-tag: ci-${{ github.sha }}
+          cache-scope: amule-${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.value }}
       - name: Read the aMule version pin
         id: amule
         run: |
@@ -102,52 +114,61 @@ jobs:
       - name: Check that the aMule binaries report the pinned version (${{ matrix.arch }})
         env:
           AMULE_VERSION: ${{ steps.amule.outputs.value }}
-          LOCAL_IMAGE: ${{ env.IMAGE }}:ci-${{ github.sha }}
+          IMAGES: ${{ env.AMULE_IMAGE }}:ci-${{ github.sha }} ${{ env.IMAGE }}:ci-${{ github.sha }}
         # --version exits 255 even on success, so only its output is checked.
         run: |
-          amuled=$(docker run --rm --entrypoint amuled "$LOCAL_IMAGE" --version || true)
-          amuleapi=$(docker run --rm --entrypoint amuleapi "$LOCAL_IMAGE" --version || true)
-          echo "$amuled"
-          echo "$amuleapi"
-          grep -qF "aMuleD $AMULE_VERSION compiled" <<< "$amuled"
-          grep -qF "amuleapi $AMULE_VERSION compiled" <<< "$amuleapi"
+          for image in $IMAGES; do
+            amuled=$(docker run --rm --entrypoint amuled "$image" --version || true)
+            amuleapi=$(docker run --rm --entrypoint amuleapi "$image" --version || true)
+            echo "$image: $amuled"
+            echo "$image: $amuleapi"
+            grep -qF "aMuleD $AMULE_VERSION compiled" <<< "$amuled"
+            grep -qF "amuleapi $AMULE_VERSION compiled" <<< "$amuleapi"
+          done
       # The same action, Syft and cataloger selection as release.yml, so a PR proves what a
       # release will attest. The sbom-cataloger is not an image cataloger: off unless selected.
-      - name: Generate the SBOM of the local image (${{ matrix.arch }})
+      - name: Generate the SBOM of the local aMule image (${{ matrix.arch }})
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        env:
+          SYFT_SELECT_CATALOGERS: +sbom-cataloger
+        with:
+          image: docker:${{ env.AMULE_IMAGE }}:ci-${{ github.sha }}
+          format: syft-json
+          output-file: /tmp/sbom-amule.syft.json
+          upload-artifact: "false"
+          upload-release-assets: "false"
+      - name: Generate the SBOM of the local crawler image (${{ matrix.arch }})
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         env:
           SYFT_SELECT_CATALOGERS: +sbom-cataloger
         with:
           image: docker:${{ env.IMAGE }}:ci-${{ github.sha }}
           format: syft-json
-          output-file: /tmp/sbom.syft.json
+          output-file: /tmp/sbom-crawler.syft.json
           upload-artifact: "false"
           upload-release-assets: "false"
-      - name: Check that aMule is in the SBOM at the pinned version (${{ matrix.arch }})
+      - name: Check that aMule is in the SBOMs at the pinned version (${{ matrix.arch }})
         env:
           AMULE_VERSION: ${{ steps.amule.outputs.value }}
         run: |
-          if ! grep -qF "\"pkg:generic/amule@${AMULE_VERSION}\"" /tmp/sbom.syft.json; then
-            echo "::error::no pkg:generic/amule@${AMULE_VERSION} in the SBOM: the declaration"
-            echo "::error::file is missing or stale, or the sbom-cataloger was not selected."
-            exit 1
-          fi
+          for sbom in /tmp/sbom-amule.syft.json /tmp/sbom-crawler.syft.json; do
+            if ! grep -qF "\"pkg:generic/amule@${AMULE_VERSION}\"" "$sbom"; then
+              echo "::error::no pkg:generic/amule@${AMULE_VERSION} in $sbom: the declaration"
+              echo "::error::file is missing or stale, or the sbom-cataloger was not selected."
+              exit 1
+            fi
+          done
       - name: Compose smoke stack integration (${{ matrix.arch }})
         run: ( cd packages/crawler && uv run pytest -m compose_integration --no-cov -q )
         env:
           IMAGE_TAG: ci-${{ github.sha }}
-      # amuleapi ships with aMule, so the daemon these three suites drive is now the image
-      # this job just built rather than a third-party one. Same configs as the smoke stack: the
-      # crawler service needs them to stay up, and `finish` stops the container if it does not.
+      # These three suites drive amuled and amuleapi only, so they run against the aMule image.
       - name: Start a throwaway daemon (${{ matrix.arch }})
         run: |
           docker run -d --rm --name amuled -p 4711:4711 \
             -e PUID="$(id -u)" -e PGID="$(id -g)" \
             -e AMULE_EC_PASSWORD=indexer-ec-test -e AMULE_API_PASSWORD=indexer-api-test \
-            -v "$PWD/tests/smoke/crawler.yml:/app/config/crawler.yml:ro" \
-            -v "$PWD/tests/smoke/targets.yml:/app/config/targets.yml:ro" \
-            -v "$PWD/deploy/matcher.yml:/app/config/matcher.yml:ro" \
-            "$IMAGE:ci-${{ github.sha }}"
+            "$AMULE_IMAGE:ci-${{ github.sha }}"
           for _ in $(seq 1 90); do
             # `if`, not `&&`: the step runs under `set -e`, where a bare failing curl aborts it.
             if curl -fsS http://127.0.0.1:4711/api/v1/health >/dev/null; then exit 0; fi
