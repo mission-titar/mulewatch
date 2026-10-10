@@ -81,8 +81,8 @@ from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock, Rng
 from mulewatch.ports.crawler_control import CrawlerControl
 from mulewatch.ports.decision_signal import DecisionSignal
+from mulewatch.ports.download_client import DownloadClient
 from mulewatch.ports.mule_client import MuleClient
-from mulewatch.ports.mule_download_client import MuleDownloadClient
 from mulewatch.ports.mule_restarter import MuleRestarter
 from mulewatch.ports.port_forwarding import PortForwardingReader
 from mulewatch.ports.scheduler_state_repository import SchedulerStateRepository
@@ -95,11 +95,11 @@ _logger = logging.getLogger("mulewatch.composition.app")
 ClientFactory = Callable[[AmuleEndpoint], MuleClient]
 
 # DOWNLOAD client factory: same endpoint type, but the client satisfies
-# MuleDownloadClient (AmuleApiClient satisfies both Protocols structurally, DECISION D3).
-DownloadClientFactory = Callable[[AmuleEndpoint], MuleDownloadClient]
+# DownloadClient (AmuleApiClient satisfies both Protocols structurally, DECISION D3).
+DownloadClientFactory = Callable[[AmuleEndpoint], DownloadClient]
 
 
-def default_download_client_factory(endpoint: AmuleEndpoint) -> MuleDownloadClient:
+def default_download_client_factory(endpoint: AmuleEndpoint) -> DownloadClient:
     """An ``AmuleApiClient`` dedicated to download (its own session, DECISION D3)."""
     return AmuleApiClient(endpoint.host, endpoint.port, endpoint.password)
 
