@@ -11,10 +11,10 @@ from mulewatch.domain.observability.policy import MetricInstruction, MetricName
 
 # (name, doc, labels) of the counters.
 _COUNTERS: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
-    (MetricName.SEARCHES, "Searches performed", ("network",)),
-    (MetricName.OBSERVATIONS, "Observations recorded", ("network",)),
-    (MetricName.SEARCH_FAILURES, "Failed searches", ("network",)),
-    (MetricName.MULE_UNREACHABLE, "amuled unreachable", ()),
+    (MetricName.SEARCHES, "Searches performed", ("client", "network")),
+    (MetricName.OBSERVATIONS, "Observations recorded", ("client", "network")),
+    (MetricName.SEARCH_FAILURES, "Failed searches", ("client", "network")),
+    (MetricName.CLIENT_UNREACHABLE, "Client unreachable", ()),
     (MetricName.DECISIONS, "Match decisions recorded", ("tier",)),
     (MetricName.DOWNLOADS_QUEUED, "Downloads queued", ()),
     (MetricName.DOWNLOADS_COMPLETED, "Downloads completed", ()),

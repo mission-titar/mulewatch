@@ -16,6 +16,7 @@ from mulewatch.application.search_worker import (
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import (
     InstanceUnreachable,
+    ObservationRecorded,
     SearchExecuted,
     SearchFailed,
 )
@@ -341,7 +342,7 @@ async def test_a_task_is_one_search_given_the_cores_budget(
 async def test_successful_search_emits_search_executed_with_network_and_count(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
-    # A successful ed2k search emits SearchExecuted(network="ed2k", n_results=1) FIRST,
+    # A successful ed2k search emits SearchExecuted FIRST, labelled with its client,
     # before the per-observation events (ObservationRecorded/DecisionsRecorded).
     clock = FakeClock()
     telemetry = RecordingTelemetry()
@@ -349,9 +350,10 @@ async def test_successful_search_emits_search_executed_with_network_and_count(
     deps = _deps(catalog, engine, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
     await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert telemetry.events[0] == SearchExecuted(network="ed2k", n_results=1)
+    assert telemetry.events[0] == SearchExecuted(client="amule-1", network="ed2k", n_results=1)
     kinds = [type(e).__name__ for e in telemetry.events]
     assert kinds == ["SearchExecuted", "ObservationRecorded", "DecisionsRecorded"]
+    assert telemetry.events[1] == ObservationRecorded(client="amule-1", network="ed2k")
 
 
 @pytest.mark.asyncio
@@ -359,14 +361,14 @@ async def test_search_failure_emits_search_failed(
     catalog: SqliteCatalogRepository, engine: MatchingEngine
 ) -> None:
     # An application-level channel failure (SearchFailedError) emits
-    # SearchFailed(network).
+    # SearchFailed(client, network).
     clock = FakeClock()
     telemetry = RecordingTelemetry()
     client = FakeMuleClient(search_failures=[make_search_failed()])
     deps = _deps(catalog, engine, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
     await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert telemetry.events == [SearchFailed(network="ed2k")]
+    assert telemetry.events == [SearchFailed(client="amule-1", network="ed2k")]
 
 
 @pytest.mark.asyncio
@@ -380,7 +382,7 @@ async def test_connect_failure_emits_instance_unreachable(
     deps = _deps(catalog, engine, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
     await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert telemetry.events == [InstanceUnreachable()]
+    assert telemetry.events == [InstanceUnreachable("amule-1")]
 
 
 @pytest.mark.asyncio
@@ -394,4 +396,4 @@ async def test_transport_failure_during_search_emits_instance_unreachable(
     deps = _deps(catalog, engine, _registry(clock), telemetry=telemetry)
     worker = SearchWorker("amule-1", client, deps)
     await worker.run_task(SearchTask(keyword="keroro", channel="ed2k"))
-    assert telemetry.events == [InstanceUnreachable()]
+    assert telemetry.events == [InstanceUnreachable("amule-1")]

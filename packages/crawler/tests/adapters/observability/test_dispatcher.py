@@ -51,8 +51,8 @@ def _dispatcher(
 @pytest.mark.asyncio
 async def test_logs_and_applies_metrics_no_audience() -> None:
     sink, notifier = _RecordingSink(), _RecordingNotifier()
-    await _dispatcher(sink, notifier).emit(ev.ObservationRecorded(network="ed2k"))
-    assert [m.name.value for m in sink.applied] == ["emule_observations"]
+    await _dispatcher(sink, notifier).emit(ev.ObservationRecorded(client="amuled", network="ed2k"))
+    assert [m.name.value for m in sink.applied] == ["p2pwatch_observations"]
     assert notifier.calls == []  # ObservationRecorded has no audience
 
 
@@ -95,7 +95,7 @@ async def test_logs_the_message_but_notifies_the_body(caplog: pytest.LogCaptureF
 async def test_log_level_matches_severity(caplog: pytest.LogCaptureFixture) -> None:
     sink, notifier = _RecordingSink(), _RecordingNotifier()
     with caplog.at_level(logging.DEBUG, logger="mulewatch.observability"):
-        await _dispatcher(sink, notifier).emit(ev.InstanceUnreachable())
+        await _dispatcher(sink, notifier).emit(ev.InstanceUnreachable("amuled"))
     assert caplog.records[-1].levelno == logging.WARNING
 
 

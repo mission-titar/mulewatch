@@ -37,7 +37,7 @@ serveur de contrôle gluetun à joindre, donc le port-sync tournera dans le vide
 n'arrête pas le nœud pour autant.
 
 Une fois actif, surveillez les événements `port-sync` dans les journaux et les métriques
-`emule_port_*`.
+`emule_port_sync_triggered`, `emule_high_id_recovered` et `emule_port_mismatch`.
 
 ## Route B : ouvrir un port vous-même
 

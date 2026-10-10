@@ -259,6 +259,7 @@ async def test_a_second_name_that_matches_nothing_does_not_retract_the_first(
             engine=engine,
             signal=signal,
             telemetry=telemetry,
+            client="amuled",
             network="ed2k",
         )
         for name in (_DL_NAME, _DISCARD_NAME, _DL_NAME, _DISCARD_NAME)

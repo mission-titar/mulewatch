@@ -85,7 +85,7 @@ Des ordres de grandeur, à ajuster selon votre trafic eMule réel et le nombre d
 - **`downloads/`** s'accumule sans borne, rien ne le purge. Le crawler mesure l'espace libre et
   refuse un nouveau candidat si cela passerait sous `download.min_free_bytes` (10 Gio par défaut).
   C'est un **plancher**, pas un ménage : il bloque les nouveaux téléchargements quand le disque se
-  tend, il n'efface rien. Le tri reste à votre charge. La jauge `emule_download_disk_free_bytes`
+  tend, il n'efface rien. Le tri reste à votre charge. La jauge `p2pwatch_download_disk_free_bytes`
   publie l'espace libre mesuré à chaque cycle, et le canal *operations* est notifié une fois quand
   il passe sous le plancher, puis de nouveau seulement après être remonté au-dessus.
 - **`amule/`** tient en quelques mégaoctets : `amule.conf`, `server.met`, `nodes.dat`, préférences.

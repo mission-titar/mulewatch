@@ -134,7 +134,7 @@ async def test_unreachable_alerts_at_two_minutes_and_recovers_when_it_answers() 
         (120.0, ev.ClientUnreachableLasting("amuled", 120.0)),
         (180.0, ev.ClientReachableAgain("amuled")),
     ]
-    assert [e for _, e in events].count(ev.InstanceUnreachable()) == 3
+    assert [e for _, e in events].count(ev.InstanceUnreachable("amuled")) == 3
 
 
 @pytest.mark.asyncio

@@ -14,22 +14,25 @@ from mulewatch.domain.file_key import FileKey
 
 @dataclass(frozen=True)
 class SearchExecuted:
+    client: str
     network: str
     n_results: int
 
 
 @dataclass(frozen=True)
 class InstanceUnreachable:
-    pass
+    client: str
 
 
 @dataclass(frozen=True)
 class SearchFailed:
+    client: str
     network: str
 
 
 @dataclass(frozen=True)
 class ObservationRecorded:
+    client: str
     network: str
 
 

@@ -10,16 +10,17 @@ from tests.domain.observability.test_policy import CASES
 def test_counter_inc_with_label() -> None:
     registry = CollectorRegistry()
     sink = PrometheusSink(registry)
-    sink.apply(MetricInstruction(MetricName.OBSERVATIONS, "inc", (("network", "ed2k"),)))
-    sink.apply(MetricInstruction(MetricName.OBSERVATIONS, "inc", (("network", "ed2k"),)))
+    labels = (("client", "amuled"), ("network", "ed2k"))
+    sink.apply(MetricInstruction(MetricName.OBSERVATIONS, "inc", labels))
+    sink.apply(MetricInstruction(MetricName.OBSERVATIONS, "inc", labels))
     # counter exposed WITH the _total suffix added by prometheus_client
-    assert registry.get_sample_value("emule_observations_total", {"network": "ed2k"}) == 2.0
+    assert registry.get_sample_value("p2pwatch_observations_total", dict(labels)) == 2.0
 
 
 def test_counter_inc_no_label() -> None:
     registry = CollectorRegistry()
     PrometheusSink(registry).apply(MetricInstruction(MetricName.DOWNLOADS_COMPLETED, "inc"))
-    assert registry.get_sample_value("emule_downloads_completed_total") == 1.0
+    assert registry.get_sample_value("p2pwatch_downloads_completed_total") == 1.0
 
 
 def test_gauge_set_with_label() -> None:
@@ -36,7 +37,7 @@ def test_gauge_set_with_label() -> None:
 def test_gauge_set_no_label() -> None:
     registry = CollectorRegistry()
     PrometheusSink(registry).apply(MetricInstruction(MetricName.CRAWLER_UP, "set", (), 1.0))
-    assert registry.get_sample_value("emule_crawler_up") == 1.0
+    assert registry.get_sample_value("p2pwatch_crawler_up") == 1.0
 
 
 def test_a_channel_series_is_removed_while_unknown_and_only_that_one() -> None:
@@ -73,3 +74,25 @@ def test_every_emitted_metric_is_declared_in_the_sink() -> None:
     for event, _ in CASES:
         for instruction in describe(event).metrics:
             sink.apply(instruction)  # must NEVER raise (declared metric)
+
+
+def test_exposed_names() -> None:
+    # Dashboards query these names: port-sync's three keep theirs until port-sync leaves the core.
+    registry = CollectorRegistry()
+    PrometheusSink(registry)
+    assert {m.name for m in registry.collect()} == {
+        "p2pwatch_searches",
+        "p2pwatch_observations",
+        "p2pwatch_search_failures",
+        "p2pwatch_client_unreachable",
+        "p2pwatch_decisions",
+        "p2pwatch_downloads_queued",
+        "p2pwatch_downloads_completed",
+        "p2pwatch_download_disk_free_bytes",
+        "p2pwatch_crawler_up",
+        "p2pwatch_channel_on_network",
+        "p2pwatch_channel_connectable",
+        "emule_port_sync_triggered",
+        "emule_high_id_recovered",
+        "emule_port_mismatch",
+    }

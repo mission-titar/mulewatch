@@ -63,15 +63,15 @@ class Audience(Enum):
 class MetricName(StrEnum):
     """Metric names. Counters WITHOUT ``_total`` (added by prometheus_client at exposition)."""
 
-    SEARCHES = "emule_searches"
-    OBSERVATIONS = "emule_observations"
-    SEARCH_FAILURES = "emule_search_failures"
-    MULE_UNREACHABLE = "emule_mule_unreachable"
-    DECISIONS = "emule_decisions"
-    DOWNLOADS_QUEUED = "emule_downloads_queued"
-    DOWNLOADS_COMPLETED = "emule_downloads_completed"
-    DISK_FREE_BYTES = "emule_download_disk_free_bytes"
-    CRAWLER_UP = "emule_crawler_up"
+    SEARCHES = "p2pwatch_searches"
+    OBSERVATIONS = "p2pwatch_observations"
+    SEARCH_FAILURES = "p2pwatch_search_failures"
+    CLIENT_UNREACHABLE = "p2pwatch_client_unreachable"
+    DECISIONS = "p2pwatch_decisions"
+    DOWNLOADS_QUEUED = "p2pwatch_downloads_queued"
+    DOWNLOADS_COMPLETED = "p2pwatch_downloads_completed"
+    DISK_FREE_BYTES = "p2pwatch_download_disk_free_bytes"
+    CRAWLER_UP = "p2pwatch_crawler_up"
     PORT_SYNC_TRIGGERED = "emule_port_sync_triggered"
     HIGH_ID_RECOVERED = "emule_high_id_recovered"
     PORT_MISMATCH = "emule_port_mismatch"
@@ -150,6 +150,12 @@ def _word(value: bool | None) -> str:
     return "unknown" if value is None else "yes" if value else "no"
 
 
+def _search_labels(
+    event: SearchExecuted | SearchFailed | ObservationRecorded,
+) -> tuple[tuple[str, str], ...]:
+    return (("client", event.client), ("network", event.network))
+
+
 def _channel_gauge(
     name: MetricName, event: ChannelStatusSampled, value: bool | None
 ) -> MetricInstruction:
@@ -205,29 +211,25 @@ def describe(event: Event) -> Report:
             return Report(
                 Severity.DEBUG,
                 f"search {event.network}: {event.n_results} result(s)",
-                (MetricInstruction(MetricName.SEARCHES, "inc", (("network", event.network),)),),
+                (MetricInstruction(MetricName.SEARCHES, "inc", _search_labels(event)),),
             )
         case InstanceUnreachable():
             return Report(
                 Severity.WARNING,
-                "amuled unreachable",
-                (MetricInstruction(MetricName.MULE_UNREACHABLE, "inc"),),
+                f"{event.client} unreachable",
+                (MetricInstruction(MetricName.CLIENT_UNREACHABLE, "inc"),),
             )
         case SearchFailed():
             return Report(
                 Severity.WARNING,
                 f"search failed on {event.network}",
-                (
-                    MetricInstruction(
-                        MetricName.SEARCH_FAILURES, "inc", (("network", event.network),)
-                    ),
-                ),
+                (MetricInstruction(MetricName.SEARCH_FAILURES, "inc", _search_labels(event)),),
             )
         case ObservationRecorded():
             return Report(
                 Severity.DEBUG,
                 f"observation recorded ({event.network})",
-                (MetricInstruction(MetricName.OBSERVATIONS, "inc", (("network", event.network),)),),
+                (MetricInstruction(MetricName.OBSERVATIONS, "inc", _search_labels(event)),),
             )
         case DecisionsRecorded():
             return _describe_decisions(event)
