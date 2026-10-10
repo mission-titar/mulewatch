@@ -55,6 +55,8 @@ back: the Docker socket proxy (D6) and named volumes (bind mounts stay the rule)
 
 What it buys: with no s6 and no root-owned boot step, the core can finally run as a non-root
 `USER`, `read_only`, with `cap_drop: ALL`, the hardening the single container had to give up.
+(Corrected: this goes; the core runs as `PUID:PGID` through compose's `user:` for ownership only;
+stage 3's spec, Non-goals.)
 
 ### D2. Upstream first
 
@@ -171,6 +173,10 @@ packages/
 **The gnutella shim exists because the core cannot read another container's stdout.** It drives
 gtk-gnutella's shell, reads the patched hit lines, and serves them over HTTP.
 
+(Corrected: `packages/amule/` holds `amule_config` (moved) and a new stdlib port-sync;
+`port_sync_loop.py`, `gluetun_port.py` and `s6_restart.py` are deleted, not moved; stage 3's spec,
+D4 and D7.)
+
 ### D5. Deployment: one base compose, one `include:` per network
 
 ```
@@ -213,6 +219,11 @@ Pitfall for stage 3: relative paths in an included file resolve against that fil
 so bind mounts must say where they point (`../data/ed2k`), or the include must set
 `project_directory`.
 
+(Corrected: services are prefixed by their network, a network's data lives under its directory,
+and `ed2k-gluetun` carries the alias `ed2k`, so the `../data/ed2k` pitfall does not arise. The
+shared fragment is `service.compose.yml`, not `service.yml`: editors only apply Compose's schema
+to `*compose*.yml`. Stage 3's spec, D10.)
+
 **One gluetun per client that needs a forwarded port.** A VPN tunnel usually forwards one port,
 and it changes, so two clients that both need inbound connections cannot share one gluetun.
 Providers also cap simultaneous tunnels, which caps how many forwarded clients a node can run.
@@ -235,7 +246,7 @@ fixed port). It is set per client, not as a single core mechanism:
 
 | Client | Port-sync | Where |
 |---|---|---|
-| aMule | `PATCH /preferences`, then restart amuled through s6, both local | inside the amule container: `port_sync_loop.py`, `gluetun_port.py` and `s6_restart.py` move to `packages/amule/` |
+| aMule | `PATCH /preferences`, then restart amuled through s6, both local (Corrected: writes `amule.conf` and restarts amuled through s6, with no amuleapi; stage 3's spec, D4) | inside the amule container: `port_sync_loop.py`, `gluetun_port.py` and `s6_restart.py` move to `packages/amule/` (Corrected: a new stdlib port-sync in `packages/amule/`, those three deleted) |
 | slskd | native gluetun integration, hot (`SLSKD_VPN_PORT_FORWARDING`) | nothing to write |
 | AirDC++ | `POST /settings/set` (`tcp_port`, `udp_port`, `tls_port`), applied hot | a small loop reading gluetun's `/v1/portforward`; stage 5 decides core vs gluetun's `VPN_PORT_FORWARDING_UP_COMMAND` |
 | gtk-gnutella | `set listen_port N`, applied hot | through the gnutella shim |
@@ -247,7 +258,8 @@ amuleapi migration removed it, and break whenever gluetun forwards port 4712 (am
 a random `ECPort`, `amule.cpp:1388-1400`).
 
 The core keeps the alerting: it reads each client's reachability (`ed2k.high_id` for aMule) read
-only and raises the existing edge-triggered alerts.
+only and raises the existing edge-triggered alerts. (Corrected: this goes; the three port-sync events
+are removed, and Low-ID is the status loop's 5 min alert on `connectable`; stage 3's spec, D7.)
 
 ### D8. Network-agnostic file identity
 
@@ -445,7 +457,7 @@ new network; stage 1's spec, D16.)
 | GitHub repository | `mission-titar/mulewatch` | `mission-titar/p2pwatch` (free; the prototype is `p2pwatch_poc`) |
 | Core image | `ghcr.io/mission-titar/mulewatch` | `ghcr.io/mission-titar/p2pwatch`; the old package stays frozen at its last 4.x |
 | Client images | none | `p2pwatch-amule`, `p2pwatch-gnutella`, `p2pwatch-airdcpp` |
-| Python package and dist | `mulewatch` (153 `.py` files reference it) | `p2pwatch` |
+| Python package and dist | `mulewatch` (153 `.py` files reference it; Corrected: 158 on 2026-10-10) | `p2pwatch` |
 | Test env vars | `MULEWATCH_TEST_API_*` | `P2PWATCH_TEST_API_*` |
 | Docs site | `mission-titar.github.io/mulewatch` | `mission-titar.github.io/p2pwatch` |
 
@@ -462,7 +474,7 @@ Domain changes come before topology changes, so that every stage ships on its ow
 |---|---|---|
 | 1 | Generic identity | D8: catalog migration to `(network, native_id)`, network-agnostic `FileObservation`, in today's single container |
 | 2 | Search, download and status ports | D9, D13, D14: generic ports, aMule adapters on them; persistent and passive search ports declared (Corrected: not declared in stage 2, they arrive with their first client in stage 5; stage 2's spec, D1) |
-| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: rename to p2pwatch (D15), `p2pwatch-amule` image, local port-sync, base compose with includes, core hardening. Breaking: `v5.0.0` (Corrected: no `v5.0.0` here, the major release waits for the first new network; stage 1's spec, D16) |
+| 3 | aMule leaves the core | D1, D4, D5, D6, D7 for aMule: rename to p2pwatch (D15), `p2pwatch-amule` image, local port-sync, base compose with includes, core hardening (Corrected: no core hardening; stage 3's spec, Non-goals). Breaking: `v5.0.0` (Corrected: no `v5.0.0` here, the major release waits for the first new network; stage 1's spec, D16) |
 | 4 | Sources and events | D10, D11: source history, eD2k download sources, `docs/legal.md` |
 | 5 | New networks, one by one | search, download (D13) and status (D14) per client: Soulseek (slskd), Direct Connect (AirDC++), Gnutella (gtk-gnutella + patch + shim), Bitmagnet + qBittorrent (opt-in) |
 
