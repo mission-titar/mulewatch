@@ -639,7 +639,8 @@ Paths under `packages/crawler/` unless noted. Sizes are estimates from `wc -l` o
 | 150 | `refactor/download-loop-file-key` | The download loop on `FileKey` | `DownloadCandidate` to the crawler's catalog port with a `FileKey`; `download_decisions()`; the repository protocol and `SqliteDownloadRepository` take `FileKey` (still stored as the hash); `run_download_cycle.py`, `DownloadCompleted`; `catalog_matching/engine.py`; tests (D11) | 450 / 12 |
 | 160 | `feat/local-downloads-file-id` | local 0007, downloads keyed by `file_id` | `0007_downloads_file_id.sql` and `test_local_migration_0007.py`, `file_id()` registered by `open_local`, `download_repository.py`, webui `local_read.py`, `views.py`, `node.html`, `docs/troubleshooting.md`, `tests/integration/test_compose_smoke.py`'s SQL (D19) | 330 / 12 |
 | 170 | `feat/amule-download-calls` | aMule's `start()` and `downloads()` | `ports/download_client.py` types and protocol (D9); `AmuleApiClient.start()`, `downloads()` with `completed` (D10) and the reasons' mapping (D12); the false-positive test; `test_client.py`, `test_mapping.py`, `api_fakes.py` | 400 / 6 |
-| 180 | `refactor/download-client-port` | The loop on `DownloadClient` | `run_download_cycle.py` on `start()` / `downloads()`, completion from `completed`, the restart of forgotten downloads (D13), the disk cap from `bytes_total - bytes_done`; `MuleDownloadClient` and its port test removed; `FakeDownloadClient`; composition; `tests/integration/test_compose_smoke.py`'s `shared_files()` call; in `docs/troubleshooting.md`, the absence passage and the cancel procedure (D13) | 490 / 12 |
+| 180 | `refactor/download-client-port` | The loop on `DownloadClient` | `run_download_cycle.py` on `start()` / `downloads()`, completion from `completed`, the restart of forgotten downloads (D13), the disk cap from `bytes_total - bytes_done`; `MuleDownloadClient` and its port test removed; `FakeDownloadClient`; composition; `tests/integration/test_compose_smoke.py`'s `shared_files()` call; in `docs/troubleshooting.md`, the absence passage and the cancel procedure (D13) (Corrected: split at its line bound, the old download port's removal went to block 185) | 490 / 12 |
+| 185 | `chore/remove-mule-download-client` | Remove the old download port | `MuleDownloadClient` and its port test, `add_link`, `download_queue`, `shared_files` and their mappers with their tests; `tests/integration/test_amuled_download.py` and `tests/integration/test_compose_smoke.py` on `downloads()`; `docs/contributing/testing.md`, `docs/contributing/architecture.md` | 336 / 11 |
 | 190 | `feat/download-lifecycle-fields` | Lifecycle fields | local 0008 and `test_local_migration_0008.py`; the loop persists `bytes_done`, `last_progress_at`, `waiting_reason`, `failure_reason`, fails on a client error and keeps it failed (D12); `/node` shows them (D20); `docs/operate.md` | 420 / 12 |
 | 200 | `feat/webui-dashboard-status` | Dashboard status and controls | The status snapshot holder (D21); the dashboard's "Clients" section; pause, resume, restart on the dashboard with the paused state, `CrawlerControl.is_paused`; `/controls` page and menu entry removed, POSTs redirect to `/` (D20); `docs/operate.md`, `docs/install.md`, `docs/troubleshooting.md` | 400 / 14 |
 | 210 | `docs/stage2-closing` | Closing | The holistic findings, `BACKLOG.md` reconciled, handoff | 80 / 6 |
@@ -652,7 +653,7 @@ gate, a test without its module fails to import). What could leave on its own di
 
 - 10 first: every later block raises or catches the generic errors.
 - 20 before 30 before 50 before 60, 70 before 80 before 90 before 93 before 96, 100 before 105 before 110 before 120 before 130, 170 before
-  180 before 190: each adapter or module lands with its tests before the block that switches its caller, and the old
+  180 before 185 before 190: each adapter or module lands with its tests before the block that switches its caller, and the old
   path leaves after it.
 - 40 before 50: the port takes channel names.
 - 90 before 110: the cycle samples the status until the status loop runs, so removing the cycle first would
@@ -674,6 +675,8 @@ gate, a test without its module fails to import). What could leave on its own di
 Between blocks 50 and 60, the adapter carries the four-call search tested but called by nothing; between
 blocks 110 and 120, `main` carries `run_search_cycle.py`, and until block 130 the worker's cycle parts and
 the `keyword_pause_*` keys, tested but unreachable from a shipped entry point, as stage 1 did between its blocks 30 and 80.
+Between blocks 180 and 185, `MuleDownloadClient` and the adapter's `add_link`, `download_queue` and
+`shared_files` stay tested, called only by the compose smoke test's `shared_files()`.
 
 **Adjacent backlog items.**
 
