@@ -12,12 +12,19 @@ from mulewatch.adapters.mule_api.errors import (
     ApiRejectedError,
     ApiUnreachableError,
 )
-from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
+from mulewatch.domain.file_key import FileKey, Network
+from mulewatch.ports.client_errors import (
+    ClientUnreachableError,
+    DownloadRejectedError,
+    SearchFailedError,
+)
 from mulewatch.ports.client_status import ChannelStatus
+from mulewatch.ports.download_client import DownloadClient, DownloadRequest, DownloadStatus
 from mulewatch.ports.port_sync import KadStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, TOKEN, FakeAmuleApi, error
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
+_KEY = FileKey(Network.ED2K, _HASH)
 
 
 def _client(api: FakeAmuleApi, *, password: str = PASSWORD) -> AmuleApiClient:
@@ -614,4 +621,99 @@ async def test_a_list_envelope_that_is_not_a_list_stops_the_sweep() -> None:
     client = await _connected(api)
 
     assert await client.shared_files() == ()
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_start_queues_the_files_ed2k_link() -> None:
+    api = FakeAmuleApi()
+    client: DownloadClient = await _connected(api)
+
+    await client.start(DownloadRequest(file=_KEY, filename="Keroro 095.avi", size_bytes=10))
+    await client.close()
+
+    assert api.added_links == [f"ed2k://|file|Keroro%20095.avi|10|{_HASH}|/"]
+
+
+@pytest.mark.asyncio
+async def test_a_start_the_daemon_refuses_rejects_the_download() -> None:
+    api = FakeAmuleApi()
+    api.overrides[("POST", "/api/v1/downloads")] = lambda _: httpx.Response(
+        207, json={"results": [{"id": "ed2k://x", "ok": False}]}
+    )
+    client = await _connected(api)
+
+    with pytest.raises(DownloadRejectedError):
+        await client.start(DownloadRequest(file=_KEY, filename="Keroro.095.avi", size_bytes=10))
+
+
+def _downloading(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "hash": _HASH,
+        "size_bytes": 10,
+        "completed_bytes": 4,
+        "status": "downloading",
+        "sources": {"total": 1, "transferring": 1},
+    }
+    row.update(overrides)
+    return row
+
+
+@pytest.mark.asyncio
+async def test_downloads_reads_the_whole_queue_before_the_shared_files() -> None:
+    """Queue first: a file cleared between the two reads is then in /shared, not in neither."""
+    api = FakeAmuleApi(downloads=[_downloading()])
+    client = await _connected(api)
+
+    downloads = await client.downloads()
+    await client.close()
+
+    lists = ("/api/v1/downloads", "/api/v1/shared")
+    assert [request.url.path for request in api.requests if request.url.path in lists] == [*lists]
+    assert _paths(api, "/api/v1/downloads")[0].params.get("status") == "all"
+    assert downloads == (
+        DownloadStatus(
+            file=_KEY,
+            bytes_done=4,
+            bytes_total=10,
+            completed=False,
+            waiting_reason=None,
+            failure_reason=None,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_shared_file_the_queue_no_longer_lists_is_completed() -> None:
+    cleared = FileKey(Network.ED2K, f"{1:032x}")
+    api = FakeAmuleApi(shared=[{"hash": cleared.native_id, "size_bytes": 10}])
+    client = await _connected(api)
+
+    downloads = await client.downloads()
+    await client.close()
+
+    assert [(download.file, download.completed) for download in downloads] == [(cleared, True)]
+
+
+@pytest.mark.asyncio
+async def test_a_full_partfile_still_completing_is_not_completed_though_shared() -> None:
+    """amuled shares partfiles too: neither the bytes nor /shared say it is verified and moved."""
+    api = FakeAmuleApi(
+        downloads=[_downloading(completed_bytes=10, status="completing")],
+        shared=[{"hash": _HASH, "size_bytes": 10}],
+    )
+    client = await _connected(api)
+
+    downloads = await client.downloads()
+    await client.close()
+
+    assert [(download.file, download.completed) for download in downloads] == [(_KEY, False)]
+
+
+@pytest.mark.asyncio
+async def test_downloads_drops_the_rows_without_a_usable_hash() -> None:
+    api = FakeAmuleApi(downloads=[{"status": "completed"}], shared=[{"size_bytes": 10}])
+    client = await _connected(api)
+
+    assert await client.downloads() == ()
     await client.close()

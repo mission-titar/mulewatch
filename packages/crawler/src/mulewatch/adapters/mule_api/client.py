@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 
+from catalog_matching.ed2k_link import build_ed2k_link
 from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.errors import (
     ApiAuthError,
@@ -26,13 +27,16 @@ from mulewatch.adapters.mule_api.errors import (
 from mulewatch.adapters.mule_api.mapping import (
     map_client_status,
     map_download_entry,
+    map_download_status,
     map_network_status,
     map_search_results,
+    map_shared_download,
     map_shared_entry,
 )
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
+from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.port_sync import NetworkStatus
 
@@ -221,6 +225,24 @@ class AmuleApiClient:
         outcome = results[0] if isinstance(results, list) and results else None
         if not isinstance(outcome, dict) or outcome.get("ok") is not True:
             raise ApiRejectedError(f"POST /downloads refused the link: {_outcome_reason(outcome)}")
+
+    async def start(self, request: DownloadRequest) -> None:
+        """Queues the file by its ed2k link; a refusal raises ``DownloadRejectedError``."""
+        file = request.file
+        await self.add_link(build_ed2k_link(request.filename, request.size_bytes, file.native_id))
+
+    async def downloads(self) -> tuple[DownloadStatus, ...]:
+        """The queue with its completed entries, then the shared files it no longer lists. Queue
+        first: a file cleared between the two reads is then shared, not missing from both."""
+        rows = await self._collect("/downloads", "downloads", params={"status": "all"})
+        queue = [status for row in rows if (status := map_download_status(row)) is not None]
+        listed = {status.file for status in queue}
+        shared = [
+            status
+            for row in await self._collect("/shared", "shared")
+            if (status := map_shared_download(row)) is not None and status.file not in listed
+        ]
+        return (*queue, *shared)
 
     async def download_queue(self) -> tuple[DownloadEntry, ...]:
         """The queue INCLUDING what amuled holds complete until it is cleared (``status=all``),

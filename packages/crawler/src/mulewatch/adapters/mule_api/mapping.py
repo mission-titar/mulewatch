@@ -10,6 +10,7 @@ from typing import Any
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
+from mulewatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
@@ -20,6 +21,18 @@ _MAPPED_KEYS = frozenset(
     {"hash", "name", "size_bytes", "sources", "media", "file_type", "alternate_names"}
 )
 _MAPPED_MEDIA_KEYS = frozenset({"duration_seconds", "bitrate_kilobits_per_second", "codec"})
+
+# amuleapi download statuses that say why a download waits, before its sources are read (D12).
+# `waiting` is a local hash wait, not a remote queue; `completing` hashes then moves the file.
+_WAITING_STATUSES = {
+    "insufficient_disk": WaitingReason.DISK_FULL,
+    "paused": WaitingReason.PAUSED,
+    "stopped": WaitingReason.PAUSED,
+    "waiting": WaitingReason.LOCAL,
+    "hashing": WaitingReason.LOCAL,
+    "allocating": WaitingReason.LOCAL,
+    "completing": WaitingReason.LOCAL,
+}
 
 # Kad states with an equivalent in the port's closed enum; anything else is OFF (§7.6).
 _KAD_STATES = {"connected": KadStatus.CONNECTED, "connecting": KadStatus.RUNNING}
@@ -51,6 +64,40 @@ def map_download_entry(row: object) -> DownloadEntry | None:
         size_done=_int(row.get("completed_bytes")),
         size_full=_int(row.get("size_bytes")),
     )
+
+
+def map_download_status(row: object) -> DownloadStatus | None:
+    """A /downloads row, or ``None`` if the hash is unusable. Only ``completed`` completes: it
+    is the one status amuleapi reserves for a file verified and moved (spec stage 2, D10)."""
+    if not isinstance(row, dict):
+        return None
+    ed2k_hash = _hash_hex(row.get("hash"))
+    if ed2k_hash is None:
+        return None
+    status = row.get("status")
+    completed = status == "completed"
+    failure = FailureReason.ERROR if status == "erroneous" else None
+    waiting = None if completed or failure else _waiting_reason(status, row.get("sources"))
+    return DownloadStatus(
+        file=FileKey(Network.ED2K, ed2k_hash),
+        bytes_done=_int(row.get("completed_bytes")),
+        bytes_total=_int(row.get("size_bytes")),
+        completed=completed,
+        waiting_reason=waiting,
+        failure_reason=failure,
+    )
+
+
+def map_shared_download(row: object) -> DownloadStatus | None:
+    """A /shared row as a download completed then cleared, or ``None`` if the hash is unusable.
+    Partfiles are shared too, so the caller reads it only for a file the queue no longer lists."""
+    if not isinstance(row, dict):
+        return None
+    ed2k_hash = _hash_hex(row.get("hash"))
+    if ed2k_hash is None:
+        return None
+    size = _int(row.get("size_bytes"))
+    return DownloadStatus(FileKey(Network.ED2K, ed2k_hash), size, size, True, None, None)
 
 
 def map_shared_entry(row: object) -> SharedFileEntry | None:
@@ -179,6 +226,17 @@ def _optional_int(value: object) -> int | None:
 def _sources(value: object) -> tuple[int, int]:
     sources = _object(value)
     return _int(sources.get("total")), _int(sources.get("complete"))
+
+
+def _waiting_reason(status: object, sources: object) -> WaitingReason | None:
+    """The status's own reason first, then the sources: none at all, or none sending."""
+    reason = _WAITING_STATUSES.get(status) if isinstance(status, str) else None
+    if reason is not None:
+        return reason
+    counts = _object(sources)
+    if _int(counts.get("total")) == 0:
+        return WaitingReason.NO_SOURCE
+    return WaitingReason.REMOTE_QUEUE if _int(counts.get("transferring")) == 0 else None
 
 
 def _kad_status(kad: dict[str, Any]) -> KadStatus:
