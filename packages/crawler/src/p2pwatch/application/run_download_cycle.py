@@ -334,7 +334,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     # thing that re-arms a stream the adapter discarded after a failed read. SKIPPING IT WEDGES
     # THE LOOP: the port-sync restarts the client on every VPN renegotiation, and nothing else
     # in this loop ever reconnects (field, 2026-09-04: 7 days of "client not connected").
-    # Same guard as ``SearchWorker._ensure_connected`` and ``run_port_sync_cycle``.
+    # Same guard as ``SearchWorker._ensure_connected``.
     try:
         await deps.client.connect()
         listed = await deps.client.downloads()
