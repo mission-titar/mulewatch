@@ -2,6 +2,7 @@
 
 import re
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,8 @@ from starlette.applications import Starlette
 from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
-from mulewatch.application.status_loop import ClientReading, StatusBoard
 from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.ports.client_status import ChannelStatus, ClientStatus
+from mulewatch.ports.client_status import ChannelStatus, ClientReading, ClientStatus
 from mulewatch.webui.composition.app import (
     _normalize_dir,
     _normalize_sort,
@@ -40,7 +40,23 @@ from tests.catalog_rows import SEEN_AT, file_id, insert_decision, insert_file, i
 
 TEST_HASH = "aabbccdd00112233aabbccdd00112233"
 _AMULE_URL = "http://localhost:4711"
-_NO_STATUS = StatusBoard((), FakeClock())  # never published to
+
+
+class _Readings:
+    """The status board as the webui reads it: fixed readings, all current or all out of date."""
+
+    def __init__(self, readings: dict[str, ClientReading | None], *, current: bool = True) -> None:
+        self._readings = readings
+        self._current = current
+
+    def readings(self) -> Mapping[str, ClientReading | None]:
+        return self._readings
+
+    def is_current(self, reading: ClientReading) -> bool:
+        return self._current
+
+
+_NO_STATUS = _Readings({})
 
 
 def _detail_url(ed2k_hash: str) -> str:
@@ -1423,7 +1439,7 @@ async def test_file_detail_whole_episode_shows_both_targets(
 
 
 def _dashboard_app(
-    catalog_db: Path, local_db: Path, control: _RecordingControl, status: StatusBoard
+    catalog_db: Path, local_db: Path, control: _RecordingControl, status: _Readings
 ) -> Starlette:
     import mulewatch.webui
 
@@ -1552,14 +1568,10 @@ _CHANNELS = (ChannelStatus("ed2k", True, False), ChannelStatus("x", False, None)
 
 
 async def _clients_section(
-    catalog_db: Path, local_db: Path, reading: ClientReading | None, *, age_seconds: float = 0
+    catalog_db: Path, local_db: Path, reading: ClientReading | None, *, current: bool = True
 ) -> str:
-    clock = FakeClock()
-    board = StatusBoard(("amuled",), clock)
-    if reading is not None:
-        board.publish("amuled", reading)
-    clock.advance(age_seconds)
-    text = await _dashboard(_dashboard_app(catalog_db, local_db, _RecordingControl(), board))
+    status = _Readings({"amuled": reading}, current=current)
+    text = await _dashboard(_dashboard_app(catalog_db, local_db, _RecordingControl(), status))
     return text[text.index("<h2>Clients</h2>") : text.index("<h2>Crawl</h2>")]
 
 
@@ -1572,7 +1584,7 @@ async def test_dashboard_shows_each_client_and_channel_of_a_current_reading(
     catalog_db: Path, local_db: Path
 ) -> None:
     section = await _clients_section(
-        catalog_db, local_db, _read_now(ClientStatus("2.3.3", _CHANNELS)), age_seconds=120
+        catalog_db, local_db, _read_now(ClientStatus("2.3.3", _CHANNELS))
     )
     assert "<h3>amuled</h3>" in section
     assert "<dd>2.3.3</dd>" in section
@@ -1601,7 +1613,7 @@ async def test_dashboard_never_shows_an_old_reading_as_current(
     catalog_db: Path, local_db: Path
 ) -> None:
     section = await _clients_section(
-        catalog_db, local_db, _read_now(ClientStatus("2.3.3", _CHANNELS)), age_seconds=121
+        catalog_db, local_db, _read_now(ClientStatus("2.3.3", _CHANNELS)), current=False
     )
     assert "<dd>Out of date: last reading at 2026-06-12 00:00Z.</dd>" in section
     assert "2.3.3" not in section
