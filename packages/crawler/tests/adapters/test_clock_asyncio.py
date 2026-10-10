@@ -2,7 +2,7 @@ from datetime import UTC
 
 import pytest
 
-from mulewatch.adapters.clock_asyncio import AsyncioClock, SeededRng
+from p2pwatch.adapters.clock_asyncio import AsyncioClock, SeededRng
 
 
 def test_asyncio_clock_now_is_aware_utc() -> None:

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Console · p2pwatch{% endblock %}
+{% block content %}
+<p class="muted">Read-only. Single statement only. Results are row-capped and time-limited.</p>
+
+<form method="post" action="/console" class="console-form">
+  <label for="console-db">Database</label>
+  <select id="console-db" name="db">
+    {% for o in db_options %}<option value="{{ o.value }}" {{ o.selected_attr }}>{{ o.label }}</option>{% endfor %}
+  </select>
+  <label for="console-sql">SQL</label>
+  <textarea id="console-sql" name="sql" rows="6" spellcheck="false" placeholder="SELECT * FROM files LIMIT 10">{{ sql }}</textarea>
+  <div class="console-actions">
+    <button type="submit">Run</button>
+    <button type="submit" formaction="/console.csv">Download CSV</button>
+  </div>
+</form>
+
+{% for e in errors %}
+<p class="console-error" role="alert">{{ e }}</p>
+{% endfor %}
+
+{% for res in results %}
+<p class="console-meta">{{ res.row_count }} rows in {{ res.elapsed_ms }} ms</p>
+{% for t in res.truncated %}
+<p class="console-truncated" role="status">{{ t }}</p>
+{% endfor %}
+<table class="console-table">
+  <thead>
+    <tr>
+      {% for c in res.columns %}<th>{{ c }}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in res.rows %}
+    <tr>
+      {% for cell in r.cells %}<td>{{ cell }}</td>{% endfor %}
+    </tr>
+    {% else %}
+    <tr><td>No rows.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+{% endblock %}

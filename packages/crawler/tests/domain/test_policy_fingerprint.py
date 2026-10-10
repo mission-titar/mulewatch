@@ -1,4 +1,4 @@
-from mulewatch.domain.policy_fingerprint import policy_fingerprint
+from p2pwatch.domain.policy_fingerprint import policy_fingerprint
 
 
 def test_fingerprint_is_deterministic_for_identical_bytes() -> None:

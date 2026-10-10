@@ -16,12 +16,12 @@ from starlette.applications import Starlette
 from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.application.status_loop import StatusBoard
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.webui.adapters.sql_console import ConsoleOutcome, run_query
-from mulewatch.webui.composition.app import build_app
-from mulewatch.webui.domain.views import ConsoleResult, ConsoleRow, DbOption
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.application.status_loop import StatusBoard
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.webui.adapters.sql_console import ConsoleOutcome, run_query
+from p2pwatch.webui.composition.app import build_app
+from p2pwatch.webui.domain.views import ConsoleResult, ConsoleRow, DbOption
 from tests.application.fakes import FakeClock
 from tests.catalog_rows import insert_file
 
@@ -271,10 +271,10 @@ rules:
 def _build(catalog_db: Path, local_db: Path) -> Starlette:
     matcher_config = _matcher()
     targets = _targets()
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
     return build_app(
         catalog_db=catalog_db,
         local_db=local_db,

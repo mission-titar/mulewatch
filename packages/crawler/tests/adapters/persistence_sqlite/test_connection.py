@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite import connection as connection_module
-from mulewatch.adapters.persistence_sqlite.connection import (
+from p2pwatch.adapters.persistence_sqlite import connection as connection_module
+from p2pwatch.adapters.persistence_sqlite.connection import (
     Migration,
     _apply_migrations,
     _load_scripts,
@@ -14,7 +14,7 @@ from mulewatch.adapters.persistence_sqlite.connection import (
     utc_iso,
     utc_now,
 )
-from mulewatch.adapters.persistence_sqlite.errors import MigrationError, PersistenceError
+from p2pwatch.adapters.persistence_sqlite.errors import MigrationError, PersistenceError
 from tests.catalog_rows import insert_decision, insert_file
 
 _CATALOG_TABLES = {"files", "observation_variants", "observations", "match_decisions"}

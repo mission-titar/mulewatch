@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from mulewatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.file_key import FileKey, Network
 from tests.adapters.persistence_sqlite.older_catalog import open_local_at
 
 _A = FileKey(Network.ED2K, "a" * 32)

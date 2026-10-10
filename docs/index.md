@@ -2,9 +2,9 @@
 description: "Surveillance continue du réseau eMule pour retrouver des médias perdus, à commencer par la VF de Keroro mission Titar."
 ---
 
-# mulewatch
+# p2pwatch
 
-mulewatch surveille le réseau eMule en continu pour retrouver des médias perdus. Sa première
+p2pwatch surveille le réseau eMule en continu pour retrouver des médias perdus. Sa première
 mission : la version française de *Keroro mission Titar*, diffusée sur Teletoon en 2008 et
 aujourd'hui quasiment introuvable.
 
@@ -13,7 +13,7 @@ connecté, puis s'évanouissent. Une recherche manuelle tombe presque toujours a
 nœud qui tourne jour et nuit, non : il cherche sans relâche, note tout ce qu'il croise, et vous
 prévient dès qu'un épisode manquant apparaît.
 
-**Le sujet du catalogue est le fichier, jamais la personne.** mulewatch ne piste personne et ne
+**Le sujet du catalogue est le fichier, jamais la personne.** p2pwatch ne piste personne et ne
 cherche à désanonymiser personne. Il enregistre qu'un fichier existe, où et quand il a été vu, et
 rien d'autre.
 
@@ -57,7 +57,7 @@ Comptez une quinzaine de minutes pour l'installation, une fois Docker en place. 
 de loin l'étape la plus longue ; le reste tient en une commande et un mot de passe à choisir.
 
 Un nœud, c'est **un seul conteneur**. À l'intérieur tournent trois programmes : `amuled`, le client
-eMule ; `amuleapi`, son interface web, qu'`amuled` démarre lui-même ; et `mulewatch`, qui cherche,
+eMule ; `amuleapi`, son interface web, qu'`amuled` démarre lui-même ; et `p2pwatch`, qui cherche,
 catalogue et sert le catalogue web. Vous n'avez normalement pas à le savoir, mais cela compte dès
 que vous lisez les journaux ou redémarrez une pièce, et les pages le rappellent là où ça se voit.
 
@@ -91,5 +91,5 @@ Le code est en Python, en architecture hexagonale, avec des tests stricts. Voyez
 [Architecture du code](contributing/architecture.md) pour comprendre comment le crawler fonctionne,
 et [Lancer les tests](contributing/testing.md) pour les suites de tests et leurs prérequis. Les
 conventions du projet, les specs et l'historique des décisions vivent dans le dépôt, sous
-[`AGENTS.md`](https://github.com/mission-titar/mulewatch/blob/main/AGENTS.md) et
-[`agents/`](https://github.com/mission-titar/mulewatch/tree/main/agents).
+[`AGENTS.md`](https://github.com/mission-titar/p2pwatch/blob/main/AGENTS.md) et
+[`agents/`](https://github.com/mission-titar/p2pwatch/tree/main/agents).

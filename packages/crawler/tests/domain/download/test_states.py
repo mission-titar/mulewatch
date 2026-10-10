@@ -1,4 +1,4 @@
-from mulewatch.domain.download.states import DownloadState, is_terminal
+from p2pwatch.domain.download.states import DownloadState, is_terminal
 
 
 def test_states_are_a_closed_enum() -> None:

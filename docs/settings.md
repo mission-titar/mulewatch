@@ -57,7 +57,7 @@ nœud.
 
 Ce port n'est pas publié sur l'hôte, et il n'y a pas de réseau interne à rejoindre. La seule route
 est donc de le publier vous-même, en ajoutant `"9090:9090"` à la liste `ports:` du fichier de pile
-que vous utilisez réellement : sous le service `mulewatch` dans `compose.yml`, ou sous le service
+que vous utilisez réellement : sous le service `p2pwatch` dans `compose.yml`, ou sous le service
 `gluetun` dans `gluetun.compose.yml`. Ne l'ajoutez **jamais** à `base.compose.yml` : compose fusionne
 les `ports` de façon additive et ne sait pas retirer une entrée apportée par un fragment, ce
 pourquoi ce fragment n'en déclare aucune.
@@ -69,7 +69,7 @@ Exemple de `scrape_config` pour votre propre `prometheus.yml` :
 
 ```yaml
 scrape_configs:
-  - job_name: 'mulewatch'
+  - job_name: 'p2pwatch'
     static_configs:
       - targets: ['node.example.lan:9090']   # l'hôte sur lequel vous avez publié 9090
 ```

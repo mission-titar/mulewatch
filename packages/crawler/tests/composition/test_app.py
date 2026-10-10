@@ -15,7 +15,7 @@ from starlette.applications import Starlette
 from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config
-from mulewatch.adapters.config.crawler_config import (
+from p2pwatch.adapters.config.crawler_config import (
     AmuleEndpoint,
     BackoffConfig,
     CrawlerConfig,
@@ -25,26 +25,26 @@ from mulewatch.adapters.config.crawler_config import (
     PortSyncConfig,
     WebuiConfig,
 )
-from mulewatch.adapters.config.yaml_loader import load_yaml
-from mulewatch.adapters.crawler_control_loop import LoopCrawlerControl
-from mulewatch.adapters.mule_api.client import AmuleApiClient
-from mulewatch.adapters.persistence_sqlite.connection import open_local
-from mulewatch.adapters.persistence_sqlite.local_state_repository import (
+from p2pwatch.adapters.config.yaml_loader import load_yaml
+from p2pwatch.adapters.crawler_control_loop import LoopCrawlerControl
+from p2pwatch.adapters.mule_api.client import AmuleApiClient
+from p2pwatch.adapters.persistence_sqlite.connection import open_local
+from p2pwatch.adapters.persistence_sqlite.local_state_repository import (
     SqliteLocalStateRepository,
 )
-from mulewatch.composition import app as composition_app
-from mulewatch.composition.app import (
+from p2pwatch.composition import app as composition_app
+from p2pwatch.composition.app import (
     CrawlerApp,
     WebuiServer,
     default_client_factory,
     default_download_client_factory,
 )
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.client_errors import ClientUnreachableError
-from mulewatch.ports.client_status import ClientStatus
-from mulewatch.ports.clock import Clock
-from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.client_errors import ClientUnreachableError
+from p2pwatch.ports.client_status import ClientStatus
+from p2pwatch.ports.clock import Clock
+from p2pwatch.ports.download_client import DownloadRequest, DownloadStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, FakeAmuleApi
 from tests.application.fakes import FakeClock, FakeMuleClient, RecordingSignal
 from tests.catalog_rows import observation_node_ids
@@ -215,7 +215,7 @@ async def test_app_runs_then_shuts_down_cleanly(
 async def test_run_logs_the_package_version_at_startup(
     tmp_path: Path, matcher_config: MatcherConfig, caplog: pytest.LogCaptureFixture
 ) -> None:
-    # run() logs the mulewatch version (from installed metadata) at startup: the operability
+    # run() logs the p2pwatch version (from installed metadata) at startup: the operability
     # signal a correlated-to-version regression relies on (spec 2026-07-10-git-driven-versioning).
     app_holder: dict[str, CrawlerApp] = {}
 
@@ -224,11 +224,9 @@ async def test_run_logs_the_package_version_at_startup(
 
     app = _make_app(tmp_path, matcher_config, factory=factory)
     app_holder["app"] = app
-    with caplog.at_level(logging.INFO, logger="mulewatch.composition.app"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.composition.app"):
         await asyncio.wait_for(app.run(), timeout=5.0)
-    assert any(
-        r.getMessage() == f"mulewatch version {version('mulewatch')}" for r in caplog.records
-    )
+    assert any(r.getMessage() == f"p2pwatch version {version('p2pwatch')}" for r in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -294,14 +292,14 @@ async def test_unreachable_client_at_startup_does_not_crash_the_run(
 
     app = _make_app(tmp_path, matcher_config, factory=factory)
     app_holder["app"] = app
-    with caplog.at_level(logging.WARNING, logger="mulewatch.composition.app"):
+    with caplog.at_level(logging.WARNING, logger="p2pwatch.composition.app"):
         await asyncio.wait_for(app.run(), timeout=5.0)  # does NOT raise (down instance tolerated)
     # The tolerance warning comes from the COMPOSITION ROOT (not the worker): it is the
     # `except ClientUnreachableError` branch of the client setup.
     startup_warnings = [
         record
         for record in caplog.records
-        if record.name == "mulewatch.composition.app" and record.levelno == logging.WARNING
+        if record.name == "p2pwatch.composition.app" and record.levelno == logging.WARNING
     ]
     assert startup_warnings, "the composition root must log the startup tolerance"
     assert "amuled unreachable at startup" in startup_warnings[0].getMessage()
@@ -595,7 +593,7 @@ async def test_backfill_runs_and_stores_marker_when_policy_never_set(
         client_factory=factory,
     )
     holder["app"] = app
-    with caplog.at_level(logging.INFO, logger="mulewatch.composition.app"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.composition.app"):
         await asyncio.wait_for(app.run(), timeout=5.0)
     assert any(
         r.getMessage() == "catalogue re-evaluated: 0 files, 0 rows written" for r in caplog.records
@@ -637,7 +635,7 @@ async def test_backfill_skipped_when_marker_already_matches_fingerprint(
         client_factory=factory,
     )
     holder["app"] = app
-    with caplog.at_level(logging.INFO, logger="mulewatch.composition.app"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.composition.app"):
         await asyncio.wait_for(app.run(), timeout=5.0)
     assert any(
         r.getMessage() == "policy unchanged: catalogue re-evaluation skipped"
@@ -989,7 +987,7 @@ async def test_emits_crawler_started_observer_mode(
 
     app = _make_app(tmp_path, matcher_config, factory=factory)
     holder["app"] = app
-    with caplog.at_level(logging.INFO, logger="mulewatch.observability"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.observability"):
         await asyncio.wait_for(app.run(), timeout=5.0)
     assert any("mode observer" in r.getMessage() for r in caplog.records)
 
@@ -1014,7 +1012,7 @@ async def test_emits_crawler_started_full_mode(
         download_client_factory=lambda endpoint, clock: download_client,
     )
     holder["app"] = app
-    with caplog.at_level(logging.INFO, logger="mulewatch.observability"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.observability"):
         await asyncio.wait_for(app.run(), timeout=5.0)
     assert any("mode full" in r.getMessage() for r in caplog.records)
 
@@ -1166,8 +1164,8 @@ async def test_port_sync_tolerates_ec_daemon_unreachable_at_startup(
 
 
 def test_default_port_forwarding_reader_factory_builds_a_gluetun_reader() -> None:
-    from mulewatch.adapters.gluetun_port import GluetunPortReader
-    from mulewatch.composition.app import default_port_forwarding_reader_factory
+    from p2pwatch.adapters.gluetun_port import GluetunPortReader
+    from p2pwatch.composition.app import default_port_forwarding_reader_factory
 
     reader = default_port_forwarding_reader_factory("http://gluetun:8000")
     assert isinstance(reader, GluetunPortReader)
@@ -1175,8 +1173,8 @@ def test_default_port_forwarding_reader_factory_builds_a_gluetun_reader() -> Non
 
 def test_default_mule_restarter_factory_builds_an_s6_restarter() -> None:
     # amuled is a local s6 service now: the restart takes no URL and no Docker API.
-    from mulewatch.adapters.s6_restart import S6MuleRestarter
-    from mulewatch.composition.app import default_mule_restarter_factory
+    from p2pwatch.adapters.s6_restart import S6MuleRestarter
+    from p2pwatch.composition.app import default_mule_restarter_factory
 
     assert isinstance(default_mule_restarter_factory(), S6MuleRestarter)
 
@@ -1244,7 +1242,7 @@ async def test_webui_starts_on_own_thread_and_stops_at_shutdown(
         webui_server_factory=fake_factory,
     )
     holder["app"] = app
-    with caplog.at_level(logging.INFO, logger="mulewatch.composition.app"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.composition.app"):
         await asyncio.wait_for(app.run(), timeout=5.0)
     assert isinstance(captured["app"], Starlette)  # the built webui ASGI app was passed
     assert any(  # the log reports the FIXED in-container bind
@@ -1343,7 +1341,7 @@ async def test_webui_crash_degrades_and_crawler_shuts_down_cleanly(
         webui_server_factory=crash_factory,
     )
     holder["app"] = app
-    with caplog.at_level(logging.ERROR, logger="mulewatch.composition.app"):
+    with caplog.at_level(logging.ERROR, logger="p2pwatch.composition.app"):
         await asyncio.wait_for(app.run(), timeout=5.0)  # crash does NOT propagate
     assert any("webui thread crashed" in r.getMessage() for r in caplog.records)
 
@@ -1351,7 +1349,7 @@ async def test_webui_crash_degrades_and_crawler_shuts_down_cleanly(
 def test_default_webui_server_factory_builds_a_uvicorn_server() -> None:
     import uvicorn
 
-    from mulewatch.composition.app import default_webui_server_factory
+    from p2pwatch.composition.app import default_webui_server_factory
 
     server = default_webui_server_factory(Starlette())
     assert isinstance(server, uvicorn.Server)

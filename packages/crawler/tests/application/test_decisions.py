@@ -10,14 +10,14 @@ import sqlite3
 import pytest
 
 from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision, MatchingEngine
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.application.decisions import record_decision_if_changed
-from mulewatch.application.record_observations import record_observation
-from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability.events import DecisionChange, DecisionsRecorded
-from mulewatch.domain.observation import FileObservation
-from mulewatch.domain.retraction import RETRACTED_TIER
+from p2pwatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from p2pwatch.application.decisions import record_decision_if_changed
+from p2pwatch.application.record_observations import record_observation
+from p2pwatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observability.events import DecisionChange, DecisionsRecorded
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.domain.retraction import RETRACTED_TIER
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
 from tests.catalog_rows import insert_file
 

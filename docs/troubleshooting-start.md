@@ -32,7 +32,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
 - **Symptôme.** `docker compose up -d` refuse de démarrer quoi que ce soit :
   ```
-  error while interpolating services.mulewatch.environment.PUID: required variable "PUID" is not set
+  error while interpolating services.p2pwatch.environment.PUID: required variable "PUID" is not set
   ```
   Idem pour `PGID`, `AMULE_EC_PASSWORD` et `AMULE_API_PASSWORD`. Variante : la variable est
   déclarée mais vide, et le conteneur sort en moins d'une seconde sur une seule ligne de journal,
@@ -64,9 +64,9 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 ### Un conteneur redémarre en boucle
 
 - **Symptôme.** `docker compose ps` montre le service en **`Restarting`** ou `Exited`.
-- **Diagnostic.** Il n'y a qu'un seul service, `mulewatch` (plus `gluetun` sous la pile VPN) : la
+- **Diagnostic.** Il n'y a qu'un seul service, `p2pwatch` (plus `gluetun` sous la pile VPN) : la
   question n'est pas « quel conteneur ? » mais **lequel des processus a échoué**. Lisez
-  `docker compose logs mulewatch` : le journal est entrelacé, amuled et le crawler y écrivent tous
+  `docker compose logs p2pwatch` : le journal est entrelacé, amuled et le crawler y écrivent tous
   les deux, repérez qui parle en dernier. Seul un arrêt non nul du crawler couche le conteneur ; si
   amuled tombe, s6 le relance sur place et le conteneur reste `Up`. amuleapi, démarré par amuled,
   n'écrit pas là mais dans `amule/amuleapi.log`.
@@ -89,7 +89,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
     ```bash
     df -h data
-    docker run --rm --entrypoint df ghcr.io/mission-titar/mulewatch:latest -h /tmp
+    docker run --rm --entrypoint df ghcr.io/mission-titar/p2pwatch:latest -h /tmp
     ```
 
     Sous Docker Desktop, ce second chiffre est celui de l'image disque de sa machine virtuelle, qui
@@ -111,7 +111,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
     Remède : épinglez votre ancienne image (`ghcr.io/mission-titar/mulewatch:4.1.0`) dans
     `base.compose.yml`, puis `docker compose up -d`. Ouvrez ensuite un ticket sur
-    <https://github.com/mission-titar/mulewatch/issues> avec cette ligne de journal et le résultat
+    <https://github.com/mission-titar/p2pwatch/issues> avec cette ligne de journal et le résultat
     de `SELECT COUNT(*) FROM file_observation_ranges` dans la console SQL : la conversion s'écrira
     sur vos données.
 
@@ -151,7 +151,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
   Sinon, corrigez la clé WireGuard et les autres variables VPN dans `.env`, puis redémarrez le seul
   processus amuled :
   ```bash
-  docker compose -f gluetun.compose.yml exec mulewatch s6-svc -r /etc/services.d/amuled
+  docker compose -f gluetun.compose.yml exec p2pwatch s6-svc -r /etc/services.d/amuled
   ```
   Plus de détails dans la
   [fiche opérateur](troubleshooting.md#amuled-ne-se-connecte-à-aucun-serveur-ni-réseau-tunnel).
@@ -160,7 +160,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
 
 - **La page se charge, mais le tableau est vide.** C'est normal les premières heures : le catalogue
   se remplit au fil des recherches, et les cibles rares peuvent mettre des jours à réapparaître.
-  Vérifiez plutôt que le nœud vit : `docker compose logs mulewatch` doit montrer une ligne
+  Vérifiez plutôt que le nœud vit : `docker compose logs p2pwatch` doit montrer une ligne
   `verdict(s) changed` par recherche terminée. S'il signale `off its network`, voir
   [« amuled ne se connecte à rien »](#amuled-ne-se-connecte-à-rien).
 - **La page ne se charge pas du tout.** La webui est servie en intra-processus par le crawler, il
@@ -170,7 +170,7 @@ récupération après panne, voir [Diagnostics avancés](troubleshooting.md).
   docker compose ps
   ```
   ```bash
-  docker compose exec mulewatch s6-svstat /etc/services.d/mulewatch
+  docker compose exec p2pwatch s6-svstat /etc/services.d/p2pwatch
   ```
   Conteneur pas `Up` → [« Un conteneur redémarre en boucle »](#un-conteneur-redémarre-en-boucle).
   `s6-svstat` à `down` → relisez le journal. Tout `up` mais page inaccessible → confirmez l'adresse

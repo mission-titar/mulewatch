@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import pytest
 
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability import events as ev
-from mulewatch.domain.observability.policy import (
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observability import events as ev
+from p2pwatch.domain.observability.policy import (
     Audience,
     MetricInstruction,
     MetricName,

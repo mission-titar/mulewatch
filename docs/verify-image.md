@@ -1,5 +1,5 @@
 ---
-description: "Vérifier la signature cosign et les attestations d'une image mulewatch avant de la lancer."
+description: "Vérifier la signature cosign et les attestations d'une image p2pwatch avant de la lancer."
 ---
 
 # Vérifier l'authenticité d'une image
@@ -13,8 +13,8 @@ Prérequis : [cosign](https://github.com/sigstore/cosign) installé.
 L'identité attendue est le workflow de release du dépôt :
 
 ```bash
-IMAGE=ghcr.io/mission-titar/mulewatch:latest
-IDENTITY='^https://github.com/mission-titar/mulewatch/.github/workflows/release.yml@refs/'
+IMAGE=ghcr.io/mission-titar/p2pwatch:latest
+IDENTITY='^https://github.com/mission-titar/p2pwatch/.github/workflows/release.yml@refs/'
 ISSUER=https://token.actions.githubusercontent.com
 ```
 

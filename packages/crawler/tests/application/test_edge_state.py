@@ -1,6 +1,6 @@
 """EdgeState: first_occurrence = transition to active; leave rearms."""
 
-from mulewatch.application.edge_state import EdgeState
+from p2pwatch.application.edge_state import EdgeState
 
 
 def test_enter_is_true_only_on_transition() -> None:

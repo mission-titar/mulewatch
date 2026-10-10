@@ -1,16 +1,16 @@
 ---
-description: "Ce que mulewatch ne fait pas, et les conséquences pratiques des choix assumés."
+description: "Ce que p2pwatch ne fait pas, et les conséquences pratiques des choix assumés."
 ---
 
 # Limites connues
 
-Ce que mulewatch ne fait pas, et ce qui peut vous mordre. Rien ici n'est un bug : ce sont des choix
+Ce que p2pwatch ne fait pas, et ce qui peut vous mordre. Rien ici n'est un bug : ce sont des choix
 assumés, dont voici les conséquences pratiques.
 
 ## Le disque se remplit, et rien ne le vide
 
 Les fichiers terminés restent dans `downloads/incoming` indéfiniment. Aucun ménage automatique
-n'existe, et il n'y en aura pas : mulewatch n'ouvre jamais un fichier téléchargé, donc il ne peut
+n'existe, et il n'y en aura pas : p2pwatch n'ouvre jamais un fichier téléchargé, donc il ne peut
 pas juger lequel garder.
 
 Le crawler mesure l'espace libre et cesse d'accepter de nouveaux téléchargements quand il passerait

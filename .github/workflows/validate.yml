@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/mission-titar/mulewatch
+  IMAGE: ghcr.io/mission-titar/p2pwatch
 
 jobs:
   lint:
@@ -162,9 +162,9 @@ jobs:
           uv run pytest \
             -m "api_integration or download_integration or orchestration_integration" --no-cov -q
         env:
-          MULEWATCH_TEST_API_HOST: 127.0.0.1
-          MULEWATCH_TEST_API_PORT: '4711'
-          MULEWATCH_TEST_API_PASSWORD: indexer-api-test
+          P2PWATCH_TEST_API_HOST: 127.0.0.1
+          P2PWATCH_TEST_API_PORT: '4711'
+          P2PWATCH_TEST_API_PASSWORD: indexer-api-test
       - name: Stop the throwaway daemon (${{ matrix.arch }})
         if: ${{ always() }}
         run: docker rm -f amuled || true

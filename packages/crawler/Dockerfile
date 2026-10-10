@@ -66,11 +66,11 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --no-install-workspace --package mulewatch
+    uv sync --frozen --no-install-workspace --package p2pwatch
 
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-editable --package mulewatch
+    uv sync --locked --no-editable --package p2pwatch
 
 # --- Runtime: one image, two supervised services (amuled itself starts amuleapi) ---
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a

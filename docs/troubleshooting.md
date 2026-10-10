@@ -42,17 +42,17 @@ accumulé, mais vous redémarrez d'un état connu.
   [gluetun] [vpn] cannot connect to ...   ← VPN provider/clé refusée
   [gluetun] [main] retrying in N seconds
   ```
-  Le conteneur mulewatch **partage le réseau de gluetun** (`network_mode: service:gluetun`) : tant
+  Le conteneur p2pwatch **partage le réseau de gluetun** (`network_mode: service:gluetun`) : tant
   que le tunnel est down, amuled n'a aucune sortie. Si le tunnel ne monte pas, corrigez le VPN (clé
   WireGuard, fournisseur, `SERVER_COUNTRIES`) puis relancez. Une fois gluetun « up », redémarrez le
   processus amuled sans coucher le reste :
   ```bash
-  docker compose -f gluetun.compose.yml exec mulewatch s6-svc -r /etc/services.d/amuled
+  docker compose -f gluetun.compose.yml exec p2pwatch s6-svc -r /etc/services.d/amuled
   ```
 - **Version d'aMule.** Elle n'est plus un paramètre de déploiement : aMule est compilé sur Debian
   dans notre propre image, depuis un commit git épinglé dans le `Dockerfile`. Il n'y a plus d'image
-  tierce à vérifier ni à épingler ; la version d'aMule suit celle de l'image mulewatch. Pour savoir
-  laquelle tourne : `docker compose -f gluetun.compose.yml exec mulewatch amuled --version` (sans
+  tierce à vérifier ni à épingler ; la version d'aMule suit celle de l'image p2pwatch. Pour savoir
+  laquelle tourne : `docker compose -f gluetun.compose.yml exec p2pwatch amuled --version` (sans
   VPN : `compose.yml`). La commande sort en code 255 même quand tout va bien.
 
 ### s6 a redémarré un processus et le conteneur est resté debout
@@ -71,29 +71,29 @@ accumulé, mais vous redémarrez d'un état connu.
 - **Comment le confirmer.** `s6-svstat` affiche l'uptime du service en secondes : un petit nombre
   signifie qu'il vient d'être redémarré.
   ```bash
-  docker compose exec mulewatch s6-svstat /etc/services.d/mulewatch
-  docker compose exec mulewatch s6-svstat /etc/services.d/amuled
+  docker compose exec p2pwatch s6-svstat /etc/services.d/p2pwatch
+  docker compose exec p2pwatch s6-svstat /etc/services.d/amuled
   ```
 - **Conséquence à garder en tête.** Un conteneur en `Up (healthy)` ne prouve **pas** que le crawler
   tourne : le healthcheck n'interroge qu'amuled, et le conteneur ne passe `unhealthy` que quand
-  amuled est arrêté. Dans le doute, interrogez `s6-svstat` sur `/etc/services.d/mulewatch`, ou
+  amuled est arrêté. Dans le doute, interrogez `s6-svstat` sur `/etc/services.d/p2pwatch`, ou
   cherchez des lignes `verdict(s) changed` dans le journal, une par recherche terminée.
 
 ### Le crawler refuse de démarrer : « environment variable '…' referenced but not set »
 
-- **Symptôme.** `docker compose logs mulewatch` affiche
+- **Symptôme.** `docker compose logs p2pwatch` affiche
   `Invalid config, refusing to start: … : environment variable 'AMULE_EC_PASSWORD' referenced but not set`,
   alors que la variable est bien renseignée dans `.env`.
 - **Cause.** Compose ne lit `.env` que pour substituer les `${...}` **dans les fichiers compose**.
   Le crawler, lui, interpole les `${VAR}` de `crawler.yml` depuis son propre environnement de
   conteneur. Une variable référencée dans `crawler.yml` doit donc être injectée explicitement dans
-  le service `mulewatch` (bloc `environment:` de `base.compose.yml`), sinon le process ne la voit
+  le service `p2pwatch` (bloc `environment:` de `base.compose.yml`), sinon le process ne la voit
   pas. `AMULE_EC_PASSWORD` y est câblé par défaut.
 - **Solution.** Si vous ajoutez un nouveau `${VAR}` dans `crawler.yml`, typiquement en activant une
   URL de notification `notifications[].url: "discord://${DISCORD_WEBHOOK_ID}/…"`, ajoutez la même
-  variable au bloc `environment:` du service `mulewatch` :
+  variable au bloc `environment:` du service `p2pwatch` :
   ```yaml title="base.compose.yml"
-  mulewatch:
+  p2pwatch:
     environment:
       PUID: ${PUID:?}
       PGID: ${PGID:?}
@@ -141,13 +141,13 @@ accumulé, mais vous redémarrez d'un état connu.
      ```
      Corrigez les deux lignes, puis redémarrez amuled seul :
      ```bash
-     docker compose exec mulewatch s6-svc -r /etc/services.d/amuled
+     docker compose exec p2pwatch s6-svc -r /etc/services.d/amuled
      ```
 - **Gardez amuled dédié au crawler.** Ses fichiers partagés sont lus à chaque cycle de
   téléchargement : ne pointez donc pas cet amuled sur une grande bibliothèque partagée
   préexistante, la détection de complétion en deviendrait plus lente et plus bruyante. Contexte et
   sources :
-  [`reference/2026-06-17-amuled-completion-behavior.md`](https://github.com/mission-titar/mulewatch/blob/main/agents/reference/2026-06-17-amuled-completion-behavior.md)
+  [`reference/2026-06-17-amuled-completion-behavior.md`](https://github.com/mission-titar/p2pwatch/blob/main/agents/reference/2026-06-17-amuled-completion-behavior.md)
   (ses contraintes 1 et 2, sur un volume de quarantaine partagé, ne s'appliquent plus : l'étape de
   quarantaine a été retirée le 2026-09-13).
 
@@ -177,11 +177,11 @@ accumulé, mais vous redémarrez d'un état connu.
   sur `local.db`. Remplacez `<hash>` par le hash eD2k de la ligne à supprimer :
 
   ```bash
-  docker compose exec mulewatch s6-svc -d /etc/services.d/mulewatch # (1)!
-  docker compose exec --user amule mulewatch python -c \
+  docker compose exec p2pwatch s6-svc -d /etc/services.d/p2pwatch # (1)!
+  docker compose exec --user amule p2pwatch python -c \
     "import sqlite3; db = sqlite3.connect('/data/local.db', autocommit=True); \
      db.execute('DELETE FROM downloads WHERE native_id = ?', ('<hash>',))" # (2)!
-  docker compose exec mulewatch s6-svc -u /etc/services.d/mulewatch # (3)!
+  docker compose exec p2pwatch s6-svc -u /etc/services.d/p2pwatch # (3)!
   ```
 
   1.  On arrête le crawler **seul** : il est l'écrivain unique de `local.db` par doctrine. amuled
@@ -226,10 +226,10 @@ Plusieurs causes, à vérifier dans cet ordre :
   la permission de groupe sur la FIFO de contrôle d'amuled au démarrage. Si cette étape a échoué,
   le journal du conteneur porte, dès le démarrage, la ligne :
   ```
-  mulewatch: /etc/services.d/amuled/supervise/control never appeared; amuled restarts will be refused
+  p2pwatch: /etc/services.d/amuled/supervise/control never appeared; amuled restarts will be refused
   ```
   et, à chaque tentative de port-sync, une erreur `s6-svc exited ...`. Le crawl, lui, continue
-  normalement. Remède : redémarrer le conteneur (`docker compose restart mulewatch`) pour rejouer
+  normalement. Remède : redémarrer le conteneur (`docker compose restart p2pwatch`) pour rejouer
   la séquence de démarrage.
 
 
@@ -244,7 +244,7 @@ Plusieurs causes, à vérifier dans cet ordre :
 
 - **Ce que fait l'image.** Il n'y a **plus aucun volume nommé** : tout est un bind mount relatif
   dans votre dossier de travail (`data/`, `amule/`, `downloads/`, plus les trois `.yml` montés en
-  lecture seule). Au démarrage, le one-shot `mulewatch.amule_config` tourne en root, crée
+  lecture seule). Au démarrage, le one-shot `p2pwatch.amule_config` tourne en root, crée
   l'utilisateur `amule` avec `PUID:PGID`, puis donne les points de montage (`/home/amule/.aMule`,
   `/downloads/incoming`, `/downloads/temp`) à cet utilisateur. Le crawler fait de même sur `/data`.
 - **Ce qu'il ne fait pas : ce `chown` n'est PAS récursif** sur `downloads/` ni sur `amule/`, et
@@ -312,7 +312,7 @@ Quelques scénarios « j'ai cassé quelque chose, comment je remonte ? » :
 - **Réponse.** Dans `downloads/incoming`, à l'intérieur de votre dossier de travail. C'est un simple
   dossier de votre disque, donc arrêter ou supprimer le conteneur n'y touche pas. Les fichiers
   encore en cours de téléchargement sont dans `downloads/temp`.
-- **Rien n'a inspecté ce fichier.** mulewatch n'ouvre jamais un fichier téléchargé : pas de contrôle
+- **Rien n'a inspecté ce fichier.** p2pwatch n'ouvre jamais un fichier téléchargé : pas de contrôle
   de type, pas de sonde média, pas d'analyse antivirus. Vérifiez-le vous-même avant de l'ouvrir.
 
 ### Je veux repartir de zéro (catalogue effacé)
@@ -335,20 +335,20 @@ Quelques scénarios « j'ai cassé quelque chose, comment je remonte ? » :
 
 ### Piloter un processus dans le conteneur
 
-Deux services sont supervisés par s6 dans l'unique conteneur `mulewatch` : ils se pilotent donc par
+Deux services sont supervisés par s6 dans l'unique conteneur `p2pwatch` : ils se pilotent donc par
 service, et non par service compose. Depuis votre dossier de travail (`<svc>` vaut `amuled` ou
-`mulewatch` ; amuleapi suit `amuled`, qui le démarre) :
+`p2pwatch` ; amuleapi suit `amuled`, qui le démarre) :
 
 ```bash
-docker compose exec mulewatch s6-svstat /etc/services.d/<svc>   # actif/arrêté + durée en secondes
-docker compose exec mulewatch s6-svc -r /etc/services.d/<svc>   # le redémarrer
-docker compose exec mulewatch s6-svc -d /etc/services.d/<svc>   # l'arrêter
-docker compose exec mulewatch s6-svc -u /etc/services.d/<svc>   # le relancer
+docker compose exec p2pwatch s6-svstat /etc/services.d/<svc>   # actif/arrêté + durée en secondes
+docker compose exec p2pwatch s6-svc -r /etc/services.d/<svc>   # le redémarrer
+docker compose exec p2pwatch s6-svc -d /etc/services.d/<svc>   # l'arrêter
+docker compose exec p2pwatch s6-svc -u /etc/services.d/<svc>   # le relancer
 ```
 
 Deux choses à savoir avant de les utiliser :
 
-- Arrêter `mulewatch` (le crawler) laisse amuled en marche, ce qui est bien ce que vous voulez pour
+- Arrêter `p2pwatch` (le crawler) laisse amuled en marche, ce qui est bien ce que vous voulez pour
   une écriture de maintenance sur les bases. Arrêter `amuled` rend le crawler aveugle, et emporte
   amuleapi avec lui : il journalisera des échecs et fera du backoff jusqu'au retour d'amuled.
 - Une sortie **non nulle** du crawler couche tout le conteneur, à dessein. `s6-svc -d` est un arrêt
@@ -357,7 +357,7 @@ Deux choses à savoir avant de les utiliser :
 ### Valider la configuration sans rien démarrer
 
 ```bash
-docker compose exec mulewatch python -m mulewatch validate-config
+docker compose exec p2pwatch python -m p2pwatch validate-config
 ```
 
 Charge + valide les 3 configs et sort en erreur (code ≠ 0) si l'une est invalide, **sans rien

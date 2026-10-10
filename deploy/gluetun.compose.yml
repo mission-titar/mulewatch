@@ -1,8 +1,8 @@
-# VPN stack: mulewatch runs inside gluetun's network.
+# VPN stack: p2pwatch runs inside gluetun's network.
 # For High-ID, set VPN_PORT_FORWARDING=on in .env and port_sync.enabled: true in crawler.yml.
 # Run (from deploy/):
 #   docker compose -f gluetun.compose.yml up -d
-name: mulewatch
+name: p2pwatch
 
 services:
   gluetun:
@@ -17,7 +17,7 @@ services:
       SERVER_COUNTRIES: ${SERVER_COUNTRIES:-}
       VPN_PORT_FORWARDING: ${VPN_PORT_FORWARDING:-off}
       HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE: '{"auth":"none"}'
-    # mulewatch has no network of its own, so its web ports are published here.
+    # p2pwatch has no network of its own, so its web ports are published here.
     # 8080 (the catalog) has NO password: put it behind a reverse proxy or a VPN.
     # 4711 (aMule's own web UI) is protected by AMULE_API_PASSWORD.
     ports:
@@ -25,10 +25,10 @@ services:
       - "4711:4711"
     restart: unless-stopped
 
-  mulewatch:
+  p2pwatch:
     extends:
       file: base.compose.yml
-      service: mulewatch
+      service: p2pwatch
     # Here and not in the fragment: `extends:` never carries depends_on over.
     network_mode: "service:gluetun"
     depends_on: [gluetun]

@@ -10,7 +10,7 @@ and non-ASCII are neutralized. Only the 5 STRUCTURAL separators of the link
 (``|file|`` … ``|/``) stay as ``|``.
 
 PURE domain: no I/O. Lives in ``catalog_matching`` (shared package) rather than in
-``mulewatch`` core or ``mulewatch.webui`` because both must produce the SAME canonical
+``p2pwatch`` core or ``p2pwatch.webui`` because both must produce the SAME canonical
 link for a given file (regression webui-security#0 — without this sharing, the webui
 reinvented the function and forgot the escaping).
 """

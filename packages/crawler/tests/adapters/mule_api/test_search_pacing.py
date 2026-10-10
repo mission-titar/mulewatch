@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from mulewatch.adapters.mule_api.client import AmuleApiClient
-from mulewatch.ports.client_errors import SearchFailedError
+from p2pwatch.adapters.mule_api.client import AmuleApiClient
+from p2pwatch.ports.client_errors import SearchFailedError
 from tests.adapters.mule_api.api_fakes import PASSWORD, FakeAmuleApi, error
 from tests.virtual_time import EPOCH, LoopClock, run_virtual
 
@@ -218,7 +218,7 @@ def test_a_keyword_without_a_kad_target_neither_spins_nor_searches(keyword: str)
 
 
 def test_a_keyword_without_a_kad_target_is_logged_once(caplog: pytest.LogCaptureFixture) -> None:
-    caplog.set_level(logging.INFO, logger="mulewatch.adapters.mule_api.client")
+    caplog.set_level(logging.INFO, logger="p2pwatch.adapters.mule_api.client")
 
     async def main() -> None:
         client = await _connected(_api())

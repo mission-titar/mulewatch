@@ -4,7 +4,7 @@ description: "Ce que votre nœud fait sur le réseau, ce qu'il stocke, et ce que
 
 # Légalité et vie privée
 
-Cette page s'adresse à **vous qui hébergez un nœud** `mulewatch` : chez vous, sur un VPS ou dans une
+Cette page s'adresse à **vous qui hébergez un nœud** `p2pwatch` : chez vous, sur un VPS ou dans une
 infra que vous administrez. Elle répond à trois questions : ce que votre nœud enregistre, ce que
 vous risquez légalement, ce qu'un VPN protège vraiment.
 
@@ -29,7 +29,7 @@ Ce qui n'y entre jamais :
   seule et n'authentifie personne — exposée, elle exige un reverse proxy pour l'authentification.
 - **Aucune télémétrie sortante.** Rien ne part vers un service tiers ; `/metrics` est un endpoint
   local, à scraper si vous le voulez, sans Prometheus ni Grafana dans la pile.
-- **Aucun contenu de fichier.** Même en téléchargement actif, mulewatch ne lit jamais les octets
+- **Aucun contenu de fichier.** Même en téléchargement actif, p2pwatch ne lit jamais les octets
   d'un fichier : ni détection de type, ni sonde média, ni antivirus. Le fichier vit à part dans
   `downloads/incoming`.
 
@@ -90,7 +90,7 @@ Il ne protège pas contre :
 - **Ne publiez pas votre IP publique** sur des forums liés au projet : « mon nœud est ici, venez
   voir » vous expose même via VPN si vous êtes seul à l'utiliser à cet instant.
 - **Gardez votre système à jour**, surtout avec un port entrant ouvert (route B).
-- **Ne mélangez pas les usages.** Ce nœud ne sert qu'à mulewatch : pas de bibliothèque P2P partagée
+- **Ne mélangez pas les usages.** Ce nœud ne sert qu'à p2pwatch : pas de bibliothèque P2P partagée
   pré-existante, pas d'autres tests.
 
 Pour échanger un catalogue avec d'autres chercheurs, voir [la page d'accueil](index.md#partage).

@@ -5,11 +5,11 @@ import logging
 
 import pytest
 
-from mulewatch.adapters.observability.dispatcher import ObservabilityDispatcher
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability import events as ev
-from mulewatch.domain.observability.policy import Audience, MetricInstruction, Severity
-from mulewatch.ports.telemetry import MetricsSink, Notifier
+from p2pwatch.adapters.observability.dispatcher import ObservabilityDispatcher
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observability import events as ev
+from p2pwatch.domain.observability.policy import Audience, MetricInstruction, Severity
+from p2pwatch.ports.telemetry import MetricsSink, Notifier
 
 
 class _RecordingSink:
@@ -83,7 +83,7 @@ async def test_notifies_the_message_when_there_is_no_separate_body() -> None:
 async def test_logs_the_message_but_notifies_the_body(caplog: pytest.LogCaptureFixture) -> None:
     sink, notifier = _RecordingSink(), _RecordingNotifier()
     change = ev.DecisionChange("062A", "Les demoiselles cambrioleuses", None, "download")
-    with caplog.at_level(logging.INFO, logger="mulewatch.observability"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.observability"):
         await _dispatcher(sink, notifier).emit(
             ev.DecisionsRecorded(FileKey(Network.ED2K, "a" * 32), "Keroro 062.avi", 1024, (change,))
         )
@@ -96,14 +96,14 @@ async def test_logs_the_message_but_notifies_the_body(caplog: pytest.LogCaptureF
 @pytest.mark.asyncio
 async def test_log_level_matches_severity(caplog: pytest.LogCaptureFixture) -> None:
     sink, notifier = _RecordingSink(), _RecordingNotifier()
-    with caplog.at_level(logging.DEBUG, logger="mulewatch.observability"):
+    with caplog.at_level(logging.DEBUG, logger="p2pwatch.observability"):
         await _dispatcher(sink, notifier).emit(ev.InstanceUnreachable("amuled"))
     assert caplog.records[-1].levelno == logging.WARNING
 
 
 @pytest.mark.asyncio
 async def test_a_success_logs_as_info(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.DEBUG, logger="mulewatch.observability"):
+    with caplog.at_level(logging.DEBUG, logger="p2pwatch.observability"):
         await _dispatcher(_RecordingSink(), _RecordingNotifier()).emit(_COMPLETED)
     assert caplog.records[-1].levelno == logging.INFO
 
@@ -111,7 +111,7 @@ async def test_a_success_logs_as_info(caplog: pytest.LogCaptureFixture) -> None:
 @pytest.mark.asyncio
 async def test_notification_failure_is_absorbed(caplog: pytest.LogCaptureFixture) -> None:
     sink = _RecordingSink()
-    with caplog.at_level(logging.WARNING, logger="mulewatch.observability"):
+    with caplog.at_level(logging.WARNING, logger="p2pwatch.observability"):
         await _dispatcher(sink, _RaisingNotifier()).emit(_COMPLETED)
     assert sink.applied  # the metric went through despite the notification failure
     assert any("failed" in r.getMessage() for r in caplog.records)

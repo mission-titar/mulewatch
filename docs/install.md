@@ -37,7 +37,7 @@ Docker Desktop sous Windows et macOS, Docker Engine sous Linux.
 
 ## 2. Récupérer le dossier `deploy`
 
-Sur <https://github.com/mission-titar/mulewatch>, bouton vert **`Code`** puis **`Download ZIP`**.
+Sur <https://github.com/mission-titar/p2pwatch>, bouton vert **`Code`** puis **`Download ZIP`**.
 Décompressez, et gardez **uniquement le dossier `deploy`** : copiez-le où vous voulez, renommez-le à
 votre goût. C'est votre **[dossier de travail](glossary.md#vocabulaire-du-projet)** ; toutes les commandes qui suivent s'y lancent. Le
 reste du ZIP peut être supprimé.
@@ -65,7 +65,7 @@ en place** : ce sont des mots de passe en clair, donc des portes ouvertes.
 
 !!! danger "Le port 8080 n'a aucune authentification"
 
-    `AMULE_API_PASSWORD` protège le port **4711 seulement**. Le catalogue mulewatch sur le port
+    `AMULE_API_PASSWORD` protège le port **4711 seulement**. Le catalogue p2pwatch sur le port
     **8080** est servi **sans mot de passe, sans connexion, sans jeton CSRF**, et il expose le
     catalogue, les
     contrôles de crawl (pause, redémarrage) **et une console SQL en lecture seule** à
@@ -90,7 +90,7 @@ Au premier lancement, Docker télécharge l'image, ce qui peut prendre quelques 
     docker compose ps
     ```
 
-    Doit montrer **un seul service**, `mulewatch`, dont l'état commence par `Up`. Au bout d'une
+    Doit montrer **un seul service**, `p2pwatch`, dont l'état commence par `Up`. Au bout d'une
     demi-minute environ, il passe à `Up (healthy)` : le client eMule tourne vraiment à l'intérieur.
 
 ## 5. Ouvrir le catalogue
@@ -99,7 +99,7 @@ Votre nœud sert deux pages web :
 
 | Adresse | Ce que c'est | Mot de passe |
 |---|---|---|
-| <http://localhost:8080> | **Le catalogue mulewatch** : catalogue en lecture seule, contrôles de crawl, console SQL. | **Aucun.** Voir l'avertissement de l'étape 3. |
+| <http://localhost:8080> | **Le catalogue p2pwatch** : catalogue en lecture seule, contrôles de crawl, console SQL. | **Aucun.** Voir l'avertissement de l'étape 3. |
 | <http://localhost:4711> | **L'interface web propre à aMule** : recherche, transferts, serveurs, état Kad. | `AMULE_API_PASSWORD` de votre `.env`. |
 
 Sur un serveur distant, remplacez `localhost` par son adresse.

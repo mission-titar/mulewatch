@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_local
-from mulewatch.domain.file_key import FileKey, Network
+from p2pwatch.adapters.persistence_sqlite.connection import open_local
+from p2pwatch.domain.file_key import FileKey, Network
 from tests.adapters.persistence_sqlite.older_catalog import open_local_at
 
 _A, _B = "a" * 32, "0123456789abcdef" * 2

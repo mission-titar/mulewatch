@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_local, utc_iso
-from mulewatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
-from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
-from mulewatch.domain.download.states import DownloadState
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
+from p2pwatch.adapters.persistence_sqlite.connection import open_local, utc_iso
+from p2pwatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
+from p2pwatch.adapters.persistence_sqlite.errors import PersistenceError
+from p2pwatch.domain.download.states import DownloadState
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
 
 _A = FileKey(Network.ED2K, "a" * 32)
 _B = FileKey(Network.ED2K, "b" * 32)

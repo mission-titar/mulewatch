@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.adapters.persistence_sqlite.errors import MigrationError
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.adapters.persistence_sqlite.errors import MigrationError
 from tests.adapters.persistence_sqlite.older_catalog import open_catalog_at
 
 _HASH = "a" * 32

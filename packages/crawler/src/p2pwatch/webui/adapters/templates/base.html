@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}p2pwatch{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <nav>
+    {% for item in nav_items %}
+    {% for href in item.link %}<a href="{{ href }}">{{ item.label }}</a>{% else %}<span aria-current="page">{{ item.label }}</span>{% endfor %}
+    {% endfor %}
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

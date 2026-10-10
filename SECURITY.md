@@ -1,10 +1,10 @@
 # Security Policy
 
-mulewatch publishes one image to GHCR: `mulewatch`. This policy applies to it.
+p2pwatch publishes one image to GHCR: `p2pwatch`. This policy applies to it.
 
 The older `mulewatch-crawler` package is frozen at 1.x and kept only as the rollback path for
 nodes migrating to 2.0. It receives no new tags, signatures, attestations or scans: everything
-below describes `mulewatch`.
+below describes `p2pwatch`.
 
 ## Signing & attestations
 
@@ -72,7 +72,7 @@ For a local run, point Grype at the file explicitly with
 
 Grype resolves a VEX statement by the **image** identity (`pkg:oci/...`) then by the
 vulnerable **package** PURL. We use the **image-scoped** form (product
-`pkg:oci/mulewatch` with the vulnerable package as a `subcomponent`) because it is
+`pkg:oci/p2pwatch` with the vulnerable package as a `subcomponent`) because it is
 the only form safe to attach and redistribute: it is scoped to *this* image, so a downstream
 consumer's unrelated packages are never suppressed by our statements. Use the subcomponent
 PURL **without a version** so a statement survives package bumps.
@@ -95,7 +95,7 @@ go install github.com/openvex/vexctl@latest
 vexctl add \
   --in-place \
   --file security/crawler.vex.openvex.json \
-  --product "pkg:oci/mulewatch" \
+  --product "pkg:oci/p2pwatch" \
   --subcomponents "pkg:deb/debian/<package>" \
   --vulnerability CVE-YYYY-NNNNN \
   --status not_affected \

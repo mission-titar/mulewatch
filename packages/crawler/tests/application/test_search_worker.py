@@ -4,8 +4,8 @@ import sqlite3
 import pytest
 
 from catalog_matching.engine import MatchingEngine
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.application.search_worker import (
+from p2pwatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from p2pwatch.application.search_worker import (
     SEARCH_BUDGET_SECONDS,
     BackoffRegistry,
     SearchTask,
@@ -13,15 +13,15 @@ from mulewatch.application.search_worker import (
     WorkerDeps,
     WorkerPolicy,
 )
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability.events import (
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observability.events import (
     InstanceUnreachable,
     ObservationRecorded,
     SearchExecuted,
     SearchFailed,
 )
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.scheduler_state_repository import ChannelBackoff
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.scheduler_state_repository import ChannelBackoff
 from tests.application.fakes import (
     FakeClock,
     FakeMuleClient,

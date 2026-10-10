@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · p2pwatch{% endblock %}
+{% block content %}
+{% for message in messages %}
+<p class="control-banner" role="status">{{ message }}</p>
+{% endfor %}
+
+<section>
+  <h2>Clients</h2>
+  {% for client in clients %}
+  <h3>{{ client.name }}</h3>
+  <dl>
+    <dt>Version</dt><dd>{{ client.version }}</dd>
+    <dt>API reachable</dt><dd>{{ client.api_reachable }}</dd>
+    <dt>Last reading</dt><dd>{{ client.reading }}</dd>
+  </dl>
+  <table>
+    <thead>
+      <tr>
+        <th>Channel</th>
+        <th>On network</th>
+        <th>Connectable</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for channel in client.channels %}
+      <tr><td>{{ channel.channel }}</td><td>{{ channel.on_network }}</td><td>{{ channel.connectable }}</td></tr>
+      {% else %}
+      <tr><td colspan="3">No current channel reading.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No client.</p>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Crawl</h2>
+  <p>The crawl is {{ crawl }}.</p>
+  <form method="post" action="/controls/pause">
+    <button type="submit">Pause crawl</button>
+  </form>
+  <form method="post" action="/controls/resume">
+    <button type="submit">Resume crawl</button>
+  </form>
+  <form method="post" action="/controls/restart">
+    <button type="submit">Restart service</button>
+  </form>
+</section>
+
+<section>
+  <h2>Node status</h2>
+  <dl>
+    <dt>Identifier</dt>
+    <dd>{{ node_state.node_id }}</dd>
+    <dt>Created at</dt>
+    <dd>{{ node_state.created_at }}</dd>
+  </dl>
+</section>
+
+<section>
+  <h2>Target coverage</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Identifier</th>
+        <th>Title</th>
+        <th>Status</th>
+        <th>Best tier</th>
+        <th>Files</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="/targets/{{ row.target_id }}">{{ row.target_id }}</a></td>
+        <td>{{ row.title }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.best_tier_display }}</td>
+        <td>{{ row.file_count }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No target configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

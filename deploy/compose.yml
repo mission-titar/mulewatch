@@ -2,13 +2,13 @@
 # Low-ID by default; for High-ID, forward 4662 (TCP and UDP) from your router to this machine.
 # Run (from deploy/):
 #   docker compose up -d
-name: mulewatch
+name: p2pwatch
 
 services:
-  mulewatch:
+  p2pwatch:
     extends:
       file: base.compose.yml
-      service: mulewatch
+      service: p2pwatch
     # Change the left-hand number if a port is already taken on this machine.
     # 8080 (the catalog) has NO password: put it behind a reverse proxy or a VPN.
     # 4711 (aMule's own web UI) is protected by AMULE_API_PASSWORD.

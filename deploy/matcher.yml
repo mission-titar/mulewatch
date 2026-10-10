@@ -56,7 +56,7 @@ rules:
   - { name: title_review,        tier: notify,   scope: segment,      all: [keroro_titar, is_video, title_hit] }
   - { name: numero_nu,           tier: notify,   scope: episode,      all: [keroro_titar, is_video, segment_id_loose] }
   - { name: archive_candidate,   tier: notify,   scope: unattributed, all: [keroro_titar, is_archive, { any: [segment_id, title_hit, source_marker] }] }
-  # keroro_large MUST stay the only tier: catalog rule: mulewatch.webui displays ANY
+  # keroro_large MUST stay the only tier: catalog rule: p2pwatch.webui displays ANY
   # tier=="catalog" decision as "unidentified" (target-agnostic catch-all assumption).
   # Guarded by packages/matching/tests/test_golden_corpus.py::
   # test_prod_policy_has_exactly_one_catalog_tier_rule_named_keroro_large.

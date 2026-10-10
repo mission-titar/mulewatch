@@ -8,9 +8,9 @@ import pytest
 
 from catalog_matching.engine import MatchingEngine
 from catalog_matching.validation import parse_matcher_config, parse_targets
-from mulewatch.adapters.config.yaml_loader import load_yaml
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.adapters.config.yaml_loader import load_yaml
+from p2pwatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 # Matcher: single source of truth = deployment config. Targets: the §7 subset of the golden

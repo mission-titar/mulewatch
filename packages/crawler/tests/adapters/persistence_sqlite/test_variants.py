@@ -6,15 +6,15 @@ from datetime import UTC, datetime
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite import variants
-from mulewatch.adapters.persistence_sqlite.connection import utc_iso
-from mulewatch.adapters.persistence_sqlite.variants import (
+from p2pwatch.adapters.persistence_sqlite import variants
+from p2pwatch.adapters.persistence_sqlite.connection import utc_iso
+from p2pwatch.adapters.persistence_sqlite.variants import (
     content_hash,
     iso_to_micros,
     register_functions,
 )
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import fold_raw_meta
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observation import fold_raw_meta
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 

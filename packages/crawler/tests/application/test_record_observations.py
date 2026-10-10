@@ -4,12 +4,12 @@ import sqlite3
 import pytest
 
 from catalog_matching.engine import MatchingEngine
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.application.record_observations import record_observation
-from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability.events import ObservationRecorded
-from mulewatch.domain.observation import FileObservation
+from p2pwatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from p2pwatch.application.record_observations import record_observation
+from p2pwatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observability.events import ObservationRecorded
+from p2pwatch.domain.observation import FileObservation
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
 from tests.catalog_rows import count_observations
 

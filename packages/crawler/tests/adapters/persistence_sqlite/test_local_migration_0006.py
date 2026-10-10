@@ -6,7 +6,7 @@ from pathlib import Path
 
 from tests.adapters.persistence_sqlite.older_catalog import open_local_at
 
-_LOCAL_MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations/local"
+_LOCAL_MIGRATIONS = resources.files("p2pwatch.adapters.persistence_sqlite") / "migrations/local"
 
 
 def _write_local_db_at_version_5(path: Path) -> None:

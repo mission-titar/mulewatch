@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from mulewatch.amule_config import __main__ as entry
-from mulewatch.amule_config.conf import reconcile_conf
+from p2pwatch.amule_config import __main__ as entry
+from p2pwatch.amule_config.conf import reconcile_conf
 
 DIGEST = hashlib.md5(b"hunter2").hexdigest()
 ENV = {

@@ -2,14 +2,14 @@
 members = ["packages/*"]
 
 [tool.uv.sources]
-mulewatch = { workspace = true }
+p2pwatch = { workspace = true }
 catalog-matching = { workspace = true }
 vex-guards = { workspace = true }
 amule-bump = { workspace = true }
 
 [dependency-groups]
 dev = [
-  "mulewatch",
+  "p2pwatch",
   "catalog-matching",
   "vex-guards",
   "amule-bump",
@@ -67,7 +67,7 @@ lint           = { cmd = "ruff check .", help = "Lint Python with ruff" }
 format-check   = { cmd = "ruff format --check .", help = "Check Python formatting with ruff" }
 type-check     = { cmd = "mypy", help = "Type-check with mypy (strict, src + tests)" }
 sql-lint       = { cmd = "sqlfluff lint packages/crawler/src", help = "Lint the embedded SQLite migrations" }
-template-check = { cmd = "python -m mulewatch.webui._dev.check_templates packages/crawler/src/mulewatch/webui/adapters/templates", help = "Assert webui templates carry no logic" }
+template-check = { cmd = "python -m p2pwatch.webui._dev.check_templates packages/crawler/src/p2pwatch/webui/adapters/templates", help = "Assert webui templates carry no logic" }
 vex-source-claims  = { cmd = "python -m vex_guards.check_source_claims", help = "Assert our source never reaches code the not_in_execute_path VEX claims exempt" }
 vex-claim-coverage = { cmd = "python -m vex_guards.check_claim_coverage", help = "Assert every VEX not_affected claim maps to exactly one registry guard, and back" }
 lint-fix       = { cmd = "ruff check --fix .", help = "Auto-fix ruff lint violations" }

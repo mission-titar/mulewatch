@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from mulewatch.ports.clock import Clock
+from p2pwatch.ports.clock import Clock
 from tests.application.fakes import FakeClock
 
 PASSWORD = "s3cret"

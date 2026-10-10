@@ -1,15 +1,15 @@
-# mulewatch
+# p2pwatch
 
-mulewatch surveille en continu le réseau eMule (eD2k + Kad) pour retrouver des médias perdus. Sa
+p2pwatch surveille en continu le réseau eMule (eD2k + Kad) pour retrouver des médias perdus. Sa
 première mission : la version française de *Keroro mission Titar* (Teletoon, 2008), aujourd'hui
 quasiment introuvable. Ces épisodes n'ont pas tout à fait disparu : ils refont surface par
 intermittence, le temps qu'un détenteur reste connecté, puis s'évanouissent. Une recherche manuelle
 tombe presque toujours au mauvais moment ; une veille permanente, non. Un nœud cherche sans relâche,
 catalogue ce qu'il croise, et alerte dès qu'un épisode manquant apparaît. Le sujet du catalogue est
-**le fichier, jamais la personne** : mulewatch ne piste personne et ne cherche à désanonymiser
+**le fichier, jamais la personne** : p2pwatch ne piste personne et ne cherche à désanonymiser
 personne.
 
-**[Documentation complète](https://mission-titar.github.io/mulewatch/)** : installer un nœud, le
+**[Documentation complète](https://mission-titar.github.io/p2pwatch/)** : installer un nœud, le
 faire tourner, le dépanner, et ce qu'il faut savoir côté légalité et vie privée.
 
 ## Développement

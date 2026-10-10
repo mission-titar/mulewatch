@@ -2,7 +2,7 @@
 description: "Vue d'ensemble du crawler : sous-systèmes, interactions et cycles de vie à l'exécution."
 ---
 
-# Architecture et comportement : mulewatch
+# Architecture et comportement : p2pwatch
 
 > Une vue d'ensemble lisible du système : sous-systèmes, interactions et cycles de vie à l'exécution.
 > Pour la **conception détaillée**, voir `agents/specs/` (la spec du MVP fait autorité) ; pour
@@ -15,7 +15,7 @@ description: "Vue d'ensemble du crawler : sous-systèmes, interactions et cycles
 
 ## 1. En une phrase
 
-`mulewatch` surveille en continu le réseau eMule (eD2k + Kad, via un `amuled` piloté par l'API REST
+`p2pwatch` surveille en continu le réseau eMule (eD2k + Kad, via un `amuled` piloté par l'API REST
 d'**amuleapi**) pour retrouver les épisodes perdus du doublage français de *Keroro mission Titar*, en
 cataloguant au passage chaque métadonnée croisée. **Le sujet du catalogue est le fichier, jamais la
 personne.**
@@ -33,7 +33,7 @@ namespace réseau de gluetun, donc tout son trafic passe par le tunnel.
 ```mermaid
 flowchart LR
   subgraph node["one container · s6"]
-    crawler["mulewatch · crawler + webui"]
+    crawler["p2pwatch · crawler + webui"]
     amuled["amuled"]
     amuleapi["amuleapi · REST + web UI"]
   end
@@ -96,12 +96,12 @@ flowchart RL
 
 | Paquet | Dist | Rôle |
 |---|---|---|
-| `mulewatch` | `mulewatch` | **Crawler** : pilote `amuled` par amuleapi, fait tourner les boucles de recherche et de téléchargement, la persistance, l'observabilité. Contient le sous-paquet webui in-process `mulewatch.webui` (visualiseur de catalogue en lecture seule). |
+| `p2pwatch` | `p2pwatch` | **Crawler** : pilote `amuled` par amuleapi, fait tourner les boucles de recherche et de téléchargement, la persistance, l'observabilité. Contient le sous-paquet webui in-process `p2pwatch.webui` (visualiseur de catalogue en lecture seule). |
 | `catalog_matching` | `catalog-matching` | **Moteur de matching** (bibliothèque partagée) : politique déclarative fichier vers épisode. Importé par le crawler et par la webui. |
 | `vex_guards` | `vex-guards` | **Outillage dev/CI** : garde honnêtes nos affirmations OpenVEX. Jamais livré dans une image de prod. |
 | `amule_bump` | `amule-bump` | **Outillage CI** : monte l'épingle d'aMule et rédige la PR ([Mettre à jour aMule](amule-bump.md)). Jamais livré dans une image de prod. |
 
-**Frontières strictes** (invariants) : `catalog_matching` est pur et n'importe jamais `mulewatch` ;
+**Frontières strictes** (invariants) : `catalog_matching` est pur et n'importe jamais `p2pwatch` ;
 `vex_guards` et `amule_bump` ne sont jamais importés par du code livré.
 
 ## 3. Deux modes d'exécution, une seule topologie
@@ -154,7 +154,7 @@ flowchart TB
   que quoi que ce soit n'atteigne le domaine.
 - **`application/`** orchestre les cas d'usage asynchrones en parlant à des **ports** (protocoles).
 - **`adapters/`** portent toutes les I/O et satisfont les ports structurellement.
-- **`composition/`** (`CrawlerApp`, `python -m mulewatch`) charge la config, la valide *fail-fast*,
+- **`composition/`** (`CrawlerApp`, `python -m p2pwatch`) charge la config, la valide *fail-fast*,
   câble les adapters concrets et supervise les boucles.
 
 ## 5. Les tâches de recherche
@@ -376,7 +376,7 @@ flowchart LR
 
 - **`catalog.db`** (version de schéma 9) : la connaissance accumulée, **append-only** (triggers
   `BEFORE UPDATE/DELETE -> ABORT`), pour que N nœuds fusionnent en un seul catalogue (`python -m
-  mulewatch.merge`). Les insertions sont **idempotentes** (`INSERT OR IGNORE` /
+  p2pwatch.merge`). Les insertions sont **idempotentes** (`INSERT OR IGNORE` /
   `ON CONFLICT DO NOTHING`), donc sans danger en cas de redémarrage en pleine écriture.
 - **`local.db`** (version de schéma 8) : l'état d'exécution du nœud (identité, suivi des
   téléchargements, progression et backoff de l'ordonnanceur). **Jamais fusionnée** : elle appartient
@@ -500,7 +500,7 @@ démon sont
   désanonymisation.
 - **Le crawler PROD ne lit jamais les octets et ne touche jamais au répertoire de sortie** ; la
   complétion est un signal positif.
-- **Frontières de paquets** : `catalog_matching` n'importe jamais `mulewatch` ; `vex_guards` et
+- **Frontières de paquets** : `catalog_matching` n'importe jamais `p2pwatch` ; `vex_guards` et
   `amule_bump` ne sont jamais importés par du code livré.
 - **Deux modes d'exécution** pilotés par la config (téléchargement / catalogue seul), une seule
   topologie compose.
@@ -513,9 +513,9 @@ démon sont
 
 ## 12. Repères dans le code
 
-| Sous-système | Emplacement (sous `packages/crawler/src/mulewatch/` sauf mention) |
+| Sous-système | Emplacement (sous `packages/crawler/src/p2pwatch/` sauf mention) |
 |---|---|
-| Boucles et câblage | `composition/app.py` (`CrawlerApp`), `python -m mulewatch` |
+| Boucles et câblage | `composition/app.py` (`CrawlerApp`), `python -m p2pwatch` |
 | Cas d'usage | `application/search_tasks.py`, `status_loop.py`, `run_download_cycle.py`, `port_sync_loop.py` |
 | Recherche (pure) | `domain/search/` (`keywords`, `backoff`) |
 | Matching | `packages/matching/src/catalog_matching/` (moteur + politique `deploy/matcher.yml`) |

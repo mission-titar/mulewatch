@@ -9,10 +9,10 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.merge.errors import MergeError, SchemaVersionMismatchError
-from mulewatch.merge.merger import merge_catalogs
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.merge.errors import MergeError, SchemaVersionMismatchError
+from p2pwatch.merge.merger import merge_catalogs
 
 from .helpers import (
     HASH_A,

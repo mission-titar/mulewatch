@@ -12,13 +12,13 @@ import sqlite3
 import pytest
 
 from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision, MatchingEngine
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.application import reevaluate_catalog as reevaluate_module
-from mulewatch.application.reevaluate_catalog import ReevalSummary, reevaluate_catalog
-from mulewatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import FileObservation
-from mulewatch.domain.retraction import RETRACTED_TIER
+from p2pwatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from p2pwatch.application import reevaluate_catalog as reevaluate_module
+from p2pwatch.application.reevaluate_catalog import ReevalSummary, reevaluate_catalog
+from p2pwatch.application.run_download_cycle import DOWNLOAD_NUDGE_SUBJECT
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.domain.retraction import RETRACTED_TIER
 from tests.application.fakes import RecordingSignal, RecordingTelemetry
 from tests.catalog_rows import decision_tiers
 
@@ -209,7 +209,7 @@ async def test_progress_is_logged_at_each_multiple_of_the_cadence_only(
     catalog.record_observation(_obs(_HASH_DL, _DL_NAME))
     catalog.record_observation(_obs(_HASH_CAT, _CAT_NAME))
     catalog.record_observation(_obs(_HASH_MULTI, "random.txt"))
-    with caplog.at_level(logging.INFO, logger="mulewatch.application.reevaluate_catalog"):
+    with caplog.at_level(logging.INFO, logger="p2pwatch.application.reevaluate_catalog"):
         await reevaluate_catalog(
             catalog=catalog,
             engine=engine,

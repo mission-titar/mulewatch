@@ -13,8 +13,8 @@ quoi regarder quand il ne catalogue plus. Si vous n'avez pas encore de nœud, co
 
 ## Cycle de vie & données
 
-Un nœud est **un seul conteneur**, le service compose `mulewatch`. Dedans, le superviseur s6 fait
-tourner deux services : `amuled` et `mulewatch`, le crawler, qui sert aussi le catalogue web sur un
+Un nœud est **un seul conteneur**, le service compose `p2pwatch`. Dedans, le superviseur s6 fait
+tourner deux services : `amuled` et `p2pwatch`, le crawler, qui sert aussi le catalogue web sur un
 thread dédié. `amuled` démarre à son tour `amuleapi`, l'interface web d'aMule : cela fait trois
 processus, mais deux services supervisés. Au démarrage, le conteneur crée l'utilisateur `amule` à
 partir de `PUID` et `PGID`, prend possession des dossiers montés, puis écrit un `amule.conf`
@@ -53,13 +53,13 @@ le nœud semblera avoir perdu son catalogue. Les données, elles, sont toujours 
 d'un coup. Pour n'en toucher qu'un, adressez-vous à s6 :
 
 ```bash
-docker compose exec mulewatch s6-svstat /etc/services.d/amuled   # état
-docker compose exec mulewatch s6-svc -r /etc/services.d/amuled   # redémarrer
-docker compose exec mulewatch s6-svc -d /etc/services.d/amuled   # arrêter
-docker compose exec mulewatch s6-svc -u /etc/services.d/amuled   # démarrer
+docker compose exec p2pwatch s6-svstat /etc/services.d/amuled   # état
+docker compose exec p2pwatch s6-svc -r /etc/services.d/amuled   # redémarrer
+docker compose exec p2pwatch s6-svc -d /etc/services.d/amuled   # arrêter
+docker compose exec p2pwatch s6-svc -u /etc/services.d/amuled   # démarrer
 ```
 
-Remplacez `amuled` par `mulewatch`. Il n'existe pas de service compose `amuled`, donc
+Remplacez `amuled` par `p2pwatch`. Il n'existe pas de service compose `amuled`, donc
 `docker compose restart amuled` ne veut rien dire. `amuleapi` n'est pas un service s6 non plus :
 c'est `amuled` qui le démarre, donc redémarrer `amuled` le redémarre avec lui.
 
@@ -70,7 +70,7 @@ simplement relancé sur place.
 
 ### Quand le nœud ne catalogue plus
 
-Les deux services supervisés partagent un seul flux de journaux, `docker compose logs mulewatch`,
+Les deux services supervisés partagent un seul flux de journaux, `docker compose logs p2pwatch`,
 et chaque ligne est préfixée par le service qui l'a émise. C'est toujours le premier endroit à
 regarder. amuleapi fait exception : démarré par `amuled` plutôt que par s6, il écrit dans
 `amule/amuleapi.log` de votre dossier de travail. Pour aller du symptôme à la cause, voyez
@@ -108,7 +108,7 @@ destination** : un fichier neuf (`--output`), ou la source que vous désignez pa
 l'un des trois fichiers de config est invalide.
 
 ```bash
-docker compose exec mulewatch python -m mulewatch validate-config
+docker compose exec p2pwatch python -m p2pwatch validate-config
 ```
 
 **Fusionner des catalogues**, pour consolider ceux de plusieurs chercheurs en un seul. La fusion est
@@ -116,7 +116,7 @@ idempotente et n'écrase rien sans `--force` ; `--into <source>` fusionne dans u
 Le cycle de partage est décrit sur la [page d'accueil](index.md#partage).
 
 ```bash
-docker compose exec --user amule mulewatch python -m mulewatch.merge \
+docker compose exec --user amule p2pwatch python -m p2pwatch.merge \
   --output /data/catalog-merged.db /data/catalog.db /data/source-b.db
 ```
 
@@ -126,7 +126,7 @@ source. Migrez-la d'abord en la fusionnant dans elle-même, qui l'ouvre et la me
 de préférence sur une copie, puisqu'une version plus ancienne ne pourra plus la lire :
 
 ```bash
-docker compose exec --user amule mulewatch python -m mulewatch.merge \
+docker compose exec --user amule p2pwatch python -m p2pwatch.merge \
   --into /data/source-b.db /data/source-b.db
 ```
 
@@ -177,7 +177,7 @@ un pare-feu après chaque reconnexion ne l'est pas tant qu'elle dure moins de 5 
 n'est notifié que si l'alerte est partie. Ces durées sont fixes, et un redémarrage du crawler remet
 leurs horloges à zéro.
 
-Les messages partent en markdown : Discord les affiche en embed, signé `Mulewatch - <node-id>` en
+Les messages partent en markdown : Discord les affiche en embed, signé `p2pwatch - <node-id>` en
 ligne d'auteur, bleu pour une découverte (`🔎 Notify`, `📥 Download`), vert pour un téléchargement
 terminé (`✅ Downloaded`, avec les segments et le nom du fichier). Aucun message ne mentionne qui
 que ce soit : un `@everyone` dans un nom de fichier ne notifie personne.
@@ -194,7 +194,7 @@ Un nœud publie deux surfaces web, qui n'ont pas la même posture :
 
 | Port | Ce que c'est | Authentification |
 |---|---|---|
-| **8080** | l'interface de catalogue mulewatch | **AUCUNE, D'AUCUNE SORTE** |
+| **8080** | l'interface de catalogue p2pwatch | **AUCUNE, D'AUCUNE SORTE** |
 | **4711** | amuleapi, l'interface propre à aMule | le mot de passe admin `AMULE_API_PASSWORD` |
 
 **Le port 8080 n'a aucune authentification, d'aucune sorte.** Quiconque l'atteint obtient le
@@ -202,7 +202,7 @@ catalogue, les contrôles du tableau de bord qui modifient l'état, et une conso
 `AMULE_API_PASSWORD` ne protège que le 4711. Mettez le 8080 derrière un reverse proxy ou un VPN, ou
 gardez-le sur un réseau de confiance, et ne le posez jamais sur l'Internet ouvert.
 
-Le catalogue web est servi en lecture seule, dans le processus `mulewatch` lui-même : il démarre et
+Le catalogue web est servi en lecture seule, dans le processus `p2pwatch` lui-même : il démarre et
 s'arrête avec lui, il n'y a rien de spécial à lancer. Il ne modifie jamais les bases, parce qu'il
 ouvre ses propres connexions SQLite en lecture seule (`mode=ro` et `PRAGMA query_only=ON`), jamais
 une connexion en écriture. Toute tentative d'écriture est refusée par SQLite avant d'atteindre le
@@ -210,7 +210,7 @@ disque, ce qui protège votre catalogue même d'une régression du code.
 
 Pour le couper sans couper le crawl, mettez `webui.enabled: false` dans `crawler.yml`. Pour couper
 le crawl en gardant aMule vivant, c'est
-`docker compose exec mulewatch s6-svc -d /etc/services.d/mulewatch`.
+`docker compose exec p2pwatch s6-svc -d /etc/services.d/p2pwatch`.
 
 ### Routes disponibles
 

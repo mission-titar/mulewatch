@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite import connection as connection_module
-from mulewatch.adapters.persistence_sqlite.variants import register_functions
+from p2pwatch.adapters.persistence_sqlite import connection as connection_module
+from p2pwatch.adapters.persistence_sqlite.variants import register_functions
 
-_MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations"
+_MIGRATIONS = resources.files("p2pwatch.adapters.persistence_sqlite") / "migrations"
 
 
 def open_catalog_at(path: Path, version: int) -> sqlite3.Connection:

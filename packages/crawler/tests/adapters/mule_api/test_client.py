@@ -8,20 +8,20 @@ from typing import cast
 import httpx
 import pytest
 
-from mulewatch.adapters.mule_api.client import AmuleApiClient
-from mulewatch.adapters.mule_api.errors import (
+from p2pwatch.adapters.mule_api.client import AmuleApiClient
+from p2pwatch.adapters.mule_api.errors import (
     ApiAuthError,
     ApiRejectedError,
     ApiUnreachableError,
 )
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.ports.client_errors import (
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.ports.client_errors import (
     ClientUnreachableError,
     DownloadRejectedError,
     SearchFailedError,
 )
-from mulewatch.ports.client_status import ChannelStatus
-from mulewatch.ports.download_client import DownloadClient, DownloadRequest, DownloadStatus
+from p2pwatch.ports.client_status import ChannelStatus
+from p2pwatch.ports.download_client import DownloadClient, DownloadRequest, DownloadStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, TOKEN, FakeAmuleApi, error
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"

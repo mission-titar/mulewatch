@@ -3,7 +3,7 @@
 import sqlite3
 from pathlib import Path
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
 from tests.adapters.persistence_sqlite.older_catalog import open_catalog_at
 from tests.catalog_rows import insert_file
 

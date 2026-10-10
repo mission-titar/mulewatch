@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
 from tests.catalog_rows import insert_decision, insert_file, insert_observation
 
 # Canonical 32-char lowercase hex hash (satisfies the eD2k CHECK on files.native_id).
