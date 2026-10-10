@@ -5,12 +5,13 @@ Drafted by block 200, corrected by the closing block (210).
 ## State
 
 Tier Spec lot, spec `agents/specs/2026-10-09-stage2-search-download-status-ports.md` (approved 2026-10-09). A
-stack of 25 blocks, PRs #127, #128 and #130 to #151 (there is no #129) plus block 200's, then the closing block
-`docs/stage2-closing` on top. Nothing is merged and no release follows (D23): the node pulls `latest`, which
+stack of 28 blocks: PRs #127, #128 and #130 to #154 (there is no #129), then the closing block 210
+(`docs/stage2-closing`) on top. Nothing is merged and no release follows (D23): the node pulls `latest`, which
 stays on 4.1.0. `catalog.db` is unchanged at schema version 9, `local.db` goes from 5 to 8 (0006 to 0008).
 
 After the stack, `application/` and `domain/` name no aMule type outside `port_sync_loop.py` (D22's grep prints
-nothing else, checked at block 200's tip). `ports/mule_client.py` survives as `MuleClient(SearchClient,
+two `port_sync_loop.py` lines and nothing else, checked at block 210's tip). `git tag -l 'v*'` still ends at
+`v4.1.0`. `ports/mule_client.py` survives as `MuleClient(SearchClient,
 StatusClient)`, the composition's type for the one aMule session the search tasks and the status loop share.
 
 ## What was built
@@ -46,20 +47,28 @@ StatusClient)`, the composition's type for the one aMule session the search task
   download the client forgot (D13); `MuleDownloadClient` and the old calls removed; local 0008 and the
   lifecycle fields (`bytes_done`, `last_progress_at`, `waiting_reason`, `failure_reason`), a reported failure
   staying failed.
-- **Dashboard** (block 200): the status loop publishes each reading to a `StatusBoard` the webui reads on its
-  own thread; the dashboard shows each client and channel from a current reading only, the crawl's paused
+- **Dashboard** (block 200): the status loop publishes each reading to a `StatusBoard`, which the webui reads on
+  its own thread through the `StatusReadings` port (`ports/client_status.py`, block 207); the dashboard shows each client and channel from a current reading only, the crawl's paused
   state and the pause, resume and restart buttons. The `/controls` page and its menu entry went; the
   `POST /controls/*` routes redirect to `/`.
+- **Holistic fixes** (blocks 205, 207, 210): the client backoff grows until a search succeeds; `connect()`
+  logs in once under a lock; the status loop reads any client error but a refused password
+  (`ClientAuthError`, new in the port contract) as unreachable; `p2pwatch_client_unreachable` carries
+  `client`; `AmuleApiClient` paces on the composition's clock; `start()` refuses a file of another network;
+  a list answered without its envelope is unreachable; the simulated year runs against the real TTL; the
+  spec, `AGENTS.md` and the living docs caught up (table below).
 
 ## Decisions taken during Act
 
-- **Four splits, all at a bound and before any push** (the lead's call per the workflow), each with its rows and
+- **Five splits, all at a bound and before any push** (the lead's call per the workflow), each with its rows and
   `(Corrected: ...)` markers in the spec:
   - block 70 into 70 and 75 (329 lines, 23 files as specced: the estimate missed the 18 importers of
     `NetworkStatus` / `KadStatus`); D18's move went to 75;
   - block 90 into 90, 93 and 96 (756 lines, 22 files): the cycle's coverage to 93, the three events to 96;
   - block 110 into 105 and 110 (540 lines, 25 files): the force-cycle control to 105;
-  - block 180 into 180 and 185 (702 lines, 16 files): the old download port's removal to 185.
+  - block 180 into 180 and 185 (702 lines, 16 files): the old download port's removal to 185;
+  - the closing work into 205 (core and adapter findings), 207 (ports, tests, docstrings) and 210 (spec,
+    `AGENTS.md`, `docs/`, `BACKLOG.md`, this handoff), at the file bound.
 - **Block 120 passes the line bound** (902 lines, 19 files), by the spec's stated reason: a module cannot leave
   without its test.
 - **Class 2, block 90: the status loop never connected its client.** The boot connect routinely fails in one
@@ -76,6 +85,15 @@ StatusClient)`, the composition's type for the one aMule session the search task
 - **Block 120 also moved `Rng` to `ports/clock.py` without `shuffled`**, and removed the `observe` metric kind
   with the only histogram (class 1, agreed by the lead); `SearchWorker`'s `is_blocked_for`, `report_dropped`
   and `instance_name` left there, since only the cycle's test covered them.
+- **Block 205: `ClientAuthError` joins the port contract** (`ApiAuthError` re-parents onto it): the status
+  loop lets a refused password through while it reads every other client error as unreachable, and the
+  application cannot name `ApiAuthError`. D8 and D15 carry markers. The client factories take
+  `(endpoint, clock)`, and a list answered without its envelope now fails a search as unreachable (the
+  client backs off) where it used to return nothing.
+- **Block 205 established D13's open question** from aMule's source at `909d304`: amuled never refuses a
+  link for a file it still holds (`AddED2KLink`, `src/DownloadQueue.cpp:1515`, merges and answers 202),
+  whatever the entry's state; the one refusal (complete, shared, out of the queue) fails the row once with
+  `rejected`, then the next `/shared` listing completes it. No code needed; D13 carries the fact.
 - **Block 190: `bytes_done` is NULL on migrated rows**, 0 on rows queued after: a default 0 would stamp
   `last_progress_at` on every running download at the first round after the upgrade. D19 carries the marker.
 - **Smaller departures**, each in its block's report: `connectable` is `None` when the aMule flag is not a
@@ -83,7 +101,9 @@ StatusClient)`, the composition's type for the one aMule session the search task
   no `no_source` / `remote_queue` waiting reason, `completing` reads `local` (170); the adapter reads
   `/downloads` before `/shared` (170); `open_local` registers all the pure SQL functions (160); the board holds
   the freshness rule and is seeded with the client names, so a client without a reading shows "No reading
-  yet." (200).
+  yet.", an out-of-date reading shows no value at all, and a reading is stamped when published (200);
+  `ClientReading` lives in `ports/client_status.py` beside the port, and the 120 s / 121 s freshness boundary
+  is tested on `StatusBoard` only (207).
 
 ## Wrap counts
 
@@ -93,6 +113,10 @@ StatusClient)`, the composition's type for the one aMule session the search task
 
 Under the workflow's threshold (more runs re-triggered than blocks), stacking cost less than pull requests in
 series.
+
+**Friction with `gh stack` 0.1.1.** It cannot insert a block mid-stack: the lead edited `.git/gh-stack` by hand
+to insert 105. During block 110's fix cascade, `gh stack push` pushed an empty block 120 branch at a stale tip,
+re-pointed by hand.
 
 **Block 110's CI failure.** Run 38002591038 on `bca6dd3` failed on both architectures in
 `test_real_loop_runs_one_search_and_stops` (`assert 0 >= 1`). A fresh daemon is on no eD2k server, so it refuses
@@ -115,7 +139,8 @@ with CI's line, fixed one passed in 30 s); second run 38003265253.
   reads, and D13 would start it again.
 - **"Already on search list" matches amuled's English message** (gettext); the image sets no `LANG`.
 - **A Kad start delayed by those retries can land under 60 s before its target's next reserved slot.** Kad's own
-  refusal (45 s life, no stop) still spaces them; no rule added.
+  refusal (45 s life, no stop) still spaces them 45 s or more; no rule added. Spec section 4 carries the
+  exception.
 - **At a backoff's end every task of the channel wakes and calls `search()`**; the adapter's pacing serializes
   them.
 - **A starvation test must keep its concurrent coroutine running until the cancellation lands**: the search task
@@ -133,22 +158,44 @@ with CI's line, fixed one passed in 30 s); second run 38003265253.
   plain `sqlite3` connection has no `file_id()` function.
 - **A composition test that GETs the captured webui app leaks the webui's `ReaderProvider` connections** into a
   `ResourceWarning` in the next test; block 200's wiring test captures `build_webui_app`'s arguments instead.
-- **The webui imports `mulewatch.application.status_loop`** for the board, its first import of the application
-  layer (until now it imported ports only).
-- `mulewatch.adapters.mule_api.client` imports `mulewatch.adapters.clock_asyncio` for its default clock, the first
-  import between two adapter packages.
+- **The fakes never suspend**, so concurrency faults stay invisible to them (holistic findings 1 and 2): block
+  205's `connect()` test uses an async `MockTransport` handler that yields once.
+- **A mutation restored within the same second leaves a stale `.pyc`** that keeps it alive: delete
+  `__pycache__` after restoring.
 - `agents/reference/2026-06-23-codebase-audit-findings.md` still names `MuleUnreachableError`; a dated record,
   left as is.
 
 ## Holistic review
 
-To be written by the closing block (210).
+`.reviews/stage2-holistic.md` (gitignored), over `origin/main...origin/feat/webui-dashboard-status`: CRITICAL 0,
+MAJOR 2, MINOR 15. Every finding was fixed in the lot except 16, an accepted limit.
+
+| # | Severity | Finding | Exit |
+|---|---|---|---|
+| 1 | MAJOR | The client backoff never grew: a no-op `connect()` reset it | fixed, block 205 (#153) |
+| 2 | MAJOR | Concurrent `connect()` calls each logged in, leaking sessions | fixed, block 205 (#153) |
+| 3 | MINOR | The status loop died on any client error but unreachable | fixed, block 205 (#153) |
+| 4 | MINOR | The D13 restart on an under-reported list; amuled's answer for a queued file unknown | fixed, block 205 (#153): envelope-less list unreachable, the fact written into D13 by block 210 |
+| 5 | MINOR | Section 4's Kad exception unmarked | fixed, block 210: marker with its 45 s bound |
+| 6 | MINOR | D14's `connect()` and D7's backed-off failure rule unmarked | fixed, block 210: markers |
+| 7 | MINOR | `p2pwatch_client_unreachable` without `client` | fixed, block 205 (#153); D16 marker by block 210 |
+| 8 | MINOR | The webui took the concrete `StatusBoard` | fixed, block 207 (#154): `StatusReadings` port |
+| 9 | MINOR | `run_task`'s unreachable skips | fixed, block 205 (#153): deleted |
+| 10 | MINOR | Stale docstrings (cycle, amuled, "D3") | fixed, block 207 (#154) |
+| 11 | MINOR | `AGENTS.md` described the removed code | fixed, block 210 |
+| 12 | MINOR | Living docs left behind; operate.md missed the D15 alerts | fixed, block 210 |
+| 13 | MINOR | The node's `crawler.yml` carries keys D17 refuses | fixed, block 210: written under Next |
+| 14 | MINOR | The adapter picked its own clock | fixed, block 205 (#153) |
+| 15 | MINOR | `start()` would send any network's file as an ed2k link | fixed, block 205 (#153) |
+| 16 | MINOR | A pause lets searches waiting their network slot start | accepted limit, spec section 7; the banner and `docs/operate.md` say so (block 210) |
+| 17 | MINOR | The simulated year did not exercise the TTL | fixed, block 207 (#154) |
 
 ## Not validated
 
 - **Nothing of this lot ran against a real amuled on the node**: the paced `search()`, `status()`, `start()` and
   `downloads()` are tested against `FakeAmuleApi`; the compose smoke test in CI is the only real daemon they
-  meet. The integration suites do not run on this machine.
+  meet. The integration suites do not run on this machine; block 205's `AmuleApiClient(..., clock=...)`
+  change to them is type-checked by mypy only.
 - **The 60 s pacing against Lugdunum's unpublished threshold** (spec section 7).
 - **The node's eD2k server count**: the 120 s budget assumes a sweep under it, about 140 servers (spec section 7
   asks for it before the top of the stack).
@@ -161,7 +208,11 @@ To be written by the closing block (210).
 
 ## Next
 
-The closing block (210): the holistic review's findings, `BACKLOG.md` reconciled (stage 2's item deleted, the
-stage 3 and stage 5 lines amended as the spec's section 5 states), this handoff corrected. Then the operator
-reviews and merges the stack (`gh stack merge --rebase`) after the lead rebases it onto `main`. No release
-(D23). Then stage 3: port-sync and its metrics move into the aMule container.
+The operator reviews and merges the stack (`gh stack merge --rebase`) after the lead rebases it onto `main`. No
+release (D23). Then stage 3: port-sync and its metrics move into the aMule container.
+
+**Before the node pulls the next image**, its `/home/geoffrey/Projets/mulewatch/crawler.yml` must lose the five
+keys D17 refuses: it carries all of them (`cycle_interval_seconds`, `search_poll_budget_seconds`,
+`search_poll_interval_seconds`, `keyword_pause_min_seconds`, `keyword_pause_max_seconds`, grep 2026-10-10),
+and the crawler would refuse to start with a `ConfigError` naming the first. Whoever cuts the next release
+tells the operator first.
