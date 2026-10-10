@@ -350,10 +350,11 @@ _API_HOST, _API_PORT = "127.0.0.1", 4711
 
 _SHARED_HASHES = f"""
 import asyncio, json
+from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.client import AmuleApiClient
 
 async def main() -> None:
-    client = AmuleApiClient({_API_HOST!r}, {_API_PORT}, {_API_PASSWORD!r})
+    client = AmuleApiClient({_API_HOST!r}, {_API_PORT}, {_API_PASSWORD!r}, clock=AsyncioClock())
     await client.connect()
     completed = [d.file.native_id for d in await client.downloads() if d.completed]
     print(json.dumps(sorted(completed)))

@@ -25,6 +25,7 @@ from mulewatch.adapters.decision_signal_asyncio import AsyncioDecisionSignal
 from mulewatch.composition.app import CrawlerApp
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
+from mulewatch.ports.clock import Clock
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.orchestration_integration
@@ -98,9 +99,11 @@ async def test_real_loop_runs_one_search_and_stops(amuled: ApiEndpoint, tmp_path
     app_holder: dict[str, CrawlerApp] = {}
     clients: list[_ShutdownAfterFirstSearchClient] = []
 
-    def factory(endpoint: AmuleEndpoint) -> _ShutdownAfterFirstSearchClient:
+    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownAfterFirstSearchClient:
         # The endpoint is derived from code constants now: use the caller's daemon instead.
-        inner = AmuleApiClient(amuled.host, amuled.port, endpoint.password, timeout=30.0)
+        inner = AmuleApiClient(
+            amuled.host, amuled.port, endpoint.password, timeout=30.0, clock=clock
+        )
         clients.append(_ShutdownAfterFirstSearchClient(inner, app_holder))
         return clients[-1]
 

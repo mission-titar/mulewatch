@@ -16,7 +16,6 @@ from typing import Any
 import httpx
 
 from catalog_matching.ed2k_link import build_ed2k_link
-from mulewatch.adapters.clock_asyncio import AsyncioClock
 from mulewatch.adapters.mule_api.errors import (
     ApiAuthError,
     ApiKadExhaustedError,
@@ -74,14 +73,14 @@ class AmuleApiClient:
         password: str,
         *,
         timeout: float = 10.0,
+        clock: Clock,
         transport: httpx.AsyncBaseTransport | None = None,
-        clock: Clock | None = None,
     ) -> None:
         self._base_url = f"http://{host}:{port}/api/v1"
         self._password = password
         self._timeout = timeout
         self._transport = transport
-        self._clock = clock or AsyncioClock()
+        self._clock = clock
         self._http: httpx.AsyncClient | None = None
         self._connect_lock = asyncio.Lock()
         # Held from an ed2k start to its end: aMule's core keeps one ed2k search anchor.

@@ -91,17 +91,14 @@ from mulewatch.webui.composition.app import build_app as build_webui_app
 
 _logger = logging.getLogger("mulewatch.composition.app")
 
-# Type of the client factory (injectable in test to substitute a FakeMuleClient).
-ClientFactory = Callable[[AmuleEndpoint], MuleClient]
-
-# DOWNLOAD client factory: same endpoint type, but the client satisfies
-# DownloadClient (AmuleApiClient satisfies both Protocols structurally, DECISION D3).
-DownloadClientFactory = Callable[[AmuleEndpoint], DownloadClient]
+# Client factories, injectable in test; the clock is the composition's, so the pacing shares it.
+ClientFactory = Callable[[AmuleEndpoint, Clock], MuleClient]
+DownloadClientFactory = Callable[[AmuleEndpoint, Clock], DownloadClient]
 
 
-def default_download_client_factory(endpoint: AmuleEndpoint) -> DownloadClient:
-    """An ``AmuleApiClient`` dedicated to download (its own session, DECISION D3)."""
-    return AmuleApiClient(endpoint.host, endpoint.port, endpoint.password)
+def default_download_client_factory(endpoint: AmuleEndpoint, clock: Clock) -> DownloadClient:
+    """An ``AmuleApiClient`` dedicated to download: its own session."""
+    return AmuleApiClient(endpoint.host, endpoint.port, endpoint.password, clock=clock)
 
 
 # Port-sync factories (injectable in test, like the client factories above). The reader takes the
@@ -183,9 +180,9 @@ def _build_policy(config: CrawlerConfig) -> WorkerPolicy:
     )
 
 
-def default_client_factory(endpoint: AmuleEndpoint) -> MuleClient:
+def default_client_factory(endpoint: AmuleEndpoint, clock: Clock) -> MuleClient:
     """A real ``AmuleApiClient`` on the given endpoint (default factory, substituted in test)."""
-    return AmuleApiClient(endpoint.host, endpoint.port, endpoint.password)
+    return AmuleApiClient(endpoint.host, endpoint.port, endpoint.password, clock=clock)
 
 
 class CrawlerApp:
@@ -276,7 +273,7 @@ class CrawlerApp:
 
         # DEDICATED port-sync session to the container's one amuleapi (127.0.0.1:4711).
         # Tolerates ClientUnreachableError at boot, like the download session.
-        ports_client = self._client_factory(self._crawler_config.amule_endpoint)
+        ports_client = self._client_factory(self._crawler_config.amule_endpoint, self._clock)
         stack.push_async_callback(ports_client.close)
         try:
             await ports_client.connect()
@@ -313,7 +310,9 @@ class CrawlerApp:
         to the same daemon (DECISION D3) connected tolerating ``ClientUnreachableError`` (a daemon
         not yet listening at startup does not kill the crawler; the loop's backoff governs).
         """
-        download_client = self._download_client_factory(self._crawler_config.amule_endpoint)
+        download_client = self._download_client_factory(
+            self._crawler_config.amule_endpoint, self._clock
+        )
         stack.push_async_callback(download_client.close)
         try:
             await download_client.connect()
@@ -524,7 +523,7 @@ class CrawlerApp:
                 telemetry=telemetry,
             )
 
-            client = self._client_factory(endpoint)
+            client = self._client_factory(endpoint, self._clock)
             stack.push_async_callback(client.close)
             # CONNECT at setup. A daemon not yet listening must NOT bring
             # the crawler down, and in one container that is the NORMAL case, not the exception:
