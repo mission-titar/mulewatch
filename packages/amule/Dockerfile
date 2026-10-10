@@ -39,10 +39,7 @@ FROM ghcr.io/astral-sh/uv:0.12.21@sha256:a7aed3216253ee804de3e2d8afa5073baa1a177
 # --- Python stage: build /app/.venv against Debian's python3, the same one the runtime holds ---
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS python
 
-# Product version, computed from the git tag on the CI runner and injected here. The build
-# context has no .git (.dockerignore excludes it), so hatch-vcs/setuptools-scm reads
-# SETUPTOOLS_SCM_PRETEND_VERSION instead when the member wheel is built below. The same value
-# stamps org.opencontainers.image.version on the runtime stage.
+# The build context has no .git: hatch-vcs reads the version CI computed from this variable.
 ARG VERSION=0.0.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} \
     UV_COMPILE_BYTECODE=1 \
@@ -59,20 +56,12 @@ COPY --from=uv /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-# Deps layer: install straight from uv.lock, independent of the sources. --frozen skips lock
-# revalidation, so it needs only uv.lock + the root pyproject.toml, not each member's
-# pyproject.toml (the vex_guards and amule_bump tooling packages are never installed). The --locked
-# sync below, after COPY . /app, revalidates the lock against every workspace member.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --no-install-workspace --package p2pwatch
-
+# No deps layer: the member is stdlib only, so the sync installs nothing but itself.
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-editable --package p2pwatch
+    uv sync --locked --no-editable --package p2pwatch-amule
 
-# --- Runtime: one image, two supervised services (amuled itself starts amuleapi) ---
+# --- Runtime: amuled (which starts amuleapi) and port-sync, under s6 ---
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 
 # ARG after FROM only lives in the stage that declares it, hence the re-declaration.
@@ -94,7 +83,6 @@ COPY --from=amule /src/amule/LICENSE.md /usr/local/share/doc/amule/LICENSE.md
 COPY --from=python /app/.venv /app/.venv
 COPY packages/amule/docker/entrypoint.sh /usr/local/bin/
 COPY packages/amule/docker/services.d/ /etc/services.d/
-COPY packages/crawler/docker/services.d/ /etc/services.d/
 
 ENV PATH="/app/.venv/bin:$PATH"
 WORKDIR /app
