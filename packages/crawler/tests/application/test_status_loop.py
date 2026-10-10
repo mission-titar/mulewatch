@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import pytest
 
+from mulewatch.adapters.mule_api.errors import ApiAuthError, ApiRejectedError
 from mulewatch.application.status_loop import (
     ClientReading,
     StatusBoard,
@@ -13,11 +14,11 @@ from mulewatch.application.status_loop import (
     status_loop,
 )
 from mulewatch.domain.observability import events as ev
-from mulewatch.ports.client_errors import ClientUnreachableError
+from mulewatch.ports.client_errors import ClientError
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from tests.application.fakes import FakeClock, make_unreachable
 
-type _Reading = ClientStatus | ClientUnreachableError
+type _Reading = ClientStatus | ClientError
 
 _ALERTS = (
     ev.ChannelDegraded,
@@ -51,7 +52,7 @@ class _ScriptedClient:
         reading = self._readings.pop(0)
         if not self._readings:
             self._shutdown.set()
-        if isinstance(reading, ClientUnreachableError):
+        if isinstance(reading, ClientError):
             raise reading
         return reading
 
@@ -142,6 +143,20 @@ async def test_unreachable_alerts_at_two_minutes_and_recovers_when_it_answers() 
         (180.0, ev.ClientReachableAgain("amuled")),
     ]
     assert [e for _, e in events].count(ev.InstanceUnreachable("amuled")) == 3
+
+
+@pytest.mark.asyncio
+async def test_an_operation_the_api_refuses_reads_as_unreachable() -> None:
+    # A route a weekly aMule bump renamed: /version answers 404 not_found.
+    refused = ApiRejectedError("GET /api/v1/version: 404 not_found: no route")
+    events = await _run(refused, refused, refused)
+    assert (120.0, ev.ClientUnreachableLasting("amuled", 120.0)) in events
+
+
+@pytest.mark.asyncio
+async def test_a_refused_password_ends_the_loop() -> None:
+    with pytest.raises(ApiAuthError):
+        await _run(ApiAuthError("amuleapi refused the admin password"), _status(ed2k=_UP))
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,7 @@ from mulewatch.domain.observability.events import (
     Event,
     InstanceUnreachable,
 )
-from mulewatch.ports.client_errors import ClientUnreachableError
+from mulewatch.ports.client_errors import ClientAuthError, ClientError
 from mulewatch.ports.client_status import ClientStatus, StatusClient
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.telemetry import Telemetry
@@ -103,7 +103,9 @@ async def status_loop(deps: StatusLoopDeps) -> None:
         try:
             await deps.client.connect()  # nothing else may connect a shared session (a pause)
             status = await deps.client.status()
-        except ClientUnreachableError:
+        except ClientAuthError:
+            raise  # a wrong password is config, not an outage
+        except ClientError:  # a refused route too: a renamed /version must not end the crawler
             deps.board.publish(deps.name, ClientReading(deps.clock.now(), None))
             await deps.telemetry.emit(InstanceUnreachable(deps.name))
             # Every channel is unknown while the API is: only the API's own alert can fire.
