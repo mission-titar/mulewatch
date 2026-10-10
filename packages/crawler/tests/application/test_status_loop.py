@@ -8,14 +8,13 @@ import pytest
 
 from mulewatch.adapters.mule_api.errors import ApiAuthError, ApiRejectedError
 from mulewatch.application.status_loop import (
-    ClientReading,
     StatusBoard,
     StatusLoopDeps,
     status_loop,
 )
 from mulewatch.domain.observability import events as ev
 from mulewatch.ports.client_errors import ClientError
-from mulewatch.ports.client_status import ChannelStatus, ClientStatus
+from mulewatch.ports.client_status import ChannelStatus, ClientReading, ClientStatus
 from tests.application.fakes import FakeClock, make_unreachable
 
 type _Reading = ClientStatus | ClientError

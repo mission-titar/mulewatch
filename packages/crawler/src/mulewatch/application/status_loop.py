@@ -22,7 +22,7 @@ from mulewatch.domain.observability.events import (
     InstanceUnreachable,
 )
 from mulewatch.ports.client_errors import ClientAuthError, ClientError
-from mulewatch.ports.client_status import ClientStatus, StatusClient
+from mulewatch.ports.client_status import ClientReading, StatusClient
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.telemetry import Telemetry
 
@@ -30,12 +30,6 @@ STATUS_PERIOD_SECONDS = 60.0
 CHANNEL_ALERT_SECONDS = 300.0
 UNREACHABLE_ALERT_SECONDS = 120.0
 CURRENT_FOR_SECONDS = 2 * STATUS_PERIOD_SECONDS
-
-
-@dataclass(frozen=True)
-class ClientReading:
-    read_at: datetime
-    status: ClientStatus | None  # None: the client's API did not answer
 
 
 class StatusBoard:

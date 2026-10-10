@@ -27,9 +27,9 @@ from catalog_matching.config import MatcherConfig
 from catalog_matching.ed2k_link import build_ed2k_link
 from catalog_matching.models import TargetSegment
 from mulewatch.adapters.persistence_sqlite.reader import ReaderProvider
-from mulewatch.application.status_loop import StatusBoard
 from mulewatch.domain.file_key import Network
 from mulewatch.domain.observation import Sighting
+from mulewatch.ports.client_status import StatusReadings
 from mulewatch.ports.crawler_control import CrawlerControl
 from mulewatch.webui.adapters.catalog_read import (
     DEFAULT_DIR,
@@ -374,7 +374,7 @@ _CONTROL_MESSAGES: dict[str, str] = {
 _YES_NO: dict[bool | None, str] = {True: "yes", False: "no", None: "unknown"}
 
 
-def _client_lines(status: StatusBoard) -> tuple[ClientLine, ...]:
+def _client_lines(status: StatusReadings) -> tuple[ClientLine, ...]:
     """Each client's last reading, its values shown only while current (stage 2 D20)."""
     lines = []
     for name, reading in status.readings().items():
@@ -455,7 +455,7 @@ def build_app(
     templates_dir: Path,
     static_dir: Path,
     control: CrawlerControl,
-    status: StatusBoard,
+    status: StatusReadings,
     amule_url: str,
 ) -> Starlette:
     """Build and return the wired Starlette application.
