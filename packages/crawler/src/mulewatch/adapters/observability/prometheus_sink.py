@@ -14,7 +14,7 @@ _COUNTERS: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
     (MetricName.SEARCHES, "Searches performed", ("client", "network")),
     (MetricName.OBSERVATIONS, "Observations recorded", ("client", "network")),
     (MetricName.SEARCH_FAILURES, "Failed searches", ("client", "network")),
-    (MetricName.CLIENT_UNREACHABLE, "Client unreachable", ()),
+    (MetricName.CLIENT_UNREACHABLE, "Client unreachable", ("client",)),
     (MetricName.DECISIONS, "Match decisions recorded", ("tier",)),
     (MetricName.DOWNLOADS_QUEUED, "Downloads queued", ()),
     (MetricName.DOWNLOADS_COMPLETED, "Downloads completed", ()),
