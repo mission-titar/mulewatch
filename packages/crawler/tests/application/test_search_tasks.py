@@ -39,8 +39,6 @@ _POLICY = WorkerPolicy(
     backoff_cap_seconds=600.0,
     backoff_factor=2.0,
     backoff_jitter_ratio=0.0,
-    keyword_pause_min_seconds=1.0,
-    keyword_pause_max_seconds=1.0,
 )
 
 
@@ -109,7 +107,7 @@ class _Tasks:
             resumed=self.resumed,
             backoff=self.deps.backoff,
             scheduler_state=self.state,
-            clock=self.deps.clock,
+            clock=LoopClock(),
         )
 
     def run_for(
@@ -131,7 +129,7 @@ def tasks(
     clock = LoopClock()
     backoff = BackoffRegistry(_POLICY, clock, FakeRng())
     signal, telemetry = RecordingSignal(), RecordingTelemetry()
-    deps = WorkerDeps(catalog, engine, signal, clock, FakeRng(), _POLICY, backoff, telemetry)
+    deps = WorkerDeps(catalog, engine, signal, backoff, telemetry)
     yield _Tasks(deps, _SavesRecorded(connection))
     connection.close()
 

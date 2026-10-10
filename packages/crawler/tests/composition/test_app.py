@@ -86,8 +86,6 @@ def _crawler_config(
     webui: WebuiConfig = _WEBUI_OFF,
 ) -> CrawlerConfig:
     return CrawlerConfig(
-        keyword_pause_min_seconds=1.0,
-        keyword_pause_max_seconds=2.0,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=60.0, factor=2.0, jitter_ratio=0.0),
         decision_poll_interval_seconds=5.0,
         shutdown_deadline_seconds=shutdown_deadline,

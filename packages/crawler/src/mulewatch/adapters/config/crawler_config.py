@@ -112,6 +112,8 @@ _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 # Keys no longer read: refused, so an operator never believes they still apply.
 _REMOVED_KEYS = (
     "cycle_interval_seconds",
+    "keyword_pause_max_seconds",
+    "keyword_pause_min_seconds",
     "search_poll_budget_seconds",
     "search_poll_interval_seconds",
 )
@@ -140,8 +142,7 @@ class ObservabilityConfig:
 class CrawlerConfig:
     """Unified crawler config (policy + wiring). All durations in SECONDS.
 
-    Policy: ``keyword_pause_{min,max}_seconds`` (inter-keyword jitter),
-    ``backoff``, ``decision_poll_interval_seconds`` (nudge safety net),
+    Policy: ``backoff``, ``decision_poll_interval_seconds`` (nudge safety net),
     ``shutdown_deadline_seconds`` (hard bound of the clean shutdown).
 
     Wiring (ex-local): ``amule_api_password`` (the daemon's amuleapi admin password, the same
@@ -153,8 +154,6 @@ class CrawlerConfig:
     optional; default ``("keroro", "titar")`` if absent).
     """
 
-    keyword_pause_min_seconds: float
-    keyword_pause_max_seconds: float
     backoff: BackoffConfig
     decision_poll_interval_seconds: float
     shutdown_deadline_seconds: float
@@ -409,12 +408,6 @@ def parse_crawler_config(raw: dict[str, Any], env: Mapping[str, str]) -> Crawler
             f"backoff.cap_seconds ({backoff.cap_seconds}) < base_seconds "
             f"({backoff.base_seconds}): cap below floor"
         )
-    pause_min = _positive(raw, "keyword_pause_min_seconds", "crawler")
-    pause_max = _positive(raw, "keyword_pause_max_seconds", "crawler")
-    if pause_max < pause_min:
-        raise ConfigError(
-            f"keyword_pause_max_seconds ({pause_max}) < min ({pause_min}): empty interval"
-        )
     node_id_raw = raw.get("node_id")
     if node_id_raw is not None and (not isinstance(node_id_raw, str) or not node_id_raw):
         raise ConfigError(f"node_id: non-empty string or absent expected, got {node_id_raw!r}")
@@ -424,8 +417,6 @@ def parse_crawler_config(raw: dict[str, Any], env: Mapping[str, str]) -> Crawler
             _require_mapping(raw["observability"], "section 'observability'"), env
         )
     return CrawlerConfig(
-        keyword_pause_min_seconds=pause_min,
-        keyword_pause_max_seconds=pause_max,
         backoff=backoff,
         decision_poll_interval_seconds=_positive(raw, "decision_poll_interval_seconds", "crawler"),
         shutdown_deadline_seconds=_positive(raw, "shutdown_deadline_seconds", "crawler"),

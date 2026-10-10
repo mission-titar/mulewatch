@@ -40,7 +40,6 @@ from mulewatch.domain.observability.events import (
     PortSyncTriggered,
     SearchExecuted,
     SearchFailed,
-    SearchTaskDropped,
 )
 
 
@@ -67,7 +66,6 @@ class MetricName(StrEnum):
     SEARCHES = "emule_searches"
     OBSERVATIONS = "emule_observations"
     SEARCH_FAILURES = "emule_search_failures"
-    SEARCH_TASKS_DROPPED = "emule_search_tasks_dropped"
     MULE_UNREACHABLE = "emule_mule_unreachable"
     DECISIONS = "emule_decisions"
     DOWNLOADS_QUEUED = "emule_downloads_queued"
@@ -222,16 +220,6 @@ def describe(event: Event) -> Report:
                 (
                     MetricInstruction(
                         MetricName.SEARCH_FAILURES, "inc", (("network", event.network),)
-                    ),
-                ),
-            )
-        case SearchTaskDropped():
-            return Report(
-                Severity.WARNING,
-                f"task '{event.keyword}'/{event.network} dropped (all instances in backoff)",
-                (
-                    MetricInstruction(
-                        MetricName.SEARCH_TASKS_DROPPED, "inc", (("network", event.network),)
                     ),
                 ),
             )

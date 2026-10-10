@@ -21,8 +21,6 @@ from mulewatch.domain.observability.policy import Audience
 def _minimal_raw() -> dict[str, Any]:
     """Valid policy + minimal wiring (EC password without ${}, base paths) — observer mode."""
     return {
-        "keyword_pause_min_seconds": 1.0,
-        "keyword_pause_max_seconds": 4.0,
         "backoff": {
             "base_seconds": 2.0,
             "cap_seconds": 300.0,
@@ -66,8 +64,6 @@ def _full_port_sync_section() -> dict[str, Any]:
 def test_parses_a_valid_config() -> None:
     config = parse_crawler_config(_minimal_raw(), _env())
     assert config == CrawlerConfig(
-        keyword_pause_min_seconds=1.0,
-        keyword_pause_max_seconds=4.0,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=300.0, factor=2.0, jitter_ratio=0.3),
         decision_poll_interval_seconds=5.0,
         shutdown_deadline_seconds=10.0,
@@ -123,7 +119,14 @@ def test_non_positive_value_is_fatal() -> None:
 
 
 @pytest.mark.parametrize(
-    "key", ["cycle_interval_seconds", "search_poll_budget_seconds", "search_poll_interval_seconds"]
+    "key",
+    [
+        "cycle_interval_seconds",
+        "keyword_pause_max_seconds",
+        "keyword_pause_min_seconds",
+        "search_poll_budget_seconds",
+        "search_poll_interval_seconds",
+    ],
 )
 def test_a_removed_key_is_refused_by_name(key: str) -> None:
     raw = _minimal_raw() | {key: 5.0}
@@ -150,14 +153,6 @@ def test_backoff_cap_below_base_is_fatal() -> None:
     raw["backoff"]["cap_seconds"] = 1.0
     raw["backoff"]["base_seconds"] = 10.0
     with pytest.raises(ConfigError, match="cap below floor"):
-        parse_crawler_config(raw, _env())
-
-
-def test_keyword_pause_max_below_min_is_fatal() -> None:
-    raw = _minimal_raw()
-    raw["keyword_pause_min_seconds"] = 5.0
-    raw["keyword_pause_max_seconds"] = 1.0
-    with pytest.raises(ConfigError, match="empty interval"):
         parse_crawler_config(raw, _env())
 
 

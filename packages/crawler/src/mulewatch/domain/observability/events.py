@@ -29,14 +29,6 @@ class SearchFailed:
 
 
 @dataclass(frozen=True)
-class SearchTaskDropped:
-    # All instances in backoff refused this task during the cycle (spec §14):
-    # no worker can process it → we drop it and trace it for visibility.
-    keyword: str
-    network: str
-
-
-@dataclass(frozen=True)
 class ObservationRecorded:
     network: str
 
@@ -149,7 +141,6 @@ type Event = (
     SearchExecuted
     | InstanceUnreachable
     | SearchFailed
-    | SearchTaskDropped
     | ObservationRecorded
     | DecisionsRecorded
     | DownloadQueued

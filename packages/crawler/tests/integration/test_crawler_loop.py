@@ -82,8 +82,6 @@ async def test_real_loop_runs_one_search_and_stops(amuled: ApiEndpoint, tmp_path
 
     matcher_config = parse_matcher_config(load_yaml(_MATCHER))
     crawler_config = CrawlerConfig(
-        keyword_pause_min_seconds=0.01,  # tiny pauses (the test does not measure spacing)
-        keyword_pause_max_seconds=0.05,
         backoff=BackoffConfig(base_seconds=2.0, cap_seconds=60.0, factor=2.0, jitter_ratio=0.3),
         decision_poll_interval_seconds=5.0,
         shutdown_deadline_seconds=30.0,

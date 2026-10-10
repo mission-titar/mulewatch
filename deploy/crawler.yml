@@ -1,8 +1,6 @@
 # Crawler config, version-controlled. Secrets via ${VAR} (.env), the rest in clear text.
 # Set download.enabled to false for a crawl-only node (no download, catalog only).
 
-keyword_pause_min_seconds: 1.0
-keyword_pause_max_seconds: 4.0
 decision_poll_interval_seconds: 5.0
 shutdown_deadline_seconds: 10.0
 
