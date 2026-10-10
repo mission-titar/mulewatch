@@ -2,10 +2,6 @@
 
 p2pwatch publishes one image to GHCR: `p2pwatch`. This policy applies to it.
 
-The older `mulewatch-crawler` package is frozen at 1.x and kept only as the rollback path for
-nodes migrating to 2.0. It receives no new tags, signatures, attestations or scans: everything
-below describes `p2pwatch`.
-
 ## Signing & attestations
 
 Every image pushed to GHCR is **signed** (keyless, OIDC-based, via

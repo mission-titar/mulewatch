@@ -127,6 +127,8 @@ Kept on purpose. These are the only files `git grep -il mulewatch -- ':/' ':/!ag
 | File | Why | From |
 |---|---|---|
 | `docs/migration-1x.md`, `docs/migration-2x.md` | They describe migrating to versions that shipped as `mulewatch`. | block 10 |
+| `docs/troubleshooting-start.md` | The removed `python -m mulewatch.compact` tool, and the remedy that pins `mulewatch:4.1.0`. (Corrected: added in block 10.) | block 10 |
+| `docs/verify-image.md` | The signing identity of images published before the transfer, `GeoffreyCoulaud/mulewatch`. (Corrected: added in block 10.) | block 10 |
 | `docs/migration-4x.md` | It names what the operator migrates from. | block 110 |
 
 Then, in order:
