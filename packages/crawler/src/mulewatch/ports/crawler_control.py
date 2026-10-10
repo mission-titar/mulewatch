@@ -14,6 +14,7 @@ Methods (all called from the webui thread, all return immediately):
 - ``resume`` sets the run gate: the crawler searches again.
 - ``restart`` requests the crawler's graceful shutdown (the container's ``restart:
   unless-stopped`` brings it back).
+- ``is_paused`` reads the run gate, for the dashboard.
 
 Deliberately NOT here (deferred to phase P6b): re-evaluate, requeue a download.
 """
@@ -32,3 +33,5 @@ class CrawlerControl(Protocol):
     def resume(self) -> None: ...
 
     def restart(self) -> None: ...
+
+    def is_paused(self) -> bool: ...

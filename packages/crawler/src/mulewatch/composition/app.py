@@ -75,7 +75,7 @@ from mulewatch.application.search_worker import (
     WorkerDeps,
     WorkerPolicy,
 )
-from mulewatch.application.status_loop import StatusLoopDeps, status_loop
+from mulewatch.application.status_loop import StatusBoard, StatusLoopDeps, status_loop
 from mulewatch.domain.observability.events import CrawlerStarted
 from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.clock import Clock, Rng
@@ -397,7 +397,7 @@ class CrawlerApp:
                 task.cancel()
         _human("Workers stopped.")
 
-    def _start_webui(self, stack: AsyncExitStack) -> None:
+    def _start_webui(self, stack: AsyncExitStack, status: StatusBoard) -> None:
         """Start the read-only webui on its OWN thread + loop (spec §5), sharing only IMMUTABLE
         state with the crawler (the parsed matcher/targets, the DB paths). It reads through its
         OWN ``ReaderProvider`` (inside ``build_webui_app``); nothing here touches the crawler's
@@ -422,6 +422,7 @@ class CrawlerApp:
             templates_dir=webui_pkg_dir / "adapters" / "templates",
             static_dir=webui_pkg_dir / "adapters" / "static",
             control=control,
+            status=status,
             amule_url=self._crawler_config.webui.amule_url,
         )
         server = self._webui_server_factory(app)
@@ -500,13 +501,15 @@ class CrawlerApp:
             catalog_repo = SqliteCatalogRepository(catalog_conn, node_id)
             scheduler_state = SqliteSchedulerStateRepository(local_conn)
             engine = MatchingEngine(self._matcher_config, self._targets)
+            endpoint = self._crawler_config.amule_endpoint
+            board = StatusBoard((endpoint.name,), self._clock)
             # In-process webui (spec §5): own thread + loop, started EARLY (before the daemon client
             # + startup backfill) so it is up promptly and stays isolated from the crawler's
             # synchronous work. Gated by ``webui.enabled``; a crash degrades (spec §17.1). Its
             # graceful stop is on ``stack`` → runs at the normal shutdown unwind (after DB conns
             # are pushed, so it stops the thread before those close during LIFO teardown).
             if self._crawler_config.webui.enabled:
-                self._start_webui(stack)
+                self._start_webui(stack, board)
             # SHARED backoff registry: built ONCE, RELOADED from scheduler_state
             # (backoff survives restart, spec §3/§7), injected into ALL workers
             # + passed to the search tasks that persist it. Single writer on the event loop.
@@ -521,7 +524,6 @@ class CrawlerApp:
                 telemetry=telemetry,
             )
 
-            endpoint = self._crawler_config.amule_endpoint
             client = self._client_factory(endpoint)
             stack.push_async_callback(client.close)
             # CONNECT at setup. A daemon not yet listening must NOT bring
@@ -541,7 +543,7 @@ class CrawlerApp:
             workers = [SearchWorker(endpoint.name, client, deps)]
             # The status loop shares the search session (one session per container's amuled).
             status_deps = StatusLoopDeps(
-                endpoint.name, client, self._clock, telemetry, self._shutdown
+                endpoint.name, client, self._clock, telemetry, self._shutdown, board
             )
 
             _logger.info("crawler started: node_id=%s", node_id)

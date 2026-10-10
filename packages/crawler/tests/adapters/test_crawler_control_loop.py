@@ -95,3 +95,10 @@ def test_mutation_is_deferred_to_the_loop_thread_via_call_soon_threadsafe() -> N
     # Running the scheduled callback (as the loop thread would) applies the mutation.
     loop.callbacks[0]()
     assert shutdown.is_set()
+
+
+def test_is_paused_reads_the_pause_gate() -> None:
+    control, resumed, _ = _control_with(_RecordingLoop())
+    assert control.is_paused()
+    resumed.set()
+    assert not control.is_paused()

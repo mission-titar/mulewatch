@@ -2,10 +2,16 @@
 once it has lasted, whatever came before it, boot included (spec stage 2, D15)."""
 
 import asyncio
+from datetime import timedelta
 
 import pytest
 
-from mulewatch.application.status_loop import StatusLoopDeps, status_loop
+from mulewatch.application.status_loop import (
+    ClientReading,
+    StatusBoard,
+    StatusLoopDeps,
+    status_loop,
+)
 from mulewatch.domain.observability import events as ev
 from mulewatch.ports.client_errors import ClientUnreachableError
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
@@ -66,8 +72,9 @@ async def _run(*readings: _Reading, client: str = "amuled") -> list[tuple[float,
     clock = FakeClock()
     shutdown = asyncio.Event()
     telemetry = _TimedTelemetry(clock)
+    board = StatusBoard((client,), clock)
     deps = StatusLoopDeps(
-        client, _ScriptedClient(list(readings), shutdown), clock, telemetry, shutdown
+        client, _ScriptedClient(list(readings), shutdown), clock, telemetry, shutdown, board
     )
     await asyncio.wait_for(status_loop(deps), timeout=1.0)
     return telemetry.events
@@ -189,8 +196,45 @@ async def test_the_loop_connects_its_client_itself_after_a_failed_boot_connect()
     clock = FakeClock()
     shutdown = asyncio.Event()
     telemetry = _TimedTelemetry(clock)
-    deps = StatusLoopDeps("amuled", _DownAtBootClient(shutdown), clock, telemetry, shutdown)
+    board = StatusBoard(("amuled",), clock)
+    deps = StatusLoopDeps("amuled", _DownAtBootClient(shutdown), clock, telemetry, shutdown, board)
     await asyncio.wait_for(status_loop(deps), timeout=1.0)
     assert [(at, e) for at, e in telemetry.events if isinstance(e, ev.ChannelStatusSampled)] == [
         (60.0, ev.ChannelStatusSampled("amuled", "ed2k", True, True))
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("reading", "published"), [(_status(ed2k=_UP), _status(ed2k=_UP)), (_DOWN, None)]
+)
+async def test_each_reading_is_published_with_its_time(
+    reading: _Reading, published: ClientStatus | None
+) -> None:
+    clock = FakeClock()
+    shutdown = asyncio.Event()
+    board = StatusBoard(("amuled",), clock)
+    assert board.readings() == {"amuled": None}
+    client = _ScriptedClient([_status(kad=_UP), reading], shutdown)
+    deps = StatusLoopDeps("amuled", client, clock, _TimedTelemetry(clock), shutdown, board)
+    await asyncio.wait_for(status_loop(deps), timeout=1.0)
+    read_at = clock.now() - timedelta(seconds=60)  # the loop slept one period after it
+    assert board.readings() == {"amuled": ClientReading(read_at, published)}
+
+
+def test_a_reading_older_than_two_status_periods_is_not_current() -> None:
+    clock = FakeClock()
+    reading = ClientReading(clock.now(), None)
+    board = StatusBoard((), clock)
+    clock.advance(120)
+    assert board.is_current(reading)
+    clock.advance(1)
+    assert not board.is_current(reading)
+
+
+def test_publishing_replaces_the_snapshot_and_never_changes_one_already_read() -> None:
+    clock = FakeClock()
+    board = StatusBoard(("amuled",), clock)
+    before = board.readings()
+    board.publish("amuled", ClientReading(clock.now(), None))
+    assert before == {"amuled": None}

@@ -17,10 +17,12 @@ from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from mulewatch.application.status_loop import StatusBoard
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.webui.adapters.sql_console import ConsoleOutcome, run_query
 from mulewatch.webui.composition.app import build_app
 from mulewatch.webui.domain.views import ConsoleResult, ConsoleRow, DbOption
+from tests.application.fakes import FakeClock
 from tests.catalog_rows import insert_file
 
 _HASH_A = "a" * 32
@@ -37,6 +39,9 @@ class _StubControl:
 
     def restart(self) -> None:  # pragma: no cover
         pass
+
+    def is_paused(self) -> bool:
+        return False
 
 
 def _seed_catalog(path: Path) -> None:
@@ -278,6 +283,7 @@ def _build(catalog_db: Path, local_db: Path) -> Starlette:
         templates_dir=templates_dir,
         static_dir=static_dir,
         control=_StubControl(),
+        status=StatusBoard((), FakeClock()),
         amule_url="http://localhost:4711",
     )
 

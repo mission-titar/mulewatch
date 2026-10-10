@@ -106,8 +106,8 @@ Sur un serveur distant, remplacez `localhost` par son adresse.
 
 !!! success "Point de contrôle"
 
-    <http://localhost:8080> affiche le tableau de bord, avec l'identifiant de votre nœud et la liste
-    des épisodes cibles. **Si cette page se charge, votre nœud tourne.**
+    <http://localhost:8080> affiche le tableau de bord, avec l'état d'aMule, l'identifiant de votre
+    nœud et la liste des épisodes cibles. **Si cette page se charge, votre nœud tourne.**
 
 !!! note "Un catalogue vide au début est normal"
 

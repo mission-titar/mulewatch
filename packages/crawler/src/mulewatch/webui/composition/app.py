@@ -27,6 +27,7 @@ from catalog_matching.config import MatcherConfig
 from catalog_matching.ed2k_link import build_ed2k_link
 from catalog_matching.models import TargetSegment
 from mulewatch.adapters.persistence_sqlite.reader import ReaderProvider
+from mulewatch.application.status_loop import StatusBoard
 from mulewatch.domain.file_key import Network
 from mulewatch.domain.observation import Sighting
 from mulewatch.ports.crawler_control import CrawlerControl
@@ -49,6 +50,8 @@ from mulewatch.webui.adapters.sql_console import (
 from mulewatch.webui.domain.coverage import coverage_for
 from mulewatch.webui.domain.format import human_size, seasonal_id, short_hash, short_timestamp
 from mulewatch.webui.domain.views import (
+    ChannelLine,
+    ClientLine,
     ConsoleResult,
     ConsoleRow,
     DbOption,
@@ -74,12 +77,11 @@ from mulewatch.webui.domain.views import (
 _FILE_ID = re.compile(r"[0-9a-f]{32}")
 
 # The top-nav destinations, in render order: (path, label). The single source of truth for what
-# base.html renders; every page reaches all five.
+# base.html renders; every page reaches all four.
 _NAV_DESTINATIONS: tuple[tuple[str, str], ...] = (
     ("/", "Dashboard"),
     ("/files", "Files"),
     ("/node", "Nodes"),
-    ("/controls", "Controls"),
     ("/console", "Console"),
 )
 
@@ -369,6 +371,33 @@ _CONTROL_MESSAGES: dict[str, str] = {
 }
 
 
+_YES_NO: dict[bool | None, str] = {True: "yes", False: "no", None: "unknown"}
+
+
+def _client_lines(status: StatusBoard) -> tuple[ClientLine, ...]:
+    """Each client's last reading, its values shown only while current (stage 2 D20)."""
+    lines = []
+    for name, reading in status.readings().items():
+        if reading is None:
+            lines.append(ClientLine(name, "No reading yet.", "unknown", "unknown", ()))
+            continue
+        read_at = short_timestamp(reading.read_at.isoformat())
+        client = reading.status
+        if not status.is_current(reading):
+            text = f"Out of date: last reading at {read_at}."
+            lines.append(ClientLine(name, text, "unknown", "unknown", ()))
+        elif client is None:
+            lines.append(ClientLine(name, f"Read at {read_at}.", "unknown", "no", ()))
+        else:
+            channels = tuple(
+                ChannelLine(c.channel, _YES_NO[c.on_network], _YES_NO[c.connectable])
+                for c in client.channels
+            )
+            version = client.version or "unknown"
+            lines.append(ClientLine(name, f"Read at {read_at}.", version, "yes", channels))
+    return tuple(lines)
+
+
 # SQL console (spec §11). The two selectable databases, in display order: value (allowlist key)
 # + human label. Both are non-sensitive (the catalog's subject is the file, never a person), so
 # read-only exposure of either is fine.
@@ -426,6 +455,7 @@ def build_app(
     templates_dir: Path,
     static_dir: Path,
     control: CrawlerControl,
+    status: StatusBoard,
     amule_url: str,
 ) -> Starlette:
     """Build and return the wired Starlette application.
@@ -438,7 +468,7 @@ def build_app(
     ``control`` is the runtime-control PORT (``CrawlerControl``): the webui depends on the port,
     never on the concrete adapter (composition wires ``LoopCrawlerControl``). Every control POST
     dispatches a thread-safe, fire-and-forget intent to the crawler loop; the webui itself holds
-    no write connection (spec §4/§10).
+    no write connection (spec §4/§10). ``status`` holds the status loops' last readings.
 
     ``amule_url`` is the base the nav's aMule entry points at (design §9); the caller reads it
     from ``webui.amule_url``."""
@@ -488,10 +518,19 @@ def build_app(
                 )
             )
 
+        done = request.query_params.get("done")
+        message = _CONTROL_MESSAGES.get(done) if done is not None else None
         return templates.TemplateResponse(
             request,
             "dashboard.html",
-            {"rows": rows, "node_state": node_state},
+            {
+                "rows": rows,
+                "node_state": node_state,
+                "clients": _client_lines(status),
+                "crawl": "paused" if control.is_paused() else "running",
+                # 0-or-1-element tuple the template iterates with {% for %} (no {% if %}, W-D8).
+                "messages": (message,) if message is not None else (),
+            },
         )
 
     async def handle_files(request: Request) -> Response:
@@ -691,28 +730,21 @@ def build_app(
     # ------------------------------------------------------------------
     # Runtime controls (phase P6a): POST intents dispatched to the crawler loop via
     # ``control`` (a ``CrawlerControl`` port). Each POST is fire-and-forget then redirects
-    # (PRG) to ``/controls?done=<code>``; GET renders the page + a 0-or-1 message banner.
+    # (PRG) to ``/?done=<code>``, where the dashboard shows a 0-or-1 message banner.
     # NO CSRF token: consistent with the no-auth, network-trust-boundary posture (spec §12).
     # ------------------------------------------------------------------
 
-    async def handle_controls(request: Request) -> Response:
-        done = request.query_params.get("done")
-        message = _CONTROL_MESSAGES.get(done) if done is not None else None
-        # 0-or-1-element tuple the template iterates with {% for %} (no {% if %}, W-D8).
-        messages: tuple[str, ...] = (message,) if message is not None else ()
-        return templates.TemplateResponse(request, "controls.html", {"messages": messages})
-
     async def handle_pause(request: Request) -> Response:
         control.pause()
-        return RedirectResponse("/controls?done=paused", status_code=303)
+        return RedirectResponse("/?done=paused", status_code=303)
 
     async def handle_resume(request: Request) -> Response:
         control.resume()
-        return RedirectResponse("/controls?done=resumed", status_code=303)
+        return RedirectResponse("/?done=resumed", status_code=303)
 
     async def handle_restart(request: Request) -> Response:
         control.restart()
-        return RedirectResponse("/controls?done=restart", status_code=303)
+        return RedirectResponse("/?done=restart", status_code=303)
 
     # ------------------------------------------------------------------
     # SQL console (spec §11): a read-only power-user console over either DB.
@@ -815,7 +847,6 @@ def build_app(
             Route("/files/{file_id}", handle_file_detail),
             Route("/targets/{target_id}", handle_target),
             Route("/node", handle_node),
-            Route("/controls", handle_controls),
             Route("/controls/pause", handle_pause, methods=["POST"]),
             Route("/controls/resume", handle_resume, methods=["POST"]),
             Route("/controls/restart", handle_restart, methods=["POST"]),

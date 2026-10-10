@@ -6,6 +6,7 @@ import threading
 from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
+from typing import Any
 
 import pytest
 from prometheus_client import CollectorRegistry
@@ -31,6 +32,7 @@ from mulewatch.adapters.persistence_sqlite.connection import open_local
 from mulewatch.adapters.persistence_sqlite.local_state_repository import (
     SqliteLocalStateRepository,
 )
+from mulewatch.composition import app as composition_app
 from mulewatch.composition.app import CrawlerApp, WebuiServer, default_client_factory
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
@@ -1255,6 +1257,37 @@ async def test_webui_starts_on_own_thread_and_stops_at_shutdown(
     assert server.served.is_set()  # serve() ran on the webui thread
     assert server.should_exit is True  # _stop_webui asked it to exit at shutdown
     assert server.stopped.is_set()  # serve() returned → the thread joined cleanly
+
+
+@pytest.mark.asyncio
+async def test_the_webui_reads_the_status_loops_board_and_the_pause_gate(
+    tmp_path: Path, matcher_config: MatcherConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    holder: dict[str, CrawlerApp] = {}
+    wired: dict[str, Any] = {}
+
+    def build(**kwargs: Any) -> Starlette:
+        wired.update(kwargs)
+        return Starlette()
+
+    monkeypatch.setattr(composition_app, "build_webui_app", build)
+    app = CrawlerApp(
+        crawler_config=_crawler_config(tmp_path, webui=WebuiConfig(enabled=True)),
+        targets=_TARGETS,
+        matcher_config=matcher_config,
+        clock=FakeClock(),
+        rng=_NoopRng(),
+        signal_hub=RecordingSignal(),
+        policy_fingerprint=_FP,
+        client_factory=lambda endpoint: _ShutdownOnStatusClient(holder),
+        webui_server_factory=lambda webui: _FakeWebuiServer(),
+    )
+    holder["app"] = app
+    await asyncio.wait_for(app.run(), timeout=5.0)
+    reading = wired["status"].readings()["amuled"]
+    assert reading.status == await FakeMuleClient().status()
+    assert wired["status"].is_current(reading)
+    assert wired["control"].is_paused() is False
 
 
 @pytest.mark.asyncio

@@ -59,14 +59,14 @@ accumulé, mais vous redémarrez d'un état connu.
 
 - **Symptôme.** amuled réapparaît dans le journal (il se ré-annonce, recharge
   `server.met`) alors que `docker compose ps` n'a jamais quitté `Up`. Ou bien : vous avez appuyé sur
-  le bouton de redémarrage de `/controls` et rien ne semble être arrivé au conteneur.
+  le bouton de redémarrage du tableau de bord et rien ne semble être arrivé au conteneur.
 - **Cause. C'est normal.** s6 supervise chacun de ses deux services indépendamment et en relance un
   sur place quand il meurt. amuleapi n'en fait pas partie : `amuled` le démarre et l'arrête avec
   lui, donc un redémarrage d'`amuled` en entraîne un d'amuleapi. Le conteneur ne tombe que lorsque
   le crawler sort en code non nul : son script `finish` demande alors à s6 de coucher tout l'arbre
   de supervision, de sorte que `restart: unless-stopped` donne une boucle de backoff visible au lieu
   d'un crash-loop silencieux.
-  Une sortie propre du crawler, exactement ce que demande le bouton de redémarrage de `/controls`,
+  Une sortie propre du crawler, exactement ce que demande le bouton de redémarrage du tableau de bord,
   ramène le crawler seul ; amuled garde ses sessions eD2k et Kad, ce qui est tout l'intérêt.
 - **Comment le confirmer.** `s6-svstat` affiche l'uptime du service en secondes : un petit nombre
   signifie qu'il vient d'être redémarré.
@@ -109,6 +109,7 @@ accumulé, mais vous redémarrez d'un état connu.
 
 - **Ce n'est pas une panne.** Low-ID est l'état normal par défaut : recherche, catalogage et
   téléchargement fonctionnent, seule la joignabilité est sous-optimale (moins de sources directes).
+  Le tableau de bord le montre aussi : `Connectable` y vaut `no` sur le canal `ed2k`.
 - **Pour passer en High-ID** (optionnel), voir [Devenir High-ID](high-id.md).
 
 ---
