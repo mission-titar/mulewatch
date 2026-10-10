@@ -1,5 +1,5 @@
 # VPN stack: p2pwatch runs inside gluetun's network.
-# For High-ID, set VPN_PORT_FORWARDING=on in .env and port_sync.enabled: true in crawler.yml.
+# For High-ID, set VPN_PORT_FORWARDING=on in .env: it also turns port-sync on.
 # Run (from deploy/):
 #   docker compose -f gluetun.compose.yml up -d
 name: p2pwatch
@@ -32,3 +32,5 @@ services:
     # Here and not in the fragment: `extends:` never carries depends_on over.
     network_mode: "service:gluetun"
     depends_on: [gluetun]
+    environment:
+      PORT_SYNC: ${VPN_PORT_FORWARDING:-off}

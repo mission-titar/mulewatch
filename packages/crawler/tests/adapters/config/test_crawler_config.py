@@ -11,7 +11,6 @@ from p2pwatch.adapters.config.crawler_config import (
     MetricsConfig,
     NotificationTarget,
     ObservabilityConfig,
-    PortSyncConfig,
     WebuiConfig,
     parse_crawler_config,
 )
@@ -49,15 +48,6 @@ def _full_download_section() -> dict[str, Any]:
     }
 
 
-def _full_port_sync_section() -> dict[str, Any]:
-    return {
-        "enabled": True,
-        "poll_interval_seconds": 60.0,
-        "restart_min_interval_seconds": 300.0,
-        "gluetun_control_url": "http://localhost:8000",
-    }
-
-
 # --------------------------------------------------------------------- policy
 
 
@@ -73,7 +63,6 @@ def test_parses_a_valid_config() -> None:
         node_id=None,
         observability=None,
         download=None,
-        port_sync=None,
     )
 
 
@@ -124,13 +113,14 @@ def test_non_positive_value_is_fatal() -> None:
         "cycle_interval_seconds",
         "keyword_pause_max_seconds",
         "keyword_pause_min_seconds",
+        "port_sync",
         "search_poll_budget_seconds",
         "search_poll_interval_seconds",
     ],
 )
 def test_a_removed_key_is_refused_by_name(key: str) -> None:
     raw = _minimal_raw() | {key: 5.0}
-    with pytest.raises(ConfigError, match=key):
+    with pytest.raises(ConfigError, match=f"key '{key}' was removed"):
         parse_crawler_config(raw, _env())
 
 
@@ -322,48 +312,6 @@ def test_download_output_dir_must_be_a_string() -> None:
     section = _full_download_section() | {"output_dir": 42}
     raw = _minimal_raw() | {"download": section}
     with pytest.raises(ConfigError, match="output_dir"):
-        parse_crawler_config(raw, _env())
-
-
-# ----------------------------------------------------------------- port_sync
-
-
-def test_port_sync_absent_is_off() -> None:
-    assert parse_crawler_config(_minimal_raw(), _env()).port_sync is None
-
-
-def test_port_sync_enabled_false_is_off() -> None:
-    raw = _minimal_raw() | {"port_sync": {"enabled": False}}
-    assert parse_crawler_config(raw, _env()).port_sync is None
-
-
-def test_port_sync_enabled_true_full() -> None:
-    raw = _minimal_raw() | {"port_sync": _full_port_sync_section()}
-    cfg = parse_crawler_config(raw, _env())
-    assert cfg.port_sync == PortSyncConfig(
-        poll_interval_seconds=60.0,
-        restart_min_interval_seconds=300.0,
-        gluetun_control_url="http://localhost:8000",
-    )
-
-
-def test_port_sync_section_must_be_a_mapping() -> None:
-    raw = _minimal_raw() | {"port_sync": [1, 2]}
-    with pytest.raises(ConfigError, match="section 'port_sync'"):
-        parse_crawler_config(raw, _env())
-
-
-def test_port_sync_poll_interval_must_be_positive() -> None:
-    section = _full_port_sync_section() | {"poll_interval_seconds": 0.0}
-    raw = _minimal_raw() | {"port_sync": section}
-    with pytest.raises(ConfigError, match="strictly positive"):
-        parse_crawler_config(raw, _env())
-
-
-def test_port_sync_restart_min_interval_must_be_positive() -> None:
-    section = _full_port_sync_section() | {"restart_min_interval_seconds": 0.0}
-    raw = _minimal_raw() | {"port_sync": section}
-    with pytest.raises(ConfigError, match="strictly positive"):
         parse_crawler_config(raw, _env())
 
 
