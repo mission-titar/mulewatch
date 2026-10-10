@@ -77,7 +77,7 @@ async def status_loop(deps: StatusLoopDeps) -> None:
             await deps.client.connect()  # nothing else may connect a shared session (a pause)
             status = await deps.client.status()
         except ClientUnreachableError:
-            await deps.telemetry.emit(InstanceUnreachable())
+            await deps.telemetry.emit(InstanceUnreachable(deps.name))
             # Every channel is unknown while the API is: only the API's own alert can fire.
             readings: list[tuple[str, bool | None, bool | None]] = [
                 (name, None, None) for name in dict.fromkeys(n for n, _ in channels)

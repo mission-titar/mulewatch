@@ -7,9 +7,9 @@ import pytest
 from mulewatch.domain.observability.events import DownloadCompleted, ObservationRecorded
 
 
-def test_observation_recorded_carries_network() -> None:
-    event = ObservationRecorded(network="ed2k")
-    assert event.network == "ed2k"
+def test_observation_recorded_carries_client_and_network() -> None:
+    event = ObservationRecorded(client="amuled", network="ed2k")
+    assert (event.client, event.network) == ("amuled", "ed2k")
 
 
 def test_event_is_frozen() -> None:

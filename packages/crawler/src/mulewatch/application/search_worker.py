@@ -189,7 +189,7 @@ class SearchWorker:
                 error,
                 delay,
             )
-            await self._deps.telemetry.emit(InstanceUnreachable())
+            await self._deps.telemetry.emit(InstanceUnreachable(self._instance))
             return False
         self._connected = True
         self._deps.backoff.reset(self._instance)
@@ -199,7 +199,7 @@ class SearchWorker:
     async def _record(self, channel: str, results: tuple[FileObservation, ...]) -> int:
         """Per-obs pipeline; returns the number of CHANGED verdicts (logging). A
         ``RepositoryError`` per obs is ABSORBED inside ``record_observation`` (spec §7)."""
-        await self._deps.telemetry.emit(SearchExecuted(network=channel, n_results=len(results)))
+        await self._deps.telemetry.emit(SearchExecuted(self._instance, channel, len(results)))
         changed = 0
         for observation in results:
             if await record_observation(
@@ -208,6 +208,7 @@ class SearchWorker:
                 engine=self._deps.engine,
                 signal=self._deps.signal,
                 telemetry=self._deps.telemetry,
+                client=self._instance,
                 network=channel,
             ):
                 changed += 1
@@ -244,7 +245,7 @@ class SearchWorker:
                 error,
                 delay,
             )
-            await self._deps.telemetry.emit(SearchFailed(network=task.channel))
+            await self._deps.telemetry.emit(SearchFailed(self._instance, task.channel))
             return
         except ClientUnreachableError as error:
             self._connected = False
@@ -255,7 +256,7 @@ class SearchWorker:
                 error,
                 delay,
             )
-            await self._deps.telemetry.emit(InstanceUnreachable())
+            await self._deps.telemetry.emit(InstanceUnreachable(self._instance))
             return
         changed = await self._record(task.channel, results)
         self._deps.backoff.reset(channel_key)

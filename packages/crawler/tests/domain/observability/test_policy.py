@@ -19,39 +19,40 @@ from mulewatch.domain.observability.policy import (
 _COMMUNITY = frozenset({Audience.COMMUNITY})
 _OPERATIONS = frozenset({Audience.OPERATIONS})
 _AMULED_KAD = (("client", "amuled"), ("network", "kad"))
+_AMULED_ED2K = (("client", "amuled"), ("network", "ed2k"))
 
 
 CASES: list[tuple[ev.Event, Report]] = [
     (
-        ev.SearchExecuted(network="ed2k", n_results=7),
+        ev.SearchExecuted(client="amuled", network="ed2k", n_results=7),
         Report(
             Severity.DEBUG,
             "search ed2k: 7 result(s)",
-            (MetricInstruction(MetricName.SEARCHES, "inc", (("network", "ed2k"),)),),
+            (MetricInstruction(MetricName.SEARCHES, "inc", _AMULED_ED2K),),
         ),
     ),
     (
-        ev.InstanceUnreachable(),
+        ev.InstanceUnreachable(client="slskd"),
         Report(
             Severity.WARNING,
-            "amuled unreachable",
-            (MetricInstruction(MetricName.MULE_UNREACHABLE, "inc"),),
+            "slskd unreachable",
+            (MetricInstruction(MetricName.CLIENT_UNREACHABLE, "inc"),),
         ),
     ),
     (
-        ev.SearchFailed(network="kad"),
+        ev.SearchFailed(client="amuled", network="kad"),
         Report(
             Severity.WARNING,
             "search failed on kad",
-            (MetricInstruction(MetricName.SEARCH_FAILURES, "inc", (("network", "kad"),)),),
+            (MetricInstruction(MetricName.SEARCH_FAILURES, "inc", _AMULED_KAD),),
         ),
     ),
     (
-        ev.ObservationRecorded(network="kad"),
+        ev.ObservationRecorded(client="amuled", network="kad"),
         Report(
             Severity.DEBUG,
             "observation recorded (kad)",
-            (MetricInstruction(MetricName.OBSERVATIONS, "inc", (("network", "kad"),)),),
+            (MetricInstruction(MetricName.OBSERVATIONS, "inc", _AMULED_KAD),),
         ),
     ),
     (
