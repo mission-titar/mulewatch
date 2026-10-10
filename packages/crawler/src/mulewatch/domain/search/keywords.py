@@ -3,7 +3,7 @@
 PURE domain: no I/O. Keywords are provided by config (``crawler.yml``,
 ``search.keywords``) — by default ``keroro`` (wide net) + ``titar`` (FR sentinel,
 jackpot-proof). ``generate_keywords`` is deterministic: same list → same tuple, ORDERED
-and DEDUPLICATED (first seen wins), so the cycle's seeded shuffle starts from a stable order.
+and DEDUPLICATED (first seen wins).
 """
 
 from collections.abc import Sequence

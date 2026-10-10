@@ -1,4 +1,4 @@
-"""Prometheus sink: inc/set/observe on a throwaway CollectorRegistry (get_sample_value)."""
+"""Prometheus sink: inc/set/remove on a throwaway CollectorRegistry (get_sample_value)."""
 
 from prometheus_client import CollectorRegistry
 
@@ -61,15 +61,6 @@ def test_removing_a_series_never_set_is_a_no_op() -> None:
         MetricInstruction(MetricName.CHANNEL_ON_NETWORK, "remove", labels)
     )
     assert registry.get_sample_value("p2pwatch_channel_on_network", dict(labels)) is None
-
-
-def test_histogram_observe() -> None:
-    registry = CollectorRegistry()
-    PrometheusSink(registry).apply(
-        MetricInstruction(MetricName.SEARCH_CYCLE_DURATION, "observe", (), 2.5)
-    )
-    assert registry.get_sample_value("emule_search_cycle_duration_seconds_count") == 1.0
-    assert registry.get_sample_value("emule_search_cycle_duration_seconds_sum") == 2.5
 
 
 def test_every_emitted_metric_is_declared_in_the_sink() -> None:

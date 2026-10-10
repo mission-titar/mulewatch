@@ -1,17 +1,16 @@
 """Prometheus sink: applies a ``MetricInstruction`` to a DEDICATED ``CollectorRegistry`` (E-D9).
 
 ADAPTER layer (implements ``MetricsSink``). Catalog declared on the INJECTED registry (never
-the global registry) → testable on a throwaway registry, no shared state. Three HOMOGENEOUS maps
-(counters/gauges/histograms) indexed by ``MetricName`` → ``apply`` routes on ``kind`` across 3
-branches. GOTCHA: counters are named WITHOUT ``_total`` (added by the lib at exposition time)."""
+the global registry) → testable on a throwaway registry, no shared state. Two HOMOGENEOUS maps
+(counters/gauges) indexed by ``MetricName`` → ``apply`` routes on ``kind``. GOTCHA: counters
+are named WITHOUT ``_total`` (added by the lib at exposition time)."""
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
+from prometheus_client import CollectorRegistry, Counter, Gauge
 
 from mulewatch.domain.observability.policy import MetricInstruction, MetricName
 
 # (name, doc, labels) of the counters.
 _COUNTERS: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
-    (MetricName.SEARCH_CYCLES, "Search cycles completed", ()),
     (MetricName.SEARCHES, "Searches performed", ("network",)),
     (MetricName.OBSERVATIONS, "Observations recorded", ("network",)),
     (MetricName.SEARCH_FAILURES, "Failed searches", ("network",)),
@@ -30,9 +29,6 @@ _GAUGES: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
     (MetricName.CHANNEL_ON_NETWORK, "Channel joined its network (1)", ("client", "network")),
     (MetricName.CHANNEL_CONNECTABLE, "Peers can connect to the channel (1)", ("client", "network")),
 )
-_HISTOGRAMS: tuple[tuple[MetricName, str], ...] = (
-    (MetricName.SEARCH_CYCLE_DURATION, "Search cycle duration (s)"),
-)
 
 
 class PrometheusSink:
@@ -46,9 +42,6 @@ class PrometheusSink:
         self._gauges = {
             name: Gauge(name.value, doc, labels, registry=registry) for name, doc, labels in _GAUGES
         }
-        self._histograms = {
-            name: Histogram(name.value, doc, registry=registry) for name, doc in _HISTOGRAMS
-        }
 
     def apply(self, instruction: MetricInstruction) -> None:
         labels = dict(instruction.labels)
@@ -58,7 +51,5 @@ class PrometheusSink:
         elif instruction.kind == "set":
             gauge = self._gauges[instruction.name]
             (gauge.labels(**labels) if labels else gauge).set(instruction.value)
-        elif instruction.kind == "remove":
-            self._gauges[instruction.name].remove_by_labels(labels)
         else:
-            self._histograms[instruction.name].observe(instruction.value)
+            self._gauges[instruction.name].remove_by_labels(labels)

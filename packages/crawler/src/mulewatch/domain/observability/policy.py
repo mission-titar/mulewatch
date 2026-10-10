@@ -6,7 +6,7 @@ The domain knows nothing of ``logging``, Prometheus or apprise: ``Severity``/``A
 ``MetricName`` are DOMAIN enums, translated by the adapters (E-D3).
 
 Prometheus GOTCHA: COUNTER names do NOT include ``_total`` here — ``prometheus_client``
-adds it at exposition (including it would produce ``…_total_total``). Gauges/histogram: name
+adds it at exposition (including it would produce ``…_total_total``). Gauges: name
 as-is.
 """
 
@@ -38,7 +38,6 @@ from mulewatch.domain.observability.events import (
     ObservationRecorded,
     PortMismatchUnresolved,
     PortSyncTriggered,
-    SearchCycleCompleted,
     SearchExecuted,
     SearchFailed,
     SearchTaskDropped,
@@ -65,8 +64,6 @@ class Audience(Enum):
 class MetricName(StrEnum):
     """Metric names. Counters WITHOUT ``_total`` (added by prometheus_client at exposition)."""
 
-    SEARCH_CYCLES = "emule_search_cycles"
-    SEARCH_CYCLE_DURATION = "emule_search_cycle_duration_seconds"
     SEARCHES = "emule_searches"
     OBSERVATIONS = "emule_observations"
     SEARCH_FAILURES = "emule_search_failures"
@@ -84,12 +81,12 @@ class MetricName(StrEnum):
     CHANNEL_CONNECTABLE = "p2pwatch_channel_connectable"
 
 
-MetricKind = Literal["inc", "set", "observe", "remove"]
+MetricKind = Literal["inc", "set", "remove"]
 
 
 @dataclass(frozen=True)
 class MetricInstruction:
-    """A metric operation: counter ``inc`` / gauge ``set`` or ``remove`` / histogram ``observe``.
+    """A metric operation: counter ``inc`` / gauge ``set`` or ``remove``.
 
     ``labels`` = tuple of ordered (key, value) pairs (hashable → usable in a ``Report``
     equality test). ``value`` = quantity (default 1.0 for ``inc``).
@@ -105,8 +102,8 @@ class MetricInstruction:
 class Report:
     """How to report an event: severity + message + metric(s) + notif audiences.
 
-    ``metrics`` is a TUPLE (one event can feed several metrics —
-    ``SearchCycleCompleted`` = counter + histogram). Empty ``audiences`` = no notif.
+    ``metrics`` is a TUPLE (one event can feed several metrics: ``ChannelStatusSampled`` sets
+    two gauges). Empty ``audiences`` = no notif.
     ``notification`` is the notified body when it differs from the logged ``message``; ``title``
     heads it.
     """
@@ -206,17 +203,6 @@ def _describe_decisions(event: DecisionsRecorded) -> Report:
 def describe(event: Event) -> Report:
     """Map an event to its ``Report`` (EXHAUSTIVE match → 100% branch)."""
     match event:
-        case SearchCycleCompleted():
-            return Report(
-                Severity.INFO,
-                f"cycle {event.cycle_index} done ({event.duration_seconds:.1f}s)",
-                (
-                    MetricInstruction(MetricName.SEARCH_CYCLES, "inc"),
-                    MetricInstruction(
-                        MetricName.SEARCH_CYCLE_DURATION, "observe", value=event.duration_seconds
-                    ),
-                ),
-            )
         case SearchExecuted():
             return Report(
                 Severity.DEBUG,

@@ -64,10 +64,7 @@ _WEBUI_OFF = WebuiConfig(enabled=False)
 
 
 class _NoopRng:
-    """Identity RNG: preserves order + zero jitter (test determinism)."""
-
-    def shuffled(self, items: tuple[str, ...], seed: str) -> tuple[str, ...]:
-        return items
+    """Zero jitter (test determinism)."""
 
     def jitter(self, span: float) -> float:
         return 0.0

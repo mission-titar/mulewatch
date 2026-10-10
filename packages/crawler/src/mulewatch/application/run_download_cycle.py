@@ -330,7 +330,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     The repos are sync → cancellation (shutdown) lands at the network ``await``, never mid-write.
 
     DECISION (audit 2026-06-23 / observability#5): a ``ClientUnreachableError`` here does NOT
-    emit ``InstanceUnreachable`` (unlike ``run_search_cycle``). The E-D5 taxonomy files this
+    emit ``InstanceUnreachable`` (unlike the search tasks). The E-D5 taxonomy files this
     event under SEARCH only; the download loop is single-instance and the label
     ``instance=...`` would be meaningless (counter shared with the search workers). The
     unavailability is handled by the next cycle's retry + the warning log. Intentional

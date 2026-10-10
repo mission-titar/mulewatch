@@ -13,12 +13,6 @@ from mulewatch.domain.file_key import FileKey
 
 
 @dataclass(frozen=True)
-class SearchCycleCompleted:
-    cycle_index: int
-    duration_seconds: float
-
-
-@dataclass(frozen=True)
 class SearchExecuted:
     network: str
     n_results: int
@@ -152,8 +146,7 @@ class PortMismatchUnresolved:
 
 
 type Event = (
-    SearchCycleCompleted
-    | SearchExecuted
+    SearchExecuted
     | InstanceUnreachable
     | SearchFailed
     | SearchTaskDropped

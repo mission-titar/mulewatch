@@ -60,11 +60,11 @@ async def test_logs_and_applies_metrics_no_audience() -> None:
 async def test_two_metrics_one_event() -> None:
     sink, notifier = _RecordingSink(), _RecordingNotifier()
     await _dispatcher(sink, notifier).emit(
-        ev.SearchCycleCompleted(cycle_index=1, duration_seconds=2.0)
+        ev.ChannelStatusSampled(client="amuled", channel="kad", on_network=True, connectable=True)
     )
     assert [m.name.value for m in sink.applied] == [
-        "emule_search_cycles",
-        "emule_search_cycle_duration_seconds",
+        "p2pwatch_channel_on_network",
+        "p2pwatch_channel_connectable",
     ]
 
 

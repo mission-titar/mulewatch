@@ -14,27 +14,6 @@ async def test_asyncio_clock_sleep_zero_returns() -> None:
     await AsyncioClock().sleep(0.0)  # does not raise; no notable wait
 
 
-def test_seeded_rng_same_seed_same_order() -> None:
-    items = ("a", "b", "c", "d", "e")
-    assert SeededRng().shuffled(items, "node-A:5") == SeededRng().shuffled(items, "node-A:5")
-
-
-def test_seeded_rng_different_seed_diverges() -> None:
-    items = ("a", "b", "c", "d", "e")
-    assert SeededRng().shuffled(items, "node-A:5") != SeededRng().shuffled(items, "node-B:5")
-
-
-def test_seeded_rng_is_a_permutation() -> None:
-    items = ("a", "b", "c", "d")
-    assert sorted(SeededRng().shuffled(items, "seed")) == sorted(items)
-
-
-def test_seeded_rng_does_not_mutate_input() -> None:
-    items = ("a", "b", "c")
-    SeededRng().shuffled(items, "seed")
-    assert items == ("a", "b", "c")
-
-
 def test_seeded_rng_jitter_is_within_span() -> None:
     rng = SeededRng(jitter_seed=42)
     for _ in range(20):
