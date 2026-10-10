@@ -1,4 +1,4 @@
-"""amule_config main: env check, user creation, mount point ownership, amule.conf, admin pass."""
+"""config main: env check, user creation, mount point ownership, amule.conf, admin pass."""
 
 import grp
 import hashlib
@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from p2pwatch.amule_config import __main__ as entry
-from p2pwatch.amule_config.conf import reconcile_conf
+from p2pwatch_amule.config import __main__ as entry
+from p2pwatch_amule.config.conf import reconcile_conf
 
 DIGEST = hashlib.md5(b"hunter2").hexdigest()
 ENV = {

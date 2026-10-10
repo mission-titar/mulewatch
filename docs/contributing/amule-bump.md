@@ -78,7 +78,7 @@ La PR la porte, en anglais, à cocher avant de fusionner (source :
 - [ ] Read the changelog: anything that changes the daemon's defaults or the network behaviour?
 - [ ] `options.cmake` diff: a new switch to set explicitly in the Dockerfile's CMake options?
 - [ ] `REFERENCE.md` diff: does the `mule_api` adapter need a change (with its tests first)?
-- [ ] `amule_config`: does any setting we override (or rely on the default of) change default?
+- [ ] `p2pwatch_amule.config`: does a default we override or rely on change?
 - [ ] CI green on amd64 and arm64.
 - [ ] Merge, then tag a release (`vX.Y.Z - aMule A.B.C`): the image only changes on a tag.
 

@@ -11,6 +11,7 @@ members = [
     "amule-bump",
     "catalog-matching",
     "p2pwatch",
+    "p2pwatch-amule",
     "vex-guards",
 ]
 
@@ -20,6 +21,7 @@ dev = [
     { name = "catalog-matching", editable = "packages/matching" },
     { name = "mypy", specifier = ">=2.3.1" },
     { name = "p2pwatch", editable = "packages/crawler" },
+    { name = "p2pwatch-amule", editable = "packages/amule" },
     { name = "poethepoet", specifier = ">=0.48.0" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.2" },
@@ -716,6 +718,7 @@ dependencies = [
     { name = "catalog-matching" },
     { name = "httpx" },
     { name = "jinja2" },
+    { name = "p2pwatch-amule" },
     { name = "prometheus-client" },
     { name = "pyyaml" },
     { name = "starlette" },
@@ -728,11 +731,16 @@ requires-dist = [
     { name = "catalog-matching", editable = "packages/matching" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "jinja2", specifier = ">=3.1" },
+    { name = "p2pwatch-amule", editable = "packages/amule" },
     { name = "prometheus-client", specifier = ">=0.26.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "starlette", specifier = ">=1.3" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
+
+[[package]]
+name = "p2pwatch-amule"
+source = { editable = "packages/amule" }
 
 [[package]]
 name = "packaging"

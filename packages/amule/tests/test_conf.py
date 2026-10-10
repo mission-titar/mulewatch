@@ -3,7 +3,7 @@
 import configparser
 import hashlib
 
-from p2pwatch.amule_config.conf import reconcile_conf
+from p2pwatch_amule.config.conf import reconcile_conf
 
 DIGEST = hashlib.md5(b"hunter2").hexdigest()
 

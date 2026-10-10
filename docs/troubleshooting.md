@@ -244,7 +244,7 @@ Plusieurs causes, à vérifier dans cet ordre :
 
 - **Ce que fait l'image.** Il n'y a **plus aucun volume nommé** : tout est un bind mount relatif
   dans votre dossier de travail (`data/`, `amule/`, `downloads/`, plus les trois `.yml` montés en
-  lecture seule). Au démarrage, le one-shot `p2pwatch.amule_config` tourne en root, crée
+  lecture seule). Au démarrage, le one-shot `p2pwatch_amule.config` tourne en root, crée
   l'utilisateur `amule` avec `PUID:PGID`, puis donne les points de montage (`/home/amule/.aMule`,
   `/downloads/incoming`, `/downloads/temp`) à cet utilisateur. Le crawler fait de même sur `/data`.
 - **Ce qu'il ne fait pas : ce `chown` n'est PAS récursif** sur `downloads/` ni sur `amule/`, et
