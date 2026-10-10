@@ -118,7 +118,9 @@ destination** : un fichier neuf (`--output`), ou la source que vous désignez pa
 l'un des trois fichiers de config est invalide.
 
 ```bash
-docker compose exec p2pwatch python -m p2pwatch validate-config
+docker compose run --rm p2pwatch python -m p2pwatch validate-config \
+  --config /app/config/crawler.yml --targets /app/config/targets.yml \
+  --matcher /app/config/matcher.yml
 ```
 
 **Fusionner des catalogues**, pour consolider ceux de plusieurs chercheurs en un seul. La fusion est

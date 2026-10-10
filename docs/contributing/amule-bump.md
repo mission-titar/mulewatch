@@ -4,8 +4,8 @@ description: "Comment la version d'aMule est épinglée, montée chaque semaine 
 
 # Mettre à jour aMule
 
-L'image compile aMule sur Debian depuis un commit git épinglé. La version tient en **deux lignes**
-de `packages/crawler/Dockerfile`, et nulle part ailleurs :
+L'image d'aMule, `p2pwatch-amule`, compile aMule sur Debian depuis un commit git épinglé. La
+version tient en **deux lignes** de `packages/amule/Dockerfile`, et nulle part ailleurs :
 
 ```dockerfile
 ARG AMULE_VERSION=<le tag amont, tel quel>

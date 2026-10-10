@@ -22,56 +22,64 @@ personne.**
 
 ## 2. Vue d'ensemble des sous-systèmes
 
-Un **workspace uv** de quatre paquets, plus des dépendances externes.
+Un **workspace uv** de cinq paquets, plus des dépendances externes.
 
-**Contexte : le nœud et le monde extérieur.** Depuis le 2026-09-16, un nœud est **un seul
-conteneur** : le crawler, `amuled` et `amuleapi` sont trois processus d'une même image. **s6**
-(`s6-svscan` est PID 1) en supervise deux, le crawler et `amuled` ; c'est `amuled` qui démarre
-`amuleapi`, et qui l'emporte avec lui en s'arrêtant. Sous la pile VPN, tout ce conteneur partage le
-namespace réseau de gluetun, donc tout son trafic passe par le tunnel.
+**Contexte : le nœud et le monde extérieur.** Un nœud est **deux conteneurs**, de deux images. Le
+cœur, `p2pwatch`, ne porte que le crawler et sa webui : pas de superviseur, il tourne directement
+sous `PUID:PGID`. Le client eMule, `ed2k` (image `p2pwatch-amule`), fait tourner **s6**
+(`s6-svscan` est PID 1), qui en supervise deux services, `amuled` et le port-sync ; c'est `amuled`
+qui démarre `amuleapi`, et qui l'emporte avec lui en s'arrêtant. Sous la variante VPN, seul `ed2k`
+partage le namespace réseau d'`ed2k-gluetun` : le cœur reste hors du tunnel.
 
 ```mermaid
 flowchart LR
-  subgraph node["one container · s6"]
-    crawler["p2pwatch · crawler + webui"]
+  subgraph core["p2pwatch · PUID:PGID"]
+    crawler["crawler + webui"]
+  end
+  subgraph client["ed2k · s6"]
     amuled["amuled"]
     amuleapi["amuleapi · REST + web UI"]
+    sync["port-sync"]
   end
-  gluetun["gluetun · VPN"]
-  ed2k(("eD2k / Kad"))
+  gluetun["ed2k-gluetun · VPN"]
+  net(("eD2k / Kad"))
   prom["Prometheus · operator's own"]
   notif["Mail / Slack / Discord"]
-  out[("./downloads/incoming")]
+  out[("ed2k/downloads/incoming")]
 
-  crawler -->|"REST · 127.0.0.1:4711"| amuleapi
+  crawler -->|"REST · ed2k:4711"| amuleapi
   amuled -->|"starts, one-off EC token"| amuleapi
   amuleapi -->|"EC · 127.0.0.1:4712"| amuled
-  node -->|"all traffic"| gluetun
-  gluetun --> ed2k
+  sync -->|"amule.conf + s6-svc"| amuled
+  client -->|"all traffic, vpn variant"| gluetun
+  gluetun --> net
   amuled -->|"finished files"| out
-  crawler -.->|"free space · statvfs, no read"| out
+  crawler -.->|"free space · statvfs, read-only mount"| out
   crawler -->|"/metrics · scraped"| prom
   crawler -->|"notifications · apprise URL"| notif
 ```
 
 Conséquences de cette forme, chacune porteuse ailleurs dans ce document :
 
-- **Le point d'accès est une constante de code** (`127.0.0.1:4711`, nom d'instance `amuled`),
-  comme le bind `0.0.0.0:8080` de la webui. `crawler.yml` ne configure que le mot de passe, depuis
-  `${AMULE_API_PASSWORD}` : c'est le mot de passe admin d'amuleapi, le même que celui de son
-  interface web. `${AMULE_EC_PASSWORD}` ne sert plus qu'au lien interne amuleapi ↔ amuled.
-- **Redémarrer `amuled`, c'est `s6-svc -r`**, un redémarrage de processus local, pas un redémarrage
-  de conteneur (§9). `amuleapi` suit, puisque `amuled` le relance.
-- **Les processus démarrent en même temps**, donc le crawler frappe couramment à la porte avant
-  qu'`amuled` n'ait démarré `amuleapi` ; « démon injoignable au démarrage » est toléré et absorbé
-  par le backoff.
-- **PID 1 est root** (il crée l'utilisateur `amule` depuis `PUID`/`PGID` et prend les bind mounts),
-  puis chaque service abandonne ses privilèges avec `setpriv`. `user:`, `read_only:` et
-  `cap_drop: ALL` ne s'appliquent donc plus au service livré ; `no-new-privileges`, `pids_limit` et
-  `mem_limit` restent.
-- **Une sortie non nulle du crawler tue le conteneur** (son `finish` s6 lance `s6-svscanctl -t`),
-  donc une config invalide se voit comme une boucle de redémarrage. Une sortie propre (le contrôle de
-  redémarrage de la webui) ramène le crawler seul, et `amuled` garde ses sessions eD2k et Kad.
+- **Le point d'accès est une constante de code** (`ed2k:4711`, nom d'instance `amuled`), comme le
+  bind `0.0.0.0:8080` de la webui. `ed2k` est le service d'aMule dans la variante directe, et un
+  alias porté par `ed2k-gluetun` dans la variante VPN : changer de variante ne touche pas
+  `crawler.yml`. Celui-ci ne configure que le mot de passe, depuis `${AMULE_API_PASSWORD}` : c'est
+  le mot de passe admin d'amuleapi, le même que celui de son interface web. `${AMULE_EC_PASSWORD}`
+  ne sert qu'au lien interne amuleapi ↔ amuled, et le cœur ne le voit pas.
+- **Redémarrer `amuled`, c'est `s6-svc` dans `ed2k`**, un redémarrage de processus local, pas un
+  redémarrage de conteneur (§9). `amuleapi` suit, puisque `amuled` le relance.
+- **Les conteneurs démarrent sans ordre** (pas de `depends_on` entre eux), donc le crawler frappe
+  couramment à la porte avant qu'`amuled` n'ait démarré `amuleapi` ; « démon injoignable au
+  démarrage » est toléré et absorbé par le backoff.
+- **Le PID 1 d'`ed2k` est root** (son one-shot `p2pwatch_amule.config` crée l'utilisateur `amule`
+  depuis `PUID`/`PGID` et prend les bind mounts), puis chaque service abandonne ses privilèges avec
+  `setpriv`. Le cœur n'a ni point d'entrée ni root : `user:` dans `compose.yml` suffit à ce que
+  `data/` reste à l'opérateur. Les deux gardent `no-new-privileges`, `pids_limit` et `mem_limit`,
+  sans `read_only:` ni `cap_drop: ALL`.
+- **Docker relance le cœur après toute sortie** (`restart: unless-stopped`), donc une config
+  invalide se voit comme une boucle `Restarting`. Une sortie propre (le contrôle de redémarrage de
+  la webui) ramène le crawler seul, et `amuled` garde ses sessions eD2k et Kad.
 
 Aucun conteneur Prometheus ou Grafana n'est livré avec la pile : le crawler expose `/metrics` et un
 opérateur qui veut des tableaux de bord y pointe son propre Prometheus.
@@ -97,32 +105,35 @@ flowchart RL
 | Paquet | Dist | Rôle |
 |---|---|---|
 | `p2pwatch` | `p2pwatch` | **Crawler** : pilote `amuled` par amuleapi, fait tourner les boucles de recherche et de téléchargement, la persistance, l'observabilité. Contient le sous-paquet webui in-process `p2pwatch.webui` (visualiseur de catalogue en lecture seule). |
+| `p2pwatch_amule` | `p2pwatch-amule` | **Le conteneur d'aMule**, bibliothèque standard seule : son one-shot de démarrage (`p2pwatch_amule.config`) et le port-sync (`p2pwatch_amule.port_sync`, §9). |
 | `catalog_matching` | `catalog-matching` | **Moteur de matching** (bibliothèque partagée) : politique déclarative fichier vers épisode. Importé par le crawler et par la webui. |
 | `vex_guards` | `vex-guards` | **Outillage dev/CI** : garde honnêtes nos affirmations OpenVEX. Jamais livré dans une image de prod. |
 | `amule_bump` | `amule-bump` | **Outillage CI** : monte l'épingle d'aMule et rédige la PR ([Mettre à jour aMule](amule-bump.md)). Jamais livré dans une image de prod. |
 
 **Frontières strictes** (invariants) : `catalog_matching` est pur et n'importe jamais `p2pwatch` ;
-`vex_guards` et `amule_bump` ne sont jamais importés par du code livré.
+`p2pwatch_amule` et `p2pwatch` ne s'importent jamais l'un l'autre ; `vex_guards` et `amule_bump`
+ne sont jamais importés par du code livré.
 
 ## 3. Deux modes d'exécution, une seule topologie
 
 Le mode découle **de la config** (`crawler.yml`, section `download`), pas d'un flag séparé ni d'un
-profil compose. Les deux piles compose assemblent les mêmes services dans les deux cas.
+profil compose. Les deux variantes compose assemblent les mêmes services dans les deux cas.
 
 ```mermaid
 flowchart TB
   app["Supervision · TaskGroup"]
   app --> s["Search"]
+  app --> st["Status"]
   app -->|"if download"| d["Download"]
-  app -->|"if port_sync"| p["Port-sync"]
 ```
 
 - **Téléchargement** (`download.enabled: true`, le défaut livré) : recherche **plus**
   téléchargement.
 - **Catalogue seul** (`download` absent ou `enabled: false`) : **seule la boucle de recherche
-  tourne**. Le nœud catalogue et notifie, et ne télécharge rien.
-- **Port-sync** (section `port_sync` présente et activée) : une boucle indépendante, orthogonale au
-  mode, qui maintient le **High-ID** derrière le VPN (voir §9).
+  tourne**, avec celle du statut. Le nœud catalogue et notifie, et ne télécharge rien.
+
+Le port-sync n'est pas une boucle du crawler : il tourne dans le conteneur `ed2k` (§9), et
+`crawler.yml` refuse une section `port_sync:`.
 
 Chaque boucle est une itération suivie d'un sommeil (`*_interval_seconds` depuis la config),
 supervisée par un `TaskGroup` : une boucle qui crashe bruyamment annule ses sœurs (fail-fast), mais
@@ -319,7 +330,7 @@ Invariants porteurs (à ne pas violer) :
   entrée encore en file n'est pas complète, même listée dans les partagés : amuled partage aussi les
   téléchargements partiels. Ce n'est jamais une inférence sur le contenu.
 - **Rien ne déplace le fichier terminé.** amuled écrit directement dans son propre `IncomingDir`,
-  bind-mounté sur `./downloads/incoming` côté hôte ; le crawler enregistre le changement d'état et
+  bind-mounté sur `ed2k/downloads/incoming` côté hôte ; le crawler enregistre le changement d'état et
   notifie, rien de plus.
 - **Rien n'inspecte le fichier.** Il n'y a pas de sniffing de type, pas d'`ffprobe`, pas d'analyse
   antivirus : depuis la réduction de périmètre du 2026-09-13, juger si un téléchargement terminé est
@@ -331,12 +342,12 @@ Invariants porteurs (à ne pas violer) :
 - Le plancher disque (`download.min_free_bytes`) est **mesuré, pas comptabilisé** (2026-09-13) : un
   candidat n'est admis que quand `free - outstanding - size >= min_free`, où `free` est un seul appel
   `shutil.disk_usage` sur `download.output_dir` et `outstanding` ce qu'il reste à transférer à la
-  file d'amuled, pris dans l'instantané de file déjà présent dans le cycle. Le répertoire de sortie
-  est désormais monté **en lecture-écriture** (`amuled` partage le conteneur et y écrit) mais le
-  crawler n'y ouvre toujours aucun fichier : `statvfs` lit des métadonnées de système de fichiers,
-  jamais des octets. Le `./downloads` de l'hôte est monté **en entier**, pas comme ses deux
-  sous-répertoires, précisément pour que ce `statvfs` mesure le système de fichiers qui se remplit
-  plutôt que la couche inscriptible du conteneur.
+  file d'amuled, pris dans l'instantané de file déjà présent dans le cycle. Le cœur monte le
+  répertoire de sortie **en lecture seule**, et n'y ouvre aucun fichier : `statvfs` lit des
+  métadonnées de système de fichiers, jamais des octets. Le `ed2k/downloads` de l'hôte est monté
+  **en entier**, pas comme ses deux sous-répertoires, précisément pour que ce `statvfs` mesure le
+  système de fichiers qui se remplit plutôt que la couche inscriptible du conteneur. Le cœur ne
+  mesure qu'un répertoire de sortie, celui d'aMule.
   L'espace libre seul serait faux, puisque le système de fichiers ne sait rien des octets encore à
   venir.
 - **Un téléchargement que le client ne liste plus est relancé**, d'un `start()` par cycle, tant
@@ -453,18 +464,39 @@ refusée. Les règles d'écriture :
 ## 9. Port-sync High-ID (optionnel)
 
 Derrière un VPN, le port entrant change ; sans High-ID, la connectabilité (et donc la couverture) se
-dégrade. La boucle de port-sync lit le **port forwardé courant** de gluetun et, s'il diffère du port
-d'`amuled`, appelle `set_listen_port`, puis **redémarre le processus `amuled`** pour qu'il se
-rebinde, puis revérifie le High-ID. Elle est limitée en débit (au plus un redémarrage par fenêtre) ;
-si le port reste faux, une alerte déclenchée sur front part (audience OPERATIONS). *Risque accepté :
-un High-ID augmente l'exposition, voir [Devenir High-ID](../high-id.md).*
+dégrade. Le port-sync appartient au client : c'est un service s6 du conteneur `ed2k`
+(`python -m p2pwatch_amule.port_sync`, sous l'utilisateur `amule`), et le cœur n'en sait rien.
+Toutes les `PORT_SYNC_POLL_SECONDS` (60 s par défaut), il compare le **port forwardé** de gluetun
+au `[eMule] Port` d'`amule.conf`. S'ils diffèrent, et si le dernier redémarrage date de plus de
+`PORT_SYNC_RESTART_MIN_SECONDS` (300 s) :
 
-Depuis le 2026-09-16, ce redémarrage est un `s6-svc -r /etc/services.d/amuled` local
-(`S6MuleRestarter`), exécuté dans le conteneur où le crawler vit déjà. La socket Docker, son service
-proxy confiné et le `HttpMuleRestarter` ont disparu. C'est aussi la forme la plus correcte : le port
-d'écoute n'a jamais été rebindable à chaud, donc le port-sync a toujours eu besoin d'un redémarrage
-de *processus* ; il redémarrait un *conteneur* uniquement parce que le processus était hors de
-portée.
+```mermaid
+flowchart LR
+  g["gluetun's port<br/>differs"] --> d["s6-svc -wD -d amuled"]
+  d -->|"exit 0"| w["write Port + UDPPort"]
+  d -->|"failed or 60 s timeout"| u
+  w --> u["s6-svc -u amuled<br/>(always)"]
+```
+
+- **amuled n'est jamais laissé arrêté.** Un `-d` laisse le service voulu arrêté : le `-u` est dans
+  un `finally`, et le port-sync en envoie aussi un à son démarrage, qui répare un port-sync tué
+  entre les deux.
+- **L'écriture n'est jamais perdue.** amuled écrit toute sa config en sortant : le fichier n'est lu
+  et écrit qu'une fois l'arrêt confirmé par `-wD`, puis remplacé d'un bloc (fichier temporaire et
+  `rename`), jamais réécrit sur place.
+- **Les deux ports reçoivent la même valeur** (`Port` en TCP, `UDPPort` en UDP pour Kad) : un
+  tunnel ne forwarde qu'un port. amuled ne les lit qu'au démarrage, d'où le redémarrage.
+- **Les droits.** s6 réserve le pilotage d'un service à root, et l'abonnement à ses événements
+  (dont `-wD` a besoin) au groupe de root. Le script `run` du port-sync, en root, attend le
+  superviseur d'`amuled`, lui accorde `s6-svperms -G amule -E amule`, puis descend vers `amule`.
+- **Interrupteur.** `PORT_SYNC` reçoit `VPN_PORT_FORWARDING` tel quel ; éteint, le one-shot de
+  démarrage pose le fichier `down` du service, et s6 ne le lance jamais. Allumé, il valide les
+  réglages ([Devenir High-ID](../high-id.md)) avant tout, et sort en nommant une valeur invalide.
+- **Aucun événement, aucune métrique.** Le port-sync journalise chaque changement et chaque échec,
+  rien de plus. Le Low-ID se lit dans le cœur, par la boucle de statut : la jauge
+  `p2pwatch_channel_connectable` et l'alerte sur un canal non joignable depuis 5 minutes.
+
+*Risque accepté : un High-ID augmente l'exposition, voir [Devenir High-ID](../high-id.md).*
 
 ## 10. Observabilité
 
@@ -500,10 +532,11 @@ démon sont
   désanonymisation.
 - **Le crawler PROD ne lit jamais les octets et ne touche jamais au répertoire de sortie** ; la
   complétion est un signal positif.
-- **Frontières de paquets** : `catalog_matching` n'importe jamais `p2pwatch` ; `vex_guards` et
-  `amule_bump` ne sont jamais importés par du code livré.
+- **Frontières de paquets** : `catalog_matching` n'importe jamais `p2pwatch` ; `p2pwatch_amule` et
+  `p2pwatch` ne s'importent jamais ; `vex_guards` et `amule_bump` ne sont jamais importés par du
+  code livré.
 - **Deux modes d'exécution** pilotés par la config (téléchargement / catalogue seul), une seule
-  topologie compose.
+  topologie compose par variante.
 - **Politique de matching 100 % en YAML** ; le moteur reste fixe et minimal.
 - **`domain/` est pur** ; toutes les I/O vivent dans `adapters/` ; le graphe de dépendances est un
   DAG.
@@ -516,13 +549,15 @@ démon sont
 | Sous-système | Emplacement (sous `packages/crawler/src/p2pwatch/` sauf mention) |
 |---|---|
 | Boucles et câblage | `composition/app.py` (`CrawlerApp`), `python -m p2pwatch` |
-| Cas d'usage | `application/search_tasks.py`, `status_loop.py`, `run_download_cycle.py`, `port_sync_loop.py` |
+| Cas d'usage | `application/search_tasks.py`, `status_loop.py`, `run_download_cycle.py` |
 | Recherche (pure) | `domain/search/` (`keywords`, `backoff`) |
 | Matching | `packages/matching/src/catalog_matching/` (moteur + politique `deploy/matcher.yml`) |
 | Frontière amuleapi | `adapters/mule_api/` (client / mapping / erreurs) ; ports `ports/mule_client.py`, `ports/download_client.py` |
 | Persistance | `adapters/persistence_sqlite/` (migrations `.sql`, repos) |
 | Observabilité | `domain/observability/`, `adapters/observability/` |
 | WebUI | `webui/` (in-process, thread dédié) |
+| Conteneur d'aMule | `packages/amule/src/p2pwatch_amule/` (`config/` le one-shot, `port_sync/`) ; image `packages/amule/Dockerfile`, services s6 sous `packages/amule/docker/services.d/` |
+| Déploiement | `deploy/compose.yml` (le cœur et un `include:`), `deploy/ed2k/` (`service`, `direct` et `vpn.compose.yml`) |
 
 ## 13. Le healthcheck lit la sortie de s6-svstat, pas son code de retour
 
@@ -541,7 +576,7 @@ test: ["CMD-SHELL", 'test "$$(s6-svstat -u /etc/services.d/amuled)" = true']
 (le `$$` est l'échappement compose d'un `$` littéral ; dans le conteneur, la commande est
 `test "$(s6-svstat -u /etc/services.d/amuled)" = true`).
 
-**Ce que `unhealthy` signifie, et ne signifie pas.** Le conteneur ne passe `unhealthy` que quand
-amuled est arrêté. Un crawler arrêté est invisible au healthcheck par conception : un plantage du
-crawler couche déjà le conteneur, donc le sonder serait quasi tautologique, et sonder amuled
-continue de fonctionner sur un nœud qui tourne avec `webui.enabled: false`.
+**Ce que `unhealthy` signifie, et ne signifie pas.** Le healthcheck est celui du conteneur `ed2k`,
+qui ne passe `unhealthy` que quand amuled est arrêté. Le cœur n'en a pas : Docker le relance déjà
+après toute sortie, et l'état d'amuled qu'un healthcheck lui aurait fait rapporter, sa boucle de
+statut le rapporte et l'alerte.
