@@ -46,7 +46,8 @@ class AmuleEndpoint:
     password: str
 
 
-AMULE_API_HOST = "127.0.0.1"
+# The aMule service in the direct stack, ed2k-gluetun's alias in the vpn one.
+AMULE_API_HOST = "ed2k"
 AMULE_API_PORT = 4711
 AMULE_INSTANCE_NAME = "amuled"
 

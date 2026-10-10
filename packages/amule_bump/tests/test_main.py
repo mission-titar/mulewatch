@@ -131,3 +131,14 @@ def test_the_default_repo_is_upstream_authenticated_by_gh_token(
     argv = ["--dockerfile", str(dockerfile)]
     assert main(argv, env={"GH_TOKEN": "secret"}) == 0
     assert opened == [("amule-org/amule", "secret")]
+
+
+def test_the_default_dockerfile_is_the_amule_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pinned = tmp_path / "packages/amule/Dockerfile"
+    pinned.parent.mkdir(parents=True)
+    pinned.write_text(DOCKERFILE)
+    monkeypatch.chdir(tmp_path)
+    assert main(["--body-file", str(tmp_path / "body.md")], upstream("3.1.0"), {}) == 0
+    assert "ARG AMULE_VERSION=3.1.0" in pinned.read_text()

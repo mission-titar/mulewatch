@@ -15,8 +15,8 @@ updates:
     commit-message:
       prefix: "chore(ci)"
 
-  # Docker base images: the FROM lines of packages/crawler/Dockerfile, the sole
-  # shipped image. Compose image refs are not covered by the docker ecosystem.
+  # Docker base images: the FROM lines of each packages/*/Dockerfile. Compose image refs are
+  # not covered by the docker ecosystem.
   - package-ecosystem: "docker"
     directories:
       - "/packages/*"

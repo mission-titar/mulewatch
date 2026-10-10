@@ -1,4 +1,4 @@
-"""Bump the aMule pin in packages/crawler/Dockerfile to the latest upstream release."""
+"""Bump the aMule pin in packages/amule/Dockerfile to the latest upstream release."""
 
 
 class BumpError(Exception):

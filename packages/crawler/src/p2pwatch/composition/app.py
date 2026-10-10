@@ -437,9 +437,9 @@ class CrawlerApp:
             client = self._client_factory(endpoint, self._clock)
             stack.push_async_callback(client.close)
             # CONNECT at setup. A daemon not yet listening must NOT bring
-            # the crawler down, and in one container that is the NORMAL case, not the exception:
-            # the crawler and amuled start together under s6, and amuled starts amuleapi itself,
-            # so the crawler routinely knocks first (design §4). We TOLERATE the
+            # the crawler down, and that is the NORMAL case, not the exception: the core and the
+            # aMule container start together, and amuled starts amuleapi itself, so the crawler
+            # routinely knocks first. We TOLERATE the
             # ClientUnreachableError and CONTINUE - the worker's reconnection backoff governs the
             # retries. connect() is idempotent → the worker's later _ensure_connected() stays a
             # no-op. We do NOT catch broader: ApiAuthError (wrong password) is NOT a
