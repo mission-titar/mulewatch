@@ -22,7 +22,6 @@ from p2pwatch.adapters.config.crawler_config import (
     DownloadConfig,
     MetricsConfig,
     ObservabilityConfig,
-    PortSyncConfig,
     WebuiConfig,
 )
 from p2pwatch.adapters.config.yaml_loader import load_yaml
@@ -89,7 +88,6 @@ def _crawler_config(
     node_id: str | None = None,
     observability: ObservabilityConfig | None = None,
     download: DownloadConfig | None = None,
-    port_sync: PortSyncConfig | None = None,
     webui: WebuiConfig = _WEBUI_OFF,
 ) -> CrawlerConfig:
     return CrawlerConfig(
@@ -102,7 +100,6 @@ def _crawler_config(
         node_id=node_id,
         observability=observability,
         download=download,
-        port_sync=port_sync,
         webui=webui,
     )
 
@@ -119,18 +116,6 @@ def _download_config(tmp_path: Path) -> DownloadConfig:
 def _full_crawler_config(tmp_path: Path) -> CrawlerConfig:
     """FULL-mode config: ``download`` section present (enabled)."""
     return _crawler_config(tmp_path, download=_download_config(tmp_path))
-
-
-def _port_sync_config() -> PortSyncConfig:
-    return PortSyncConfig(
-        poll_interval_seconds=60.0,
-        restart_min_interval_seconds=300.0,
-        gluetun_control_url="http://localhost:8000",
-    )
-
-
-def _port_sync_crawler_config(tmp_path: Path) -> CrawlerConfig:
-    return _crawler_config(tmp_path, port_sync=_port_sync_config())
 
 
 def _make_app(
@@ -1015,168 +1000,6 @@ async def test_emits_crawler_started_full_mode(
     with caplog.at_level(logging.INFO, logger="p2pwatch.observability"):
         await asyncio.wait_for(app.run(), timeout=5.0)
     assert any("mode full" in r.getMessage() for r in caplog.records)
-
-
-# ---------------------------------------------------------------------------
-# Port-sync (High-ID): loop ON / OFF
-# ---------------------------------------------------------------------------
-
-
-class _PortSyncCapableClient(FakeMuleClient):
-    """Test port-sync EC client: satisfies get/set_listen_port; status() reads High-ID."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.listen_port = 4662
-        self.set_ports: list[int] = []
-
-    async def get_listen_port(self) -> int:
-        return self.listen_port
-
-    async def set_listen_port(self, port: int) -> None:
-        self.set_ports.append(port)
-        self.listen_port = port
-
-
-class _ShutdownOnPollReader:
-    """Forwarded-port reader that triggers the shutdown on the FIRST poll (1 cycle then stop).
-
-    Bounds the run DETERMINISTICALLY on the PORT-SYNC loop itself: the shutdown is set
-    only once ``forwarded_port`` has run → proves that the loop body has started.
-    Returns ``None`` ("not ready") → the loop sleeps without touching the EC (no divergence to
-    fix).
-    """
-
-    def __init__(self, app_holder: dict[str, CrawlerApp]) -> None:
-        self._app_holder = app_holder
-        self.calls = 0
-
-    async def forwarded_port(self) -> int | None:
-        self.calls += 1
-        self._app_holder["app"]._on_signal()  # shutdown AFTER the 1st poll
-        return None
-
-    async def aclose(self) -> None:
-        return None
-
-
-class _RecordingRestarter:
-    """Test no-op restarter (never called here: the reader returns None → no restart)."""
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    async def restart(self) -> None:
-        self.calls += 1
-
-    async def aclose(self) -> None:
-        return None
-
-
-@pytest.mark.asyncio
-async def test_port_sync_loop_runs_when_section_present(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # port_sync section present (enabled: true) → the port-sync loop is ARMED. The shutdown is
-    # driven by the reader (1st poll → signal) → we prove that the BODY of the loop ran.
-    holder: dict[str, CrawlerApp] = {}
-    reader = _ShutdownOnPollReader(holder)
-    ec_client = _PortSyncCapableClient()
-
-    app = CrawlerApp(
-        crawler_config=_port_sync_crawler_config(tmp_path),
-        targets=_TARGETS,
-        matcher_config=matcher_config,
-        clock=FakeClock(),
-        rng=_NoopRng(),
-        signal_hub=RecordingSignal(),
-        policy_fingerprint=_FP,
-        client_factory=lambda endpoint, clock: ec_client,
-        port_forwarding_reader_factory=lambda url: reader,
-        mule_restarter_factory=lambda: _RecordingRestarter(),
-    )
-    holder["app"] = app
-    await asyncio.wait_for(app.run(), timeout=5.0)
-    assert reader.calls >= 1  # the body of the port-sync loop did run ≥ 1 cycle
-
-
-@pytest.mark.asyncio
-async def test_port_sync_loop_off_when_no_config(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # No port_sync section → loop OFF (Low-ID tolerated). The factories must NEVER be
-    # called: we prove it with factories that would raise if they were.
-    holder: dict[str, CrawlerApp] = {}
-
-    def boom_reader(url: str) -> object:
-        raise AssertionError("the reader factory must not be called (port-sync OFF)")
-
-    def boom_restarter() -> object:
-        raise AssertionError("the restarter factory must not be called (port-sync OFF)")
-
-    def factory(endpoint: AmuleEndpoint, clock: Clock) -> _ShutdownOnStatusClient:
-        return _ShutdownOnStatusClient(holder)
-
-    app = CrawlerApp(
-        crawler_config=_crawler_config(tmp_path),  # no port_sync
-        targets=_TARGETS,
-        matcher_config=matcher_config,
-        clock=FakeClock(),
-        rng=_NoopRng(),
-        signal_hub=RecordingSignal(),
-        policy_fingerprint=_FP,
-        client_factory=factory,
-        port_forwarding_reader_factory=boom_reader,  # type: ignore[arg-type]
-        mule_restarter_factory=boom_restarter,  # type: ignore[arg-type]
-    )
-    holder["app"] = app
-    await asyncio.wait_for(app.run(), timeout=5.0)  # does not raise (factories never called)
-
-
-@pytest.mark.asyncio
-async def test_port_sync_tolerates_ec_daemon_unreachable_at_startup(
-    tmp_path: Path, matcher_config: MatcherConfig
-) -> None:
-    # The dedicated port-sync EC connection unreachable at startup is TOLERATED (R6): we do NOT
-    # fail, the loop is armed anyway (the loop's backoff governs).
-    holder: dict[str, CrawlerApp] = {}
-    reader = _ShutdownOnPollReader(holder)
-
-    class _UnreachableEcClient(_PortSyncCapableClient):
-        async def connect(self) -> None:
-            raise ClientUnreachableError("port-sync daemon down")
-
-    app = CrawlerApp(
-        crawler_config=_port_sync_crawler_config(tmp_path),
-        targets=_TARGETS,
-        matcher_config=matcher_config,
-        clock=FakeClock(),
-        rng=_NoopRng(),
-        signal_hub=RecordingSignal(),
-        policy_fingerprint=_FP,
-        client_factory=lambda endpoint, clock: _UnreachableEcClient(),
-        port_forwarding_reader_factory=lambda url: reader,
-        mule_restarter_factory=lambda: _RecordingRestarter(),
-    )
-    holder["app"] = app
-    await asyncio.wait_for(app.run(), timeout=5.0)  # does not raise: connect tolerated
-    assert reader.calls >= 1
-
-
-def test_default_port_forwarding_reader_factory_builds_a_gluetun_reader() -> None:
-    from p2pwatch.adapters.gluetun_port import GluetunPortReader
-    from p2pwatch.composition.app import default_port_forwarding_reader_factory
-
-    reader = default_port_forwarding_reader_factory("http://gluetun:8000")
-    assert isinstance(reader, GluetunPortReader)
-
-
-def test_default_mule_restarter_factory_builds_an_s6_restarter() -> None:
-    # amuled is a local s6 service now: the restart takes no URL and no Docker API.
-    from p2pwatch.adapters.s6_restart import S6MuleRestarter
-    from p2pwatch.composition.app import default_mule_restarter_factory
-
-    assert isinstance(default_mule_restarter_factory(), S6MuleRestarter)
 
 
 # ---------------------------------------------------------------------------

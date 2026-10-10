@@ -1,13 +1,13 @@
 """UNIFIED crawler config (``crawler.yml``, versioned — deploy-simplification design).
 
 Merges the former POLICY config (cadences, polling budgets, jitter, backoff, shutdown
-deadline) and the former LOCAL config (secrets + DB paths + download/port-sync wiring). Parsed
+deadline) and the former LOCAL config (secrets + DB paths + download wiring). Parsed
 from the dict ``load_yaml`` returns into FROZEN dataclasses, with FAIL-FAST validation: a bound
 that does not hold or a missing field is a ``ConfigError`` and the crawler refuses to start.
 
 Deployment-sensitive values (secrets, URLs) are interpolated from the environment via
 ``${NAME}`` (substring, LAZY: a disabled section requires no variable, D1). The
-``download`` and ``port_sync`` sections are present ⟺ enabled (``enabled: true``, D5):
+``download`` section is present ⟺ enabled (``enabled: true``, D5):
 ``enabled`` absent/``false`` ⇒ section ``None`` (we don't descend into the rest); ``enabled:
 true`` ⇒ all wiring fields required.
 """
@@ -73,21 +73,6 @@ class DownloadConfig:
 
 
 @dataclass(frozen=True)
-class PortSyncConfig:
-    """High-ID port-sync policy + wiring (port-sync design §8.1). Present ⟺ ``enabled``.
-
-    ``poll_interval_seconds``: cadence of the gluetun poll + port comparison.
-    ``restart_min_interval_seconds``: rate-limit window for restarts.
-    ``gluetun_control_url`` = gluetun control-server (forwarded port). The restart itself needs
-    no URL any more: amuled is a local s6 service (``S6MuleRestarter``, design §9).
-    """
-
-    poll_interval_seconds: float
-    restart_min_interval_seconds: float
-    gluetun_control_url: str
-
-
-@dataclass(frozen=True)
 class WebuiConfig:
     """In-process read-only webui HTTP surface (monolith-consolidation spec §8).
 
@@ -114,6 +99,7 @@ _REMOVED_KEYS = (
     "cycle_interval_seconds",
     "keyword_pause_max_seconds",
     "keyword_pause_min_seconds",
+    "port_sync",
     "search_poll_budget_seconds",
     "search_poll_interval_seconds",
 )
@@ -148,7 +134,7 @@ class CrawlerConfig:
     Wiring (ex-local): ``amule_api_password`` (the daemon's amuleapi admin password, the same
     one the aMule web UI takes; host/port are code
     constants), DB paths, ``node_id`` (``None`` = the one from ``local.db``), ``observability``,
-    ``download`` (``None`` ⟺ observer mode), ``port_sync`` (``None`` ⟺ port-sync off).
+    ``download`` (``None`` ⟺ observer mode).
 
     ``search_keywords``: keywords queried by the search loop (``search`` section
     optional; default ``("keroro", "titar")`` if absent).
@@ -164,14 +150,13 @@ class CrawlerConfig:
     search_keywords: tuple[str, ...] = ("keroro", "titar")
     observability: ObservabilityConfig | None = None
     download: DownloadConfig | None = None
-    port_sync: PortSyncConfig | None = None
     webui: WebuiConfig = _DEFAULT_WEBUI
 
     @property
     def amule_endpoint(self) -> AmuleEndpoint:
         """The single daemon's amuleapi endpoint: code constants + the configured password.
 
-        ONE derivation point for all three sessions (search, download, port-sync).
+        ONE derivation point for both sessions (search, download).
         """
         return AmuleEndpoint(
             name=AMULE_INSTANCE_NAME,
@@ -358,21 +343,6 @@ def _parse_search_keywords(raw: dict[str, Any]) -> tuple[str, ...]:
     return tuple(result)
 
 
-def _parse_port_sync(raw: dict[str, Any], env: Mapping[str, str]) -> PortSyncConfig | None:
-    if "port_sync" not in raw:
-        return None
-    section = _require_mapping(raw["port_sync"], "section 'port_sync'")
-    if not _bool_default(section, "enabled", False, "port_sync"):
-        return None  # laziness: we read/interpolate NOTHING else
-    return PortSyncConfig(
-        poll_interval_seconds=_positive(section, "poll_interval_seconds", "port_sync"),
-        restart_min_interval_seconds=_positive(
-            section, "restart_min_interval_seconds", "port_sync"
-        ),
-        gluetun_control_url=_require_str(section, "gluetun_control_url", "port_sync", env),
-    )
-
-
 def _parse_webui(raw: dict[str, Any], env: Mapping[str, str]) -> WebuiConfig:
     """`webui` section (optional). Absent ⇒ enabled, default aMule link.
 
@@ -427,6 +397,5 @@ def parse_crawler_config(raw: dict[str, Any], env: Mapping[str, str]) -> Crawler
         search_keywords=_parse_search_keywords(raw),
         observability=observability,
         download=_parse_download(raw),
-        port_sync=_parse_port_sync(raw, env),
         webui=_parse_webui(raw, env),
     )

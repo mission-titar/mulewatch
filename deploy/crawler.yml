@@ -50,12 +50,3 @@ download:
   lost_after_seconds: 86400
   # Measured with statvfs, never read. amuled writes incoming/ and temp/ under it.
   output_dir: /downloads
-
-# Port-sync only works under the gluetun stack: p2pwatch shares gluetun's network namespace,
-# so its control server is on localhost. Flip enabled to true there, with VPN_PORT_FORWARDING=on.
-# The restart is now `s6-svc -r` on amuled inside the container, so there is no URL for it.
-port_sync:
-  enabled: false
-  poll_interval_seconds: 60.0
-  restart_min_interval_seconds: 300.0
-  gluetun_control_url: http://localhost:8000

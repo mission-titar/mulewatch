@@ -8,8 +8,8 @@ COMPOSITION layer (the only one allowed to import adapters AND application). Bui
 - ONE ``MuleClient`` + ``SearchWorker`` on the container's single amuled (design §6), whose
   session the status loop shares.
 
-Loops: the search tasks (``SearchTasks``), the status loop, and the download and port-sync
-loops when configured.
+Loops: the search tasks (``SearchTasks``), the status loop, and the download loop when
+configured.
 OBSERVABLE & BOUNDED shutdown (spec §6): ``loop.add_signal_handler`` (NOT ``KeyboardInterrupt``,
 which would preempt a sync function mid-write); 1st ^C → human line on stderr +
 cancellation of the ``TaskGroup``; 2nd ^C → immediate ``SystemExit``; long-lived resources
@@ -29,7 +29,6 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Protocol
 
-import httpx
 import uvicorn
 from prometheus_client import CollectorRegistry, start_http_server
 from starlette.applications import Starlette
@@ -45,7 +44,6 @@ from p2pwatch.adapters.config.crawler_config import (
 )
 from p2pwatch.adapters.crawler_control_loop import LoopCrawlerControl
 from p2pwatch.adapters.disk_space_shutil import ShutilDiskSpace
-from p2pwatch.adapters.gluetun_port import GluetunPortReader
 from p2pwatch.adapters.mule_api.client import AmuleApiClient
 from p2pwatch.adapters.observability.apprise_notifier import AppriseNotifier
 from p2pwatch.adapters.observability.dispatcher import ObservabilityDispatcher
@@ -59,9 +57,6 @@ from p2pwatch.adapters.persistence_sqlite.local_state_repository import (
 from p2pwatch.adapters.persistence_sqlite.scheduler_state_repository import (
     SqliteSchedulerStateRepository,
 )
-from p2pwatch.adapters.s6_restart import S6MuleRestarter
-from p2pwatch.application.edge_state import EdgeState
-from p2pwatch.application.port_sync_loop import PortSyncLoopDeps, port_sync_loop
 from p2pwatch.application.reevaluate_catalog import reevaluate_catalog
 from p2pwatch.application.run_backfill import run_backfill_if_policy_changed
 from p2pwatch.application.run_download_cycle import (
@@ -83,8 +78,6 @@ from p2pwatch.ports.crawler_control import CrawlerControl
 from p2pwatch.ports.decision_signal import DecisionSignal
 from p2pwatch.ports.download_client import DownloadClient
 from p2pwatch.ports.mule_client import MuleClient
-from p2pwatch.ports.mule_restarter import MuleRestarter
-from p2pwatch.ports.port_forwarding import PortForwardingReader
 from p2pwatch.ports.scheduler_state_repository import SchedulerStateRepository
 from p2pwatch.ports.telemetry import Telemetry
 from p2pwatch.webui.composition.app import build_app as build_webui_app
@@ -99,24 +92,6 @@ DownloadClientFactory = Callable[[AmuleEndpoint, Clock], DownloadClient]
 def default_download_client_factory(endpoint: AmuleEndpoint, clock: Clock) -> DownloadClient:
     """An ``AmuleApiClient`` dedicated to download: its own session."""
     return AmuleApiClient(endpoint.host, endpoint.port, endpoint.password, clock=clock)
-
-
-# Port-sync factories (injectable in test, like the client factories above). The reader takes the
-# URL of the gluetun control-server; the restarter takes nothing — amuled is a local s6 service
-# at a fixed service directory (single-container design §9).
-PortForwardingReaderFactory = Callable[[str], PortForwardingReader]
-MuleRestarterFactory = Callable[[], MuleRestarter]
-
-
-def default_port_forwarding_reader_factory(gluetun_control_url: str) -> PortForwardingReader:
-    """An httpx ``GluetunPortReader`` on the gluetun control-server URL (short timeout)."""
-    client = httpx.AsyncClient(base_url=gluetun_control_url, timeout=httpx.Timeout(10.0))
-    return GluetunPortReader(client)
-
-
-def default_mule_restarter_factory() -> MuleRestarter:
-    """An ``S6MuleRestarter``: amuled is a local s6 service, so the restart takes no URL."""
-    return S6MuleRestarter()
 
 
 MetricsServer = Callable[[int, CollectorRegistry], None]
@@ -200,10 +175,6 @@ class CrawlerApp:
         policy_fingerprint: str,
         client_factory: ClientFactory = default_client_factory,
         download_client_factory: DownloadClientFactory = default_download_client_factory,
-        port_forwarding_reader_factory: PortForwardingReaderFactory = (
-            default_port_forwarding_reader_factory
-        ),
-        mule_restarter_factory: MuleRestarterFactory = default_mule_restarter_factory,
         metrics_server: MetricsServer = default_metrics_server,
         webui_server_factory: WebuiServerFactory = default_webui_server_factory,
     ) -> None:
@@ -216,8 +187,6 @@ class CrawlerApp:
         self._policy_fingerprint = policy_fingerprint
         self._client_factory = client_factory
         self._download_client_factory = download_client_factory
-        self._port_forwarding_reader_factory = port_forwarding_reader_factory
-        self._mule_restarter_factory = mule_restarter_factory
         self._metrics_server = metrics_server
         self._webui_server_factory = webui_server_factory
         self._shutdown = asyncio.Event()
@@ -239,60 +208,6 @@ class CrawlerApp:
         else:
             _human("Forced shutdown.")
             raise SystemExit(1)
-
-    def _port_sync_enabled(self) -> bool:
-        """Port-sync activates IFF the ``port_sync`` section is present (``enabled: true``).
-
-        The unified parser guarantees the section's completeness when present (URLs +
-        cadences) - no more "3 tied settings" rule at composition (deploy-simplification design).
-        """
-        return self._crawler_config.port_sync is not None
-
-    async def _build_port_sync_loop(
-        self,
-        *,
-        stack: AsyncExitStack,
-        telemetry: Telemetry,
-        edge: EdgeState,
-    ) -> PortSyncLoopDeps:
-        """Assemble the port-sync loop deps (design §9). Assumes the config is present.
-
-        gluetun reader (factory, ``aclose`` pushed onto the stack) + restarter (factory; the s6
-        restarter holds no resource, so there is nothing to close). DEDICATED port-sync
-        session (R6: no contention with download/search) to the amuled endpoint, connected
-        TOLERATING ``ClientUnreachableError`` at boot. That tolerance matters MORE in one container,
-        not less: the processes start at once, so the crawler routinely reaches amuleapi before
-        amuled has started it (design §4). The loop's backoff governs the retries.
-        """
-        port_sync_config = self._crawler_config.port_sync
-        assert port_sync_config is not None  # guaranteed by _port_sync_enabled (mypy: narrow)
-
-        reader = self._port_forwarding_reader_factory(port_sync_config.gluetun_control_url)
-        stack.push_async_callback(reader.aclose)  # type: ignore[attr-defined]
-        restarter = self._mule_restarter_factory()
-
-        # DEDICATED port-sync session to the container's one amuleapi (127.0.0.1:4711).
-        # Tolerates ClientUnreachableError at boot, like the download session.
-        ports_client = self._client_factory(self._crawler_config.amule_endpoint, self._clock)
-        stack.push_async_callback(ports_client.close)
-        try:
-            await ports_client.connect()
-        except ClientUnreachableError as error:
-            _logger.warning(
-                "port-sync daemon unreachable at startup (%s): tolerated, retry by the loop",
-                error,
-            )
-        return PortSyncLoopDeps(
-            reader=reader,
-            ports=ports_client,  # type: ignore[arg-type]  # AmuleApiClient satisfies PortPreferences
-            restarter=restarter,
-            clock=self._clock,
-            telemetry=telemetry,
-            edge=edge,
-            poll_interval_seconds=port_sync_config.poll_interval_seconds,
-            restart_min_interval_seconds=port_sync_config.restart_min_interval_seconds,
-            shutdown=self._shutdown,
-        )
 
     async def _build_download_loop(
         self,
@@ -345,7 +260,6 @@ class CrawlerApp:
         backoff: BackoffRegistry,
         status_deps: StatusLoopDeps,
         download_deps: DownloadLoopDeps | None,
-        port_sync_deps: PortSyncLoopDeps | None,
     ) -> None:
         """Launch the loops, wait for shutdown (UNBOUNDED), ARM the bound, cancel ALL and unwind.
 
@@ -358,7 +272,7 @@ class CrawlerApp:
         Cancellation lands at the next network ``await`` (never mid DB write, sync repos,
         spec §6).
         PROMPT SHUTDOWN OF ALL LOOPS: each sibling task must be cancelled EXPLICITLY -
-        cancelling the search tasks does NOT cancel the download/port-sync loops, which are
+        cancelling the search tasks does NOT cancel the status/download loops, which are
         their siblings in the ``TaskGroup``. Without this, shutdown would wait on each loop's
         in-cycle sleep (``_sleep_or_nudge`` of the download watches ONLY poll/nudge, not
         ``self._shutdown``), and the ``shutdown_deadline`` armed
@@ -386,8 +300,6 @@ class CrawlerApp:
             ]
             if download_deps is not None:
                 tasks.append(group.create_task(download_loop(download_deps)))
-            if port_sync_deps is not None:
-                tasks.append(group.create_task(port_sync_loop(port_sync_deps)))
             await self._shutdown.wait()  # UNBOUNDED (the bound is disarmed while running)
             shutdown_timeout.reschedule(
                 asyncio.get_running_loop().time() + self._crawler_config.shutdown_deadline_seconds
@@ -494,7 +406,6 @@ class CrawlerApp:
                     obs.notification_timeout_seconds if obs is not None else 5.0
                 ),
             )
-            edge = EdgeState()
             if obs is not None and obs.metrics is not None and obs.metrics.enabled:
                 self._metrics_server(obs.metrics.port, registry)
             catalog_repo = SqliteCatalogRepository(catalog_conn, node_id)
@@ -562,15 +473,6 @@ class CrawlerApp:
                 )
                 _logger.info("full mode: download loop armed")
 
-            # Port-sync (High-ID): INDEPENDENT of observer/full mode (own trigger = ``port_sync``
-            # section present with ``enabled: true``; completeness guaranteed by the parser).
-            port_sync_deps: PortSyncLoopDeps | None = None
-            if self._port_sync_enabled():
-                port_sync_deps = await self._build_port_sync_loop(
-                    stack=stack, telemetry=telemetry, edge=edge
-                )
-                _logger.info("port-sync (High-ID) armed")
-
             mode = "full" if download_config is not None else "observer"
             await telemetry.emit(CrawlerStarted(mode=mode))
 
@@ -608,7 +510,6 @@ class CrawlerApp:
                     backoff=backoff,
                     status_deps=status_deps,
                     download_deps=download_deps,
-                    port_sync_deps=port_sync_deps,
                 )
                 _human(f"{len(workers)} amuled session(s) closing…")
                 await stack.aclose()
