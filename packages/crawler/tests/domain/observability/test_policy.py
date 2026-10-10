@@ -36,7 +36,7 @@ CASES: list[tuple[ev.Event, Report]] = [
         Report(
             Severity.WARNING,
             "slskd unreachable",
-            (MetricInstruction(MetricName.CLIENT_UNREACHABLE, "inc"),),
+            (MetricInstruction(MetricName.CLIENT_UNREACHABLE, "inc", (("client", "slskd"),)),),
         ),
     ),
     (

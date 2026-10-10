@@ -217,7 +217,11 @@ def describe(event: Event) -> Report:
             return Report(
                 Severity.WARNING,
                 f"{event.client} unreachable",
-                (MetricInstruction(MetricName.CLIENT_UNREACHABLE, "inc"),),
+                (
+                    MetricInstruction(
+                        MetricName.CLIENT_UNREACHABLE, "inc", (("client", event.client),)
+                    ),
+                ),
             )
         case SearchFailed():
             return Report(
