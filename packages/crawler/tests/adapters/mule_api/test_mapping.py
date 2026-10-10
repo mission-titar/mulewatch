@@ -2,16 +2,21 @@
 
 from typing import Any
 
+import pytest
+
 from mulewatch.adapters.mule_api.mapping import (
     map_client_status,
     map_download_entry,
+    map_download_status,
     map_network_status,
     map_search_results,
+    map_shared_download,
     map_shared_entry,
 )
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
+from mulewatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
 from mulewatch.ports.port_sync import KadStatus
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
@@ -260,6 +265,90 @@ def test_maps_a_shared_row_to_its_hash_only() -> None:
 def test_a_shared_row_without_a_usable_hash_is_dropped() -> None:
     assert map_shared_entry({"name": "Keroro.095.avi"}) is None
     assert map_shared_entry("nonsense") is None
+
+
+def _queued(status: str, **overrides: Any) -> dict[str, Any]:
+    """A row shaped like GET /downloads returns one."""
+    row: dict[str, Any] = {
+        "hash": _HASH,
+        "size_bytes": 1000,
+        "completed_bytes": 400,
+        "status": status,
+        "sources": {"total": 5, "unavailable": 0, "transferring": 2, "a4af": 0},
+    }
+    row.update(overrides)
+    return row
+
+
+def _download(row: object) -> DownloadStatus:
+    status = map_download_status(row)
+    assert status is not None
+    return status
+
+
+def test_maps_a_download_row_to_its_status() -> None:
+    assert _download(_queued("downloading")) == DownloadStatus(
+        file=_KEY,
+        bytes_done=400,
+        bytes_total=1000,
+        completed=False,
+        waiting_reason=None,
+        failure_reason=None,
+    )
+
+
+def test_only_the_completed_status_completes_a_download() -> None:
+    # Every byte received is not the file verified and moved (spec stage 2, D10).
+    statuses = ("completed", "completing", "downloading")
+    completed = [_download(_queued(status, completed_bytes=1000)).completed for status in statuses]
+
+    assert completed == [True, False, False]
+
+
+def test_an_erroneous_download_failed_with_an_error() -> None:
+    assert _download(_queued("erroneous")).failure_reason is FailureReason.ERROR
+
+
+@pytest.mark.parametrize(
+    ("status", "sources", "reason"),
+    [
+        ("insufficient_disk", {"total": 0}, WaitingReason.DISK_FULL),
+        ("paused", {"total": 0}, WaitingReason.PAUSED),
+        ("stopped", {"total": 0}, WaitingReason.PAUSED),
+        ("waiting", {"total": 0}, WaitingReason.LOCAL),
+        ("hashing", {"total": 0}, WaitingReason.LOCAL),
+        ("allocating", {"total": 0}, WaitingReason.LOCAL),
+        ("completing", {"total": 0}, WaitingReason.LOCAL),
+        ("downloading", {"total": 0}, WaitingReason.NO_SOURCE),
+        ("downloading", {}, WaitingReason.NO_SOURCE),
+        ("downloading", {"total": 3, "transferring": 0}, WaitingReason.REMOTE_QUEUE),
+        ("downloading", {"total": 3, "transferring": 1}, None),
+        ("completed", {"total": 0}, None),
+        ("erroneous", {"total": 0}, None),
+    ],
+)
+def test_a_download_waits_for_the_first_reason_that_applies(
+    status: str, sources: dict[str, int], reason: WaitingReason | None
+) -> None:
+    assert _download(_queued(status, sources=sources)).waiting_reason is reason
+
+
+def test_a_download_status_row_without_a_usable_hash_is_dropped() -> None:
+    assert map_download_status({"size_bytes": 1000, "status": "completed"}) is None
+    assert map_download_status("nonsense") is None
+
+
+def test_a_shared_row_reads_as_a_completed_download() -> None:
+    assert map_shared_download({"hash": _HASH, "size_bytes": 10}) == DownloadStatus(
+        file=_KEY,
+        bytes_done=10,
+        bytes_total=10,
+        completed=True,
+        waiting_reason=None,
+        failure_reason=None,
+    )
+    assert map_shared_download({"name": "Keroro.095.avi"}) is None
+    assert map_shared_download("nonsense") is None
 
 
 def test_maps_a_connected_high_id_status() -> None:
