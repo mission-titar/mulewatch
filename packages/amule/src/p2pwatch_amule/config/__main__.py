@@ -9,6 +9,7 @@ import os
 import pwd
 import subprocess
 import sys
+import unicodedata
 from collections.abc import Callable
 
 from p2pwatch_amule.config.conf import INCOMING_DIR, TEMP_DIR, reconcile_conf
@@ -22,6 +23,14 @@ def _required(name: str) -> str:
     value = os.environ.get(name)
     if not value:
         sys.exit(f"{name} is required")
+    return value
+
+
+def _password(name: str) -> str:
+    value = _required(name)
+    # Cc: the C0 and C1 controls and DEL, which no typed password holds.
+    if any(unicodedata.category(char) == "Cc" for char in value):
+        sys.exit(f"{name} must not contain a control character")
     return value
 
 
@@ -44,8 +53,8 @@ def _missing(lookup: Callable[[str], object]) -> bool:
 def main() -> None:
     puid = _required_id("PUID")
     pgid = _required_id("PGID")
-    ec_password = _required("AMULE_EC_PASSWORD")
-    api_password = _required("AMULE_API_PASSWORD")
+    ec_password = _password("AMULE_EC_PASSWORD")
+    api_password = _password("AMULE_API_PASSWORD")
     if settings.enabled(os.environ):
         settings.load(os.environ)
 

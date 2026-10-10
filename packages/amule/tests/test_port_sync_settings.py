@@ -63,8 +63,20 @@ def test_a_number_that_is_not_a_positive_integer_exits_naming_it(name: str, valu
         load({name: value})
 
 
-@pytest.mark.parametrize("value", ["localhost:8000", "ftp://gluetun:8000", "http://", "http:///v1"])
-def test_a_url_without_an_http_scheme_and_a_host_exits_naming_it(value: str) -> None:
+@pytest.mark.parametrize(
+    "value",
+    [
+        "localhost:8000",
+        "ftp://gluetun:8000",
+        "http://",
+        "http:///v1",
+        "http://[::1",
+        "http://gluetun:99999",
+        "http://gluetun:abc",
+        "http://gluetun:0",
+    ],
+)
+def test_a_malformed_url_exits_naming_it(value: str) -> None:
     message = f"GLUETUN_CONTROL_URL must be an http or https URL with a host, got {value!r}"
     with pytest.raises(SystemExit, match=f"^{re.escape(message)}$"):
         load({"GLUETUN_CONTROL_URL": value})

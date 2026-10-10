@@ -55,7 +55,7 @@ renseignez les quatre valeurs obligatoires. Le conteneur refuse de démarrer si 
 
 | Variable | Ce qu'il faut y mettre |
 |---|---|
-| `AMULE_EC_PASSWORD` | Un mot de passe d'au moins **12 caractères**, de votre choix. Il relie entre eux les deux processus aMule ; notez-le quelque part. |
+| `AMULE_EC_PASSWORD` | Un mot de passe de votre choix. Il relie entre eux les deux processus aMule ; notez-le quelque part. |
 | `AMULE_API_PASSWORD` | Un autre mot de passe de votre choix. Il protège l'interface web d'aMule sur le port 4711, et c'est aussi par lui que le crawler pilote le client eMule. |
 | `PUID` | Votre identifiant d'utilisateur : `id -u` sous macOS et Linux, `1000` sous Windows. |
 | `PGID` | Votre identifiant de groupe : `id -g` sous macOS et Linux, `1000` sous Windows. |

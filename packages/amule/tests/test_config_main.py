@@ -180,3 +180,25 @@ def test_port_sync_off_leaves_its_other_variables_unread(
     monkeypatch.setenv("PORT_SYNC_POLL_SECONDS", "0")
     entry.main()
     assert boot.calls[-1] == boot.set_admin_pass()
+
+
+@pytest.mark.parametrize("name", ["AMULE_EC_PASSWORD", "AMULE_API_PASSWORD"])
+@pytest.mark.parametrize(
+    "value", ["hunter2\n", "hun\tter2", "\rhunter2", "hunter2\x7f", "hunter2\x85"]
+)
+def test_a_password_with_a_control_character_aborts_the_boot_before_any_change(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    monkeypatch.setenv(name, value)
+    with pytest.raises(SystemExit, match=f"^{name} must not contain a control character$"):
+        entry.main()
+    assert boot.calls == []
+    assert not boot.home.exists()
+
+
+def test_a_password_may_hold_spaces_and_non_ascii_letters(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AMULE_API_PASSWORD", "mot de passé")
+    entry.main()
+    assert "--set-admin-pass=mot de passé" in boot.calls[-1][0]

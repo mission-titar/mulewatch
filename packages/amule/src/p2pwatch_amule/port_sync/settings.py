@@ -34,8 +34,13 @@ def load(env: Mapping[str, str]) -> Settings:
     """Return the settings from `env`, an unset or empty variable taking its default."""
     default = Settings()
     url = env.get("GLUETUN_CONTROL_URL") or default.gluetun_control_url
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https") or not parts.hostname:
+    try:
+        parts = urlsplit(url)
+        # .port raises on a non-numeric or out-of-range port, which urlsplit leaves unchecked.
+        valid = parts.scheme in ("http", "https") and bool(parts.hostname) and parts.port != 0
+    except ValueError:
+        valid = False
+    if not valid:
         sys.exit(f"GLUETUN_CONTROL_URL must be an http or https URL with a host, got {url!r}")
     return Settings(
         gluetun_control_url=url,
