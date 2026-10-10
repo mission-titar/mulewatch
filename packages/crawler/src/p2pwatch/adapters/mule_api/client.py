@@ -194,22 +194,6 @@ class AmuleApiClient:
             raise ApiUnreachableError("GET /status: amuleapi does not reach amuled")
         return map_client_status(status, await self._call("GET", "/version"))
 
-    async def get_listen_port(self) -> int:
-        """amuled's current eD2k TCP listen port (port-sync High-ID, design §2.3/§4.2)."""
-        payload = await self._call("GET", "/preferences")
-        connection = payload.get("connection")
-        port = connection.get("tcp_port") if isinstance(connection, dict) else None
-        if not isinstance(port, int) or isinstance(port, bool):
-            raise ApiUnreachableError("GET /preferences without connection.tcp_port")
-        return port
-
-    async def set_listen_port(self, port: int) -> None:
-        """Writes the TCP and UDP port preferences together, as EC did. A preference is not a
-        rebind: amuled listens on the new port only after a restart."""
-        await self._call(
-            "PATCH", "/preferences", body={"connection": {"tcp_port": port, "udp_port": port}}
-        )
-
     async def start(self, request: DownloadRequest) -> None:
         """Queues the file by its ed2k link. The route is a bulk one, so a refused link comes back
         per item INSIDE a 2xx: the envelope reports the failure, never the status code."""

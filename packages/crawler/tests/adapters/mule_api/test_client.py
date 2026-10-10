@@ -1,4 +1,4 @@
-"""``AmuleApiClient``: auth, search, status, preferences (spec amuleapi §4)."""
+"""``AmuleApiClient``: auth, search, status, downloads (spec amuleapi §4)."""
 
 import asyncio
 import json
@@ -430,7 +430,7 @@ async def test_a_search_reply_without_an_id_fails_its_channel() -> None:
         await client.search("keroro", "ed2k", 120)
 
 
-# --- status and preferences ----------------------------------------------------------------
+# --- status ----------------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
@@ -470,34 +470,6 @@ async def test_status_without_amuled_behind_amuleapi_is_unreachable(
     with pytest.raises(ClientUnreachableError):
         await client.status()
     await client.close()
-
-
-@pytest.mark.asyncio
-async def test_get_listen_port_reads_the_connection_preferences() -> None:
-    client = await _connected(FakeAmuleApi())
-
-    assert await client.get_listen_port() == 4662
-    await client.close()
-
-
-@pytest.mark.asyncio
-async def test_preferences_without_a_tcp_port_are_unusable() -> None:
-    api = FakeAmuleApi(preferences={"connection": {}})
-    client = await _connected(api)
-
-    with pytest.raises(ApiUnreachableError):
-        await client.get_listen_port()
-
-
-@pytest.mark.asyncio
-async def test_set_listen_port_moves_tcp_and_udp_together() -> None:
-    api = FakeAmuleApi()
-    client = await _connected(api)
-
-    await client.set_listen_port(51820)
-    await client.close()
-
-    assert api.patched == [{"connection": {"tcp_port": 51820, "udp_port": 51820}}]
 
 
 # --- downloads -------------------------------------------------------------------------------

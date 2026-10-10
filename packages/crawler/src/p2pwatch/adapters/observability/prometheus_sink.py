@@ -18,9 +18,6 @@ _COUNTERS: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
     (MetricName.DECISIONS, "Match decisions recorded", ("tier",)),
     (MetricName.DOWNLOADS_QUEUED, "Downloads queued", ()),
     (MetricName.DOWNLOADS_COMPLETED, "Downloads completed", ()),
-    (MetricName.PORT_SYNC_TRIGGERED, "Port syncs triggered", ()),
-    (MetricName.HIGH_ID_RECOVERED, "High-IDs recovered", ()),
-    (MetricName.PORT_MISMATCH, "High-ID not restored (occurrences)", ()),
 )
 _GAUGES: tuple[tuple[MetricName, str, tuple[str, ...]], ...] = (
     (MetricName.CRAWLER_UP, "Crawler running (1)", ()),

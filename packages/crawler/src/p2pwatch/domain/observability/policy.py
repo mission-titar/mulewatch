@@ -33,11 +33,8 @@ from p2pwatch.domain.observability.events import (
     DownloadQueued,
     Event,
     FreeSpaceSampled,
-    HighIdRecovered,
     InstanceUnreachable,
     ObservationRecorded,
-    PortMismatchUnresolved,
-    PortSyncTriggered,
     SearchExecuted,
     SearchFailed,
 )
@@ -72,9 +69,6 @@ class MetricName(StrEnum):
     DOWNLOADS_COMPLETED = "p2pwatch_downloads_completed"
     DISK_FREE_BYTES = "p2pwatch_download_disk_free_bytes"
     CRAWLER_UP = "p2pwatch_crawler_up"
-    PORT_SYNC_TRIGGERED = "emule_port_sync_triggered"
-    HIGH_ID_RECOVERED = "emule_high_id_recovered"
-    PORT_MISMATCH = "emule_port_mismatch"
     CHANNEL_ON_NETWORK = "p2pwatch_channel_on_network"
     CHANNEL_CONNECTABLE = "p2pwatch_channel_connectable"
 
@@ -308,32 +302,6 @@ def describe(event: Event) -> Report:
                 f"🟢 instance online (mode {event.mode})",
                 (MetricInstruction(MetricName.CRAWLER_UP, "set", (), 1.0),),
                 frozenset({Audience.OPERATIONS}),
-            )
-        case PortSyncTriggered():
-            return Report(
-                Severity.INFO,
-                f"port-sync: {event.old} → {event.new} (restart amuled)",
-                (MetricInstruction(MetricName.PORT_SYNC_TRIGGERED, "inc"),),
-            )
-        case HighIdRecovered():
-            return Report(
-                Severity.INFO,
-                f"High-ID recovered on port {event.port}",
-                (MetricInstruction(MetricName.HIGH_ID_RECOVERED, "inc"),),
-                frozenset({Audience.OPERATIONS}),
-            )
-        case PortMismatchUnresolved():
-            # Fallback alert (DECISION 5): OPERATIONS, edge-triggered (notif on the 1st occurrence
-            # only); the metric increments on EVERY occurrence (Prometheus wants the raw state).
-            # Wording valid whether or not the port was applied: if `configured` == `live`, the
-            # SetPort+restart took but the High-ID has not (yet) come back; otherwise the port
-            # could not be applied (restart impossible). No misleading "X ≠ X".
-            return Report(
-                Severity.WARNING,
-                f"High-ID not restored "
-                f"(forwarded port {event.live}, amuled port {event.configured})",
-                (MetricInstruction(MetricName.PORT_MISMATCH, "inc"),),
-                frozenset({Audience.OPERATIONS}) if event.first_occurrence else frozenset(),
             )
         case _:  # pragma: no cover
             assert_never(event)

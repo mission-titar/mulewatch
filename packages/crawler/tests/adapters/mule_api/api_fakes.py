@@ -43,7 +43,6 @@ class FakeAmuleApi:
         shared: list[dict[str, Any]] | None = None,
         status: dict[str, Any] | None = None,
         version: dict[str, Any] | None = None,
-        preferences: dict[str, Any] | None = None,
         progress: dict[str, Any] | None = None,
         search_seconds: dict[str, float] | None = None,
         clock: Clock | None = None,
@@ -56,9 +55,6 @@ class FakeAmuleApi:
             status if status is not None else {"ec_connected": True, "ed2k": {}, "kad": {}}
         )
         self.version = version if version is not None else {"daemon_version": "3.0.1"}
-        self.preferences = (
-            preferences if preferences is not None else {"connection": {"tcp_port": 4662}}
-        )
         self.progress = progress if progress is not None else {"state": "finished", "percent": 100}
         # Per query: a search reports `running` that long after its start, then `finished`.
         self.search_seconds = search_seconds if search_seconds is not None else {}
@@ -71,7 +67,6 @@ class FakeAmuleApi:
         self.logins = 0
         self.logouts = 0
         self.added_links: list[str] = []
-        self.patched: list[dict[str, Any]] = []
         # Per-route overrides: a callable wins over the default behaviour, once per call.
         self.overrides: dict[tuple[str, str], Callable[[httpx.Request], httpx.Response]] = {}
 
@@ -141,13 +136,6 @@ class FakeAmuleApi:
     def _get_version(self, request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=self.version)
 
-    def _get_preferences(self, request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=self.preferences)
-
-    def _patch_preferences(self, request: httpx.Request) -> httpx.Response:
-        self.patched.append(json.loads(request.content))
-        return httpx.Response(200, json=self.preferences)
-
     def _add_links(self, request: httpx.Request) -> httpx.Response:
         links = json.loads(request.content)["links"]
         self.added_links.extend(links)
@@ -187,8 +175,6 @@ _ROUTES: dict[tuple[str, str], Callable[[FakeAmuleApi, httpx.Request], httpx.Res
     ("POST", "/api/v1/search/{id}/more"): FakeAmuleApi._more_search,
     ("GET", "/api/v1/status"): FakeAmuleApi._get_status,
     ("GET", "/api/v1/version"): FakeAmuleApi._get_version,
-    ("GET", "/api/v1/preferences"): FakeAmuleApi._get_preferences,
-    ("PATCH", "/api/v1/preferences"): FakeAmuleApi._patch_preferences,
     ("POST", "/api/v1/downloads"): FakeAmuleApi._add_links,
     ("GET", "/api/v1/downloads"): FakeAmuleApi._get_downloads,
     ("GET", "/api/v1/shared"): FakeAmuleApi._get_shared,
