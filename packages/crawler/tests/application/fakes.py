@@ -3,7 +3,7 @@
 ``FakeMuleClient``: results SCRIPTED per ``search`` call, injectable failures
 (``ClientUnreachableError``/``SearchFailedError``) at ``connect``/``search``.
 ``FakeClock``: advanceable clock (``advance`` without I/O) + ``sleep`` that advances WITHOUT
-a real wait (determinism). ``FakeRng``: identity shuffle + FIXED jitter (determinism).
+a real wait (determinism). ``FakeRng``: FIXED jitter (determinism).
 ``RecordingSignal``: captures nudged subjects. The repos are the REAL SQLite repos
 (spec §8: "real repos on tmp_path") — no fakes here.
 """
@@ -38,9 +38,9 @@ class FakeClock:
 
 
 class FakeRng:
-    """DETERMINISTIC fake rng: identity shuffle + constant jitter (``jitter_value``).
+    """DETERMINISTIC fake rng: constant jitter (``jitter_value``).
 
-    The shuffle preserves order (no seed dependency in the tests). ``jitter`` returns
+    ``jitter`` returns
     ``jitter_value`` (0.0 by default → backoff/pause = exact NOMINAL value), but honors
     the port CONTRACT like the real ``SeededRng``: ``span <= 0`` → ``0.0`` (otherwise the
     min==max pause test would lie about real behavior)."""
@@ -48,9 +48,6 @@ class FakeRng:
     def __init__(self, *, jitter_value: float = 0.0) -> None:
         self._jitter_value = jitter_value
         self.jitter_spans: list[float] = []
-
-    def shuffled(self, items: tuple[str, ...], seed: str) -> tuple[str, ...]:
-        return items
 
     def jitter(self, span: float) -> float:
         self.jitter_spans.append(span)

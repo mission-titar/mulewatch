@@ -23,17 +23,6 @@ _AMULED_KAD = (("client", "amuled"), ("network", "kad"))
 
 CASES: list[tuple[ev.Event, Report]] = [
     (
-        ev.SearchCycleCompleted(cycle_index=3, duration_seconds=4.5),
-        Report(
-            Severity.INFO,
-            "cycle 3 done (4.5s)",
-            (
-                MetricInstruction(MetricName.SEARCH_CYCLES, "inc"),
-                MetricInstruction(MetricName.SEARCH_CYCLE_DURATION, "observe", value=4.5),
-            ),
-        ),
-    ),
-    (
         ev.SearchExecuted(network="ed2k", n_results=7),
         Report(
             Severity.DEBUG,

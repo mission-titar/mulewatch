@@ -16,9 +16,6 @@ class _StubClock:
 
 
 class _StubRng:
-    def shuffled(self, items: tuple[str, ...], seed: str) -> tuple[str, ...]:
-        return items
-
     def jitter(self, span: float) -> float:
         return 0.0
 
@@ -34,7 +31,6 @@ async def test_clock_sleep_is_awaitable() -> None:
     await clock.sleep(1.0)  # does not raise; returns None (contract)
 
 
-def test_rng_is_reexported_from_the_domain() -> None:
+def test_rng_protocol_is_satisfied_structurally() -> None:
     rng: Rng = _StubRng()
-    assert rng.shuffled(("a", "b"), "seed") == ("a", "b")
     assert rng.jitter(5.0) == 0.0

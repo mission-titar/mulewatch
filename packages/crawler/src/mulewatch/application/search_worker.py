@@ -35,7 +35,6 @@ from mulewatch.domain.observability.events import (
     InstanceUnreachable,
     SearchExecuted,
     SearchFailed,
-    SearchTaskDropped,
 )
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.search.backoff import backoff_delay
@@ -185,11 +184,6 @@ class SearchWorker:
         self._connected = False
 
     @property
-    def instance_name(self) -> str:
-        """Logical name of the driven instance (backoff key + ``skipped_by`` identifier)."""
-        return self._instance
-
-    @property
     def channels(self) -> tuple[str, ...]:
         """The channels its client declares."""
         return self._client.channels
@@ -199,23 +193,6 @@ class SearchWorker:
         backoff = self._deps.backoff
         return max(
             backoff.remaining(self._instance), backoff.remaining(f"{self._instance}:{channel}")
-        )
-
-    def is_blocked_for(self, task: SearchTask) -> bool:
-        """``True`` if the task's instance OR channel is backed off (skip+re-enqueue, §14)."""
-        if self._deps.backoff.is_in_backoff(self._instance):
-            return True
-        return self._deps.backoff.is_in_backoff(f"{self._instance}:{task.channel}")
-
-    async def report_dropped(self, task: SearchTask) -> None:
-        """Traces the drop of a task refused by ALL instances (spec §14)."""
-        _logger.warning(
-            "task '%s'/%s dropped (all instances in backoff)",
-            task.keyword,
-            task.channel,
-        )
-        await self._deps.telemetry.emit(
-            SearchTaskDropped(keyword=task.keyword, network=task.channel)
         )
 
     async def _ensure_connected(self) -> bool:
