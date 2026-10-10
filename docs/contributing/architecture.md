@@ -301,9 +301,9 @@ flowchart TD
   dec["Decision<br/>download tier"]
   cand["New candidates"]
   pol["download_policy"]
-  add["add_link · amuled"]
+  add["start · amuled"]
   mon["Monitor"]
-  comp["Completion<br/>via shared_files"]
+  comp["Completion<br/>completed flag"]
   done["state = completed<br/>+ notification"]
 
   dec --> cand --> pol --> add
@@ -512,7 +512,7 @@ démon sont
 | Cas d'usage | `application/search_tasks.py`, `status_loop.py`, `run_download_cycle.py`, `port_sync_loop.py` |
 | Recherche (pure) | `domain/search/` (`keywords`, `backoff`) |
 | Matching | `packages/matching/src/catalog_matching/` (moteur + politique `deploy/matcher.yml`) |
-| Frontière amuleapi | `adapters/mule_api/` (client / mapping / erreurs) ; ports `ports/mule_client.py`, `ports/mule_download_client.py` |
+| Frontière amuleapi | `adapters/mule_api/` (client / mapping / erreurs) ; ports `ports/mule_client.py`, `ports/download_client.py` |
 | Persistance | `adapters/persistence_sqlite/` (migrations `.sql`, repos) |
 | Observabilité | `domain/observability/`, `adapters/observability/` |
 | WebUI | `webui/` (in-process, thread dédié) |

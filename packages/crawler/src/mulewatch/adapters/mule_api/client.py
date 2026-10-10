@@ -1,4 +1,4 @@
-"""Drives ``amuled`` over amuleapi, satisfying ``MuleClient`` and ``MuleDownloadClient``.
+"""Drives ``amuled`` over amuleapi, satisfying ``MuleClient`` and ``DownloadClient``.
 
 ``search()`` waits for its own search and paces its starts by the networks' rules. Beyond pacing,
 no retry but the single re-login a ``401`` mandates and Kad's "already on search list": the
@@ -26,18 +26,15 @@ from mulewatch.adapters.mule_api.errors import (
 )
 from mulewatch.adapters.mule_api.mapping import (
     map_client_status,
-    map_download_entry,
     map_download_status,
     map_network_status,
     map_search_results,
     map_shared_download,
-    map_shared_entry,
 )
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.download_client import DownloadRequest, DownloadStatus
-from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.port_sync import NetworkStatus
 
 # Rows asked for per list request. Every list route caps at 100 when `limit` is omitted, which
@@ -217,19 +214,15 @@ class AmuleApiClient:
             "PATCH", "/preferences", body={"connection": {"tcp_port": port, "udp_port": port}}
         )
 
-    async def add_link(self, ed2k_link: str) -> None:
-        """Queues an ed2k link. The route is a bulk one, so a refused link comes back per item
-        INSIDE a 2xx: the envelope reports the failure, never the status code."""
-        payload = await self._call("POST", "/downloads", body={"links": [ed2k_link]})
+    async def start(self, request: DownloadRequest) -> None:
+        """Queues the file by its ed2k link. The route is a bulk one, so a refused link comes back
+        per item INSIDE a 2xx: the envelope reports the failure, never the status code."""
+        link = build_ed2k_link(request.filename, request.size_bytes, request.file.native_id)
+        payload = await self._call("POST", "/downloads", body={"links": [link]})
         results = payload.get("results")
         outcome = results[0] if isinstance(results, list) and results else None
         if not isinstance(outcome, dict) or outcome.get("ok") is not True:
             raise ApiRejectedError(f"POST /downloads refused the link: {_outcome_reason(outcome)}")
-
-    async def start(self, request: DownloadRequest) -> None:
-        """Queues the file by its ed2k link; a refusal raises ``DownloadRejectedError``."""
-        file = request.file
-        await self.add_link(build_ed2k_link(request.filename, request.size_bytes, file.native_id))
 
     async def downloads(self) -> tuple[DownloadStatus, ...]:
         """The queue with its completed entries, then the shared files it no longer lists. Queue
@@ -243,17 +236,6 @@ class AmuleApiClient:
             if (status := map_shared_download(row)) is not None and status.file not in listed
         ]
         return (*queue, *shared)
-
-    async def download_queue(self) -> tuple[DownloadEntry, ...]:
-        """The queue INCLUDING what amuled holds complete until it is cleared (``status=all``),
-        which is why the caller cannot read "in the queue" as "still transferring"."""
-        rows = await self._collect("/downloads", "downloads", params={"status": "all"})
-        return tuple(entry for row in rows if (entry := map_download_entry(row)) is not None)
-
-    async def shared_files(self) -> tuple[SharedFileEntry, ...]:
-        """Snapshot of amuled's SHARED files: the completion signal. NEVER reads the bytes."""
-        rows = await self._collect("/shared", "shared")
-        return tuple(entry for row in rows if (entry := map_shared_entry(row)) is not None)
 
     async def _post_search(self, keyword: str, search_type: str) -> int:
         payload = await self._call("POST", "/search", body={"query": keyword, "type": search_type})
