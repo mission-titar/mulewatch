@@ -22,7 +22,6 @@ from mulewatch.ports.client_errors import (
 )
 from mulewatch.ports.client_status import ChannelStatus
 from mulewatch.ports.download_client import DownloadClient, DownloadRequest, DownloadStatus
-from mulewatch.ports.port_sync import KadStatus
 from tests.adapters.mule_api.api_fakes import PASSWORD, TOKEN, FakeAmuleApi, error
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
@@ -75,7 +74,7 @@ async def test_connect_logs_in_and_arms_the_bearer() -> None:
     api = FakeAmuleApi()
     client = await _connected(api)
     try:
-        await client.network_status()
+        await client.status()
     finally:
         await client.close()
 
@@ -173,7 +172,7 @@ async def test_an_operation_before_connect_is_unreachable() -> None:
     client = _client(FakeAmuleApi())
 
     with pytest.raises(ApiUnreachableError):
-        await client.network_status()
+        await client.status()
 
 
 @pytest.mark.asyncio
@@ -213,7 +212,7 @@ async def test_a_stale_token_is_renewed_once() -> None:
         return httpx.Response(200, json=api.status)
 
     api.overrides[("GET", "/api/v1/status")] = once
-    await client.network_status()
+    await client.status()
     await client.close()
 
     assert api.logins == 2
@@ -227,7 +226,7 @@ async def test_a_second_401_ends_the_session_instead_of_looping() -> None:
     api.overrides[("GET", "/api/v1/status")] = lambda _: error(401, "unauthorized")
 
     with pytest.raises(ApiUnreachableError):
-        await client.network_status()
+        await client.status()
     # One re-login, one retry, then it stops: the limiter locks an IP out after 30 rejects.
     assert api.logins == 2
     assert [request.url.path for request in api.requests].count("/api/v1/status") == 2
@@ -242,7 +241,7 @@ async def test_a_rate_limited_answer_carries_its_retry_delay() -> None:
     )
 
     with pytest.raises(ApiUnreachableError, match="300"):
-        await client.network_status()
+        await client.status()
 
 
 @pytest.mark.asyncio
@@ -253,7 +252,7 @@ async def test_a_broken_ec_link_is_an_unreachable_daemon() -> None:
     api.overrides[("GET", "/api/v1/status")] = lambda _: error(503, "ec_unavailable", "cold")
 
     with pytest.raises(ApiUnreachableError):
-        await client.network_status()
+        await client.status()
 
 
 @pytest.mark.asyncio
@@ -263,7 +262,7 @@ async def test_a_body_that_is_not_json_is_an_unreachable_daemon() -> None:
     api.overrides[("GET", "/api/v1/status")] = lambda _: httpx.Response(200, content=b"<html>")
 
     with pytest.raises(ApiUnreachableError):
-        await client.network_status()
+        await client.status()
 
 
 @pytest.mark.asyncio
@@ -273,7 +272,7 @@ async def test_an_error_body_that_is_not_an_envelope_still_maps() -> None:
     api.overrides[("GET", "/api/v1/status")] = lambda _: httpx.Response(500, content=b"oops")
 
     with pytest.raises(ApiUnreachableError):
-        await client.network_status()
+        await client.status()
 
 
 @pytest.mark.asyncio
@@ -285,7 +284,7 @@ async def test_an_error_envelope_with_junk_fields_still_maps() -> None:
     )
 
     with pytest.raises(ApiUnreachableError):
-        await client.network_status()
+        await client.status()
 
 
 @pytest.mark.asyncio
@@ -295,7 +294,7 @@ async def test_an_error_body_whose_error_key_is_not_an_object_still_maps() -> No
     api.overrides[("GET", "/api/v1/status")] = lambda _: httpx.Response(500, json={"error": 7})
 
     with pytest.raises(ApiUnreachableError):
-        await client.network_status()
+        await client.status()
 
 
 # --- search(): one call per search ---------------------------------------------------------
@@ -432,24 +431,6 @@ async def test_a_search_reply_without_an_id_fails_its_channel() -> None:
 
 
 # --- status and preferences ----------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_network_status_maps_the_daemon_state() -> None:
-    api = FakeAmuleApi(
-        status={
-            "ed2k": {"state": "connected", "high_id": True, "user_id": 42},
-            "kad": {"state": "connected", "firewalled_tcp": False},
-        }
-    )
-    client = await _connected(api)
-
-    status = await client.network_status()
-    await client.close()
-
-    assert status.ed2k_id == 42
-    assert status.ed2k_high is True
-    assert status.kad_status is KadStatus.CONNECTED
 
 
 @pytest.mark.asyncio

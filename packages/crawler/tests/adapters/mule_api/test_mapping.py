@@ -7,7 +7,6 @@ import pytest
 from mulewatch.adapters.mule_api.mapping import (
     map_client_status,
     map_download_status,
-    map_network_status,
     map_search_results,
     map_shared_download,
 )
@@ -15,7 +14,6 @@ from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from mulewatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
-from mulewatch.ports.port_sync import KadStatus
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
 _KEY = FileKey(Network.ED2K, _HASH)
@@ -305,60 +303,6 @@ def test_a_shared_row_reads_as_a_completed_download() -> None:
     )
     assert map_shared_download({"name": "Keroro.095.avi"}) is None
     assert map_shared_download("nonsense") is None
-
-
-def test_maps_a_connected_high_id_status() -> None:
-    payload = {
-        "ed2k": {
-            "state": "connected",
-            "high_id": True,
-            "user_id": 1234567890,
-        },
-        "kad": {"state": "connected", "firewalled_tcp": False},
-    }
-    status = map_network_status(payload)
-
-    assert status.ed2k_id == 1234567890
-    assert status.ed2k_high is True
-    assert status.kad_status is KadStatus.CONNECTED
-
-
-def test_a_low_id_is_only_low_once_connected() -> None:
-    connecting = map_network_status({"ed2k": {"state": "connecting", "high_id": False}})
-    assert connecting.ed2k_high is False
-    assert connecting.ed2k_id is None
-
-    connected = map_network_status(
-        {"ed2k": {"state": "connected", "high_id": False, "user_id": 42}}
-    )
-    assert connected.ed2k_high is False
-    assert connected.ed2k_id == 42
-
-
-def test_a_firewalled_kad_reads_as_firewalled() -> None:
-    status = map_network_status({"kad": {"state": "connected", "firewalled_tcp": True}})
-
-    assert status.kad_status is KadStatus.FIREWALLED
-
-
-def test_a_connecting_kad_reads_as_running() -> None:
-    status = map_network_status({"kad": {"state": "connecting"}})
-
-    assert status.kad_status is KadStatus.RUNNING
-
-
-def test_an_unknown_kad_state_reads_as_off() -> None:
-    """§7.6: a daemon with Kad switched off reports "disabled", which no doc enumerates."""
-    assert map_network_status({"kad": {"state": "disabled"}}).kad_status is KadStatus.OFF
-    assert map_network_status({"kad": {"state": 7}}).kad_status is KadStatus.OFF
-
-
-def test_an_empty_status_degrades_instead_of_raising() -> None:
-    status = map_network_status("nonsense")
-
-    assert status.ed2k_id is None
-    assert status.ed2k_high is False
-    assert status.kad_status is KadStatus.OFF
 
 
 def test_a_connected_high_id_and_open_kad_are_connectable() -> None:

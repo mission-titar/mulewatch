@@ -1,7 +1,7 @@
 """Tests for ``run_port_sync_cycle`` (High-ID port-sync, design §4.4/§10.5) — the branch core.
 
 Injected fakes: ``FakePortForwardingReader`` (scripted live port), ``FakePortPreferences``
-(programmable get/set/network_status + injectable EC failures), ``FakeMuleRestarter`` (success /
+(programmable get/set/status + injectable EC failures), ``FakeMuleRestarter`` (success /
 ``RestarterError``), ``FakeClock`` (recorded now/sleep), ``RecordingTelemetry``, real
 ``EdgeState``. We cover BOTH sides of each conditional (table §10.5).
 """
@@ -24,8 +24,9 @@ from mulewatch.domain.observability.events import (
     PortMismatchUnresolved,
     PortSyncTriggered,
 )
+from mulewatch.ports.client_errors import ClientUnreachableError
+from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from mulewatch.ports.mule_restarter import RestarterError
-from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 from tests.application.fakes import RecordingTelemetry
 
 
@@ -44,8 +45,9 @@ class FakePortForwardingReader:
 class FakePortPreferences:
     """Programmable get/set port + status (subset of AmuleApiClient).
 
-    ``get_error``/``set_error`` inject an EC failure on the matching method.
-    ``ed2k_high`` drives the post-restart re-check. ``set_ports``/``status_calls`` trace.
+    ``get_error``/``set_error``/``status_error`` inject a failure on the matching method.
+    ``ed2k_high`` drives the post-restart re-check; Kad always reads connectable.
+    ``set_ports``/``status_calls`` trace.
     """
 
     def __init__(
@@ -55,12 +57,14 @@ class FakePortPreferences:
         ed2k_high: bool = True,
         get_error: Exception | None = None,
         set_error: Exception | None = None,
+        status_error: Exception | None = None,
         connected: bool = True,
     ) -> None:
         self._current_port = current_port
         self._ed2k_high = ed2k_high
         self._get_error = get_error
         self._set_error = set_error
+        self._status_error = status_error
         self._connected = connected
         self.set_ports: list[int] = []
         self.status_calls = 0
@@ -94,14 +98,13 @@ class FakePortPreferences:
         # (like real amuled), EVEN without a rebind. Without this, the fake would hide test-gaps#0.
         self._current_port = port
 
-    async def network_status(self) -> NetworkStatus:
+    async def status(self) -> ClientStatus:
         self._require_connected()
         self.status_calls += 1
-        return NetworkStatus(
-            ed2k_id=0x02000001 if self._ed2k_high else 100,
-            ed2k_high=self._ed2k_high,
-            kad_status=KadStatus.CONNECTED,
-        )
+        if self._status_error is not None:
+            raise self._status_error
+        channels = (ChannelStatus("ed2k", True, self._ed2k_high), ChannelStatus("kad", True, True))
+        return ClientStatus(version=None, channels=channels)
 
 
 class FakeMuleRestarter:
@@ -368,6 +371,30 @@ async def test_cycle_reconnects_ec_when_disconnected() -> None:
     assert ports.connect_calls == 1  # it reconnected before touching EC
     assert ports.set_ports == [51820]  # and resumed the sync (proof it got past get_listen_port)
     assert restarter.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_a_status_read_failing_after_the_restart_is_absorbed_without_an_alert() -> None:
+    # status() raises when amuleapi answers but does not reach amuled: the same backoff as an
+    # unreachable amuleapi, with neither a recovery nor an alert.
+    ports = FakePortPreferences(
+        current_port=4662, status_error=ClientUnreachableError("amuleapi does not reach amuled")
+    )
+    clock = FakeClock()
+    telemetry = RecordingTelemetry()
+    edge = EdgeState()
+    deps = _deps(
+        reader=FakePortForwardingReader(port=51820),
+        ports=ports,
+        clock=clock,
+        telemetry=telemetry,
+        edge=edge,
+    )
+    await run_port_sync_cycle(deps, _PortSyncState())  # does not raise
+    assert ports.status_calls == 1
+    assert telemetry.events == [PortSyncTriggered(old=4662, new=51820)]
+    assert clock.sleeps == [_POLL, _POLL]  # the rebind delay, then the backoff
+    assert edge.enter(_MISMATCH) is True  # no alert was raised
 
 
 # ---------------------------------------------------------------- edge-trigger

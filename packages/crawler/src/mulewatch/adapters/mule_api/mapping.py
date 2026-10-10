@@ -11,7 +11,6 @@ from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation, fold_raw_meta
 from mulewatch.ports.client_status import ChannelStatus, ClientStatus
 from mulewatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
-from mulewatch.ports.port_sync import KadStatus, NetworkStatus
 
 _HASH_LENGTH = 32
 
@@ -32,9 +31,6 @@ _WAITING_STATUSES = {
     "allocating": WaitingReason.LOCAL,
     "completing": WaitingReason.LOCAL,
 }
-
-# Kad states with an equivalent in the port's closed enum; anything else is OFF (§7.6).
-_KAD_STATES = {"connected": KadStatus.CONNECTED, "connecting": KadStatus.RUNNING}
 
 
 def map_search_results(results: object, keyword: str) -> tuple[tuple[FileObservation, ...], int]:
@@ -82,23 +78,6 @@ def map_shared_download(row: object) -> DownloadStatus | None:
         return None
     size = _int(row.get("size_bytes"))
     return DownloadStatus(FileKey(Network.ED2K, ed2k_hash), size, size, True, None, None)
-
-
-def map_network_status(payload: object) -> NetworkStatus:
-    """A /status body → ``NetworkStatus``. Never raises: a missing field degrades."""
-    body = _object(payload)
-    ed2k = _object(body.get("ed2k"))
-    kad = _object(body.get("kad"))
-    connected = ed2k.get("state") == "connected"
-    user_id = ed2k.get("user_id")
-    has_id = connected and isinstance(user_id, int) and not isinstance(user_id, bool)
-    return NetworkStatus(
-        # While disconnected the daemon reports user_id 0 and high_id false, so both are read
-        # together with the state: "no id yet" must not read as a LowID (spec §6).
-        ed2k_id=user_id if has_id else None,
-        ed2k_high=connected and ed2k.get("high_id") is True,
-        kad_status=_kad_status(kad),
-    )
 
 
 def map_client_status(status: object, version: object) -> ClientStatus:
@@ -213,14 +192,3 @@ def _waiting_reason(status: object, sources: object) -> WaitingReason | None:
     if _int(counts.get("total")) == 0:
         return WaitingReason.NO_SOURCE
     return WaitingReason.REMOTE_QUEUE if _int(counts.get("transferring")) == 0 else None
-
-
-def _kad_status(kad: dict[str, Any]) -> KadStatus:
-    """An unrecognised state is a daemon configured differently, not an error: OFF."""
-    reported = kad.get("state")
-    state = _KAD_STATES.get(reported) if isinstance(reported, str) else None
-    if state is None:
-        return KadStatus.OFF
-    if state is KadStatus.CONNECTED and kad.get("firewalled_tcp") is True:
-        return KadStatus.FIREWALLED
-    return state
