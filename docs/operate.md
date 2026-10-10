@@ -158,7 +158,24 @@ Deux effets possibles pour un fichier déjà catalogué :
 
 Un gros changement de règles peut donc émettre une rafale de notifications, une par fichier dont le
 palier a monté. C'est voulu. La passe est idempotente et tourne que le téléchargement soit activé ou
-non. Le démarrage de l'instance et le retour du High-ID ne notifient que le canal *operations*.
+non.
+
+Le canal *operations* reçoit l'état du nœud, et rien d'autre :
+
+- le démarrage de l'instance ;
+- le retour du High-ID, et un High-ID qui ne revient pas après une synchronisation du port (une seule
+  fois) ;
+- l'espace disque passé sous le plancher (voir [Planification disque](#planification-disque)) ;
+- un canal d'un client (`ed2k` ou `kad` pour aMule) **hors de son réseau** ou **non joignable par
+  les pairs** depuis 5 minutes, puis son retour ;
+- l'API d'un client **injoignable** depuis 2 minutes, puis son retour. Tant qu'elle l'est, l'état de
+  ses canaux est inconnu et ne déclenche aucune alerte de canal.
+
+Une alerte part sur un état dégradé qui dure, quel que soit l'état d'avant, démarrage compris : un
+nœud qui démarre en Low-ID est signalé au bout de 5 minutes, et la fenêtre où Kad se croit derrière
+un pare-feu après chaque reconnexion ne l'est pas tant qu'elle dure moins de 5 minutes. Le retour
+n'est notifié que si l'alerte est partie. Ces durées sont fixes, et un redémarrage du crawler remet
+leurs horloges à zéro.
 
 Les messages partent en markdown : Discord les affiche en embed, signé `Mulewatch - <node-id>` en
 ligne d'auteur, bleu pour une découverte (`🔎 Notify`, `📥 Download`), vert pour un téléchargement
@@ -204,7 +221,7 @@ le crawl en gardant aMule vivant, c'est
 | `/files/{file_id}` | Détail d'un fichier, désigné par son `file_id` en 32 caractères hexadécimaux minuscules, tel que la console SQL l'affiche : réseau, identifiant natif, observations, décisions, explication du matching |
 | `/targets/{target_id}` | Fichiers d'une cible (alias de `/files?target=`) |
 | `/node` | État du crawler : `node_id`, entrées du `scheduler_state` et téléchargements (voir [Suivre un téléchargement](#suivre-un-téléchargement)). |
-| `POST /controls/pause`, `/controls/resume`, `/controls/restart` | Les boutons du tableau de bord, qui y renvoient. |
+| `POST /controls/pause`, `/controls/resume`, `/controls/restart` | Les boutons du tableau de bord, qui y renvoient. La pause n'arrête pas les recherches en cours, ni celles qui attendent déjà leur créneau réseau : avec K mots-clés, jusqu'à K-1 recherches ed2k, espacées d'une minute, et la prochaine de chaque cible Kad partent encore, puis le crawler se tait. |
 | `/console` | Console SQL en lecture seule : un unique `SELECT` sur `catalog.db` ou `local.db`, avec export CSV. Toujours active. |
 | `/health` | Healthcheck JSON : répond `{"status": "ok"}` si le service est opérationnel |
 

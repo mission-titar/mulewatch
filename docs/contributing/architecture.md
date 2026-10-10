@@ -313,10 +313,11 @@ flowchart TD
 Invariants porteurs (à ne pas violer) :
 
 - **Le crawler PROD ne lit jamais les octets téléchargés, et ne touche jamais au répertoire de sortie
-  du tout.** La complétion est un **signal positif** : le hash apparaît dans la liste des fichiers
-  partagés d'`amuled` **et** a quitté la file de téléchargement (amuled partage aussi les
-  téléchargements partiels, donc c'est la file qui sépare une complétion d'un partiel). Ce n'est
-  jamais une inférence sur le contenu.
+  du tout.** La complétion est un **signal positif** du client, jamais un compte d'octets : chez
+  aMule, une entrée de la file au statut `completed` (déplacée, en attente de retrait), ou un fichier
+  présent dans les fichiers partagés d'`amuled` **et** absent de la file (terminé puis retiré). Une
+  entrée encore en file n'est pas complète, même listée dans les partagés : amuled partage aussi les
+  téléchargements partiels. Ce n'est jamais une inférence sur le contenu.
 - **Rien ne déplace le fichier terminé.** amuled écrit directement dans son propre `IncomingDir`,
   bind-mounté sur `./downloads/incoming` côté hôte ; le crawler enregistre le changement d'état et
   notifie, rien de plus.
@@ -338,13 +339,16 @@ Invariants porteurs (à ne pas violer) :
   plutôt que la couche inscriptible du conteneur.
   L'espace libre seul serait faux, puisque le système de fichiers ne sait rien des octets encore à
   venir.
-- **Un téléchargement qu'amuled ne connaît plus devient `failed`** après
-  `download.lost_after_seconds` (24 h par défaut). Chaque cycle estampille `last_seen_at` pour chaque
-  hash présent dans la file d'amuled **ou** dans ses fichiers partagés, et une ligne
-  `queued`/`downloading` plus vieille que le TTL est condamnée. C'est sûr parce qu'une entrée reste
-  dans la file d'amuled même avec zéro source : une absence signifie vraiment disparu. amuled reste
-  l'autorité, donc une ligne `failed` qui réapparaît dans la file repasse en `downloading`, et une
-  qui apparaît dans les fichiers partagés se complète et notifie.
+- **Un téléchargement que le client ne liste plus est relancé**, d'un `start()` par cycle, tant
+  qu'il est `queued` ou `downloading` et jusqu'à ce que le client le liste de nouveau : aMule garde
+  ses téléchargements à travers un redémarrage, slskd non. amuled ne refuse jamais un fichier qu'il
+  détient encore, donc relancer coûte une requête. Au-delà de `download.lost_after_seconds` (24 h par
+  défaut) sans apparaître, la ligne devient `failed` avec la raison `lost`. Chaque cycle estampille
+  `last_seen_at` pour chaque fichier que `downloads()` liste, en file **ou** partagé. C'est sûr parce
+  qu'une entrée reste dans la file d'amuled même avec zéro source : une absence signifie vraiment
+  disparu. Le client reste l'autorité : une ligne `failed` qui réapparaît dans sa liste repasse en
+  `downloading`, sauf s'il y signale lui-même une erreur (raison `error`), et une ligne qui se
+  complète notifie, même `failed`.
 - Le plancher ne supprime jamais rien, et `is_downloaded()` reste aveugle à l'état : une ligne
   `failed` continue de bloquer la remise en file automatique, donc les fichiers terminés
   s'accumulent toujours sans borne et une nouvelle tentative manuelle passe par la suppression de la
