@@ -26,19 +26,15 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import suppress
 
-from catalog_matching.engine import (
-    DecisionRecord,
-    DownloadCandidate,
-    MatchDecision,
-)
+from catalog_matching.engine import DecisionRecord, MatchDecision
 from mulewatch.adapters.persistence_sqlite import sightings
 from mulewatch.adapters.persistence_sqlite.connection import Clock, utc_iso, utc_now
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError, wrap_sqlite_errors
 from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
-from mulewatch.domain.file_key import FileKey
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.domain.retraction import RETRACTED_TIER
-from mulewatch.ports.catalog_repository import ObservedFile, ReevalRow
+from mulewatch.ports.catalog_repository import DownloadCandidate, ObservedFile, ReevalRow
 
 _CANONICAL_HASH_RE = re.compile(r"[0-9a-f]{32}\Z")
 
@@ -81,10 +77,10 @@ SELECT target_id, rule_name, tier FROM (
 # Latest verdict per (file_id, target_id), kept when tier=download (download spec §5,
 # multi-target §6). Window: ROW_NUMBER per (file_id, target_id), order (decided_at, id)
 # DESCENDING (most recent = rank 1); keep rank 1 AND tier='download'. PARTITION BY the FULL
-# key so a whole-episode file with BOTH segments in download yields BOTH candidates. The
-# download side speaks the eD2k hash until stage 2 (D10). Sorted by (hash, target_id).
+# key so a whole-episode file with BOTH segments in download yields BOTH candidates. Sorted
+# by (network, native_id, target_id).
 _SELECT_DOWNLOAD_DECISIONS = """
-SELECT f.native_id, d.target_id FROM (
+SELECT f.network, f.native_id, d.target_id FROM (
     SELECT
         file_id, target_id, tier,
         ROW_NUMBER() OVER (
@@ -93,8 +89,8 @@ SELECT f.native_id, d.target_id FROM (
     FROM match_decisions
 ) AS d
 JOIN files AS f ON f.file_id = d.file_id
-WHERE d.rn = 1 AND d.tier = 'download' AND f.network = 'ed2k'
-ORDER BY f.native_id, d.target_id
+WHERE d.rn = 1 AND d.tier = 'download'
+ORDER BY f.network, f.native_id, d.target_id
 """
 
 _COUNT_FILES = "SELECT COUNT(*) FROM files"
@@ -204,14 +200,17 @@ class SqliteCatalogRepository:
         }
 
     def download_decisions(self) -> tuple[DownloadCandidate, ...]:
-        """``(hash, target_id)`` whose LATEST verdict is tier=download, to replay (download §5).
+        """``(file, target_id)`` whose LATEST verdict is tier=download, to replay (download §5).
 
-        Keyed per ``(hash, target_id)``: a whole-episode file matching both segments now yields
-        MULTIPLE :class:`DownloadCandidate` for the SAME hash (one per target). READ.
+        Keyed per ``(file, target_id)``: a whole-episode file matching both segments now yields
+        MULTIPLE :class:`DownloadCandidate` for the SAME file (one per target). READ.
         """
         with wrap_sqlite_errors():
             rows = self._connection.execute(_SELECT_DOWNLOAD_DECISIONS).fetchall()
-        return tuple(DownloadCandidate(ed2k_hash=row[0], target_id=row[1]) for row in rows)
+        return tuple(
+            DownloadCandidate(file=FileKey(Network(row[0]), row[1]), target_id=row[2])
+            for row in rows
+        )
 
     def last_observation(self, file: FileKey) -> ObservedFile | None:
         """Name and size of the latest sighting (the ed2k link), or ``None`` (read)."""

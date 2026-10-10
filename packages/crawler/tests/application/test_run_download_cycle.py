@@ -4,18 +4,17 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from catalog_matching.engine import DownloadCandidate
 from catalog_matching.models import TargetSegment
 from mulewatch.application.run_download_cycle import DownloadDeps, run_download_cycle
 from mulewatch.domain.download.states import DownloadState
-from mulewatch.domain.file_key import FileKey
+from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observability.events import (
     DiskSpaceLow,
     DownloadCompleted,
     DownloadQueued,
     FreeSpaceSampled,
 )
-from mulewatch.ports.catalog_repository import ObservedFile
+from mulewatch.ports.catalog_repository import DownloadCandidate, ObservedFile
 from mulewatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
 from mulewatch.ports.mule_download_client import DownloadEntry, SharedFileEntry
 from mulewatch.ports.port_sync import KadStatus, NetworkStatus
@@ -106,7 +105,8 @@ class FakeDownloadClient:
 class FakeDownloadRepo:
     """In-memory downloads repo (the contract of SqliteDownloadRepository, without SQL).
 
-    ``fail_set_state_for``: hashes for which ``set_state`` raises ``RepositoryError`` —
+    Keyed by ``native_id``, as the real table still stores the hash. ``fail_set_state_for``:
+    hashes for which ``set_state`` raises ``RepositoryError`` —
     lets us simulate a mid-cycle repo failure (cf. logic-download#2/error-boundary#2).
     ``fail_active_states``: ``active_states()`` raises — lets us simulate persistence being down
     also at re-read time (every step of the cycle absorbs). ``lost``: hashes ``expire_lost``
@@ -132,32 +132,32 @@ class FakeDownloadRepo:
         self._lost = lost or set()
         self._target_ids: dict[str, str] = {}
 
-    def get_target_id(self, ed2k_hash: str) -> str | None:
-        return self._target_ids.get(ed2k_hash)
+    def get_target_id(self, file: FileKey) -> str | None:
+        return self._target_ids.get(file.native_id)
 
-    def record_queued(self, ed2k_hash: str, target_id: str, size_bytes: int) -> bool:
+    def record_queued(self, file: FileKey, target_id: str, size_bytes: int) -> bool:
         if self._fail_record:
             raise RepositoryError("downloads write failed")
-        if ed2k_hash in self.states:
+        if file.native_id in self.states:
             return False
-        self.states[ed2k_hash] = DownloadState.QUEUED
-        self.sizes[ed2k_hash] = size_bytes
+        self.states[file.native_id] = DownloadState.QUEUED
+        self.sizes[file.native_id] = size_bytes
         return True
 
-    def set_state(self, ed2k_hash: str, state: DownloadState) -> None:
-        if ed2k_hash in self._fail_set_state_for:
-            raise RepositoryError(f"set_state({ed2k_hash}) failed")
-        self.states[ed2k_hash] = state
+    def set_state(self, file: FileKey, state: DownloadState) -> None:
+        if file.native_id in self._fail_set_state_for:
+            raise RepositoryError(f"set_state({file.native_id}) failed")
+        self.states[file.native_id] = state
 
-    def is_downloaded(self, ed2k_hash: str) -> bool:
-        return ed2k_hash in self.states
+    def is_downloaded(self, file: FileKey) -> bool:
+        return file.native_id in self.states
 
-    def mark_seen(self, ed2k_hashes: Iterable[str]) -> None:
+    def mark_seen(self, files: Iterable[FileKey]) -> None:
         if self._fail_mark_seen:
             raise RepositoryError("mark_seen failed")
-        self.seen.append(set(ed2k_hashes))
+        self.seen.append({file.native_id for file in files})
 
-    def expire_lost(self, max_age_seconds: float) -> tuple[str, ...]:
+    def expire_lost(self, max_age_seconds: float) -> tuple[FileKey, ...]:
         self.expired_after.append(max_age_seconds)
         condemned = tuple(
             h
@@ -166,12 +166,12 @@ class FakeDownloadRepo:
         )
         for ed2k_hash in condemned:
             self.states[ed2k_hash] = DownloadState.FAILED
-        return condemned
+        return tuple(_key(h) for h in condemned)
 
-    def active_states(self) -> dict[str, DownloadState]:
+    def active_states(self) -> dict[FileKey, DownloadState]:
         if self._fail_active_states:
             raise RepositoryError("active_states failed")
-        return dict(self.states)
+        return {_key(h): state for h, state in self.states.items()}
 
 
 class FakeCatalogReads:
@@ -222,8 +222,12 @@ class FakeClock:
         await asyncio.sleep(0)
 
 
+def _key(hash_hex: str) -> FileKey:
+    return FileKey(Network.ED2K, hash_hex)
+
+
 def _candidate(hash_hex: str, target_id: str) -> DownloadCandidate:
-    return DownloadCandidate(ed2k_hash=hash_hex, target_id=target_id)
+    return DownloadCandidate(file=_key(hash_hex), target_id=target_id)
 
 
 def _deps(
@@ -440,7 +444,7 @@ async def test_monitor_does_not_regress_a_completed_queue_entry() -> None:
     # _monitor: a COMPLETED hash present in the amuled queue MUST NOT regress to DOWNLOADING
     # (the completion notification already fired; re-firing it would be noise).
     class _NoSetStateRepo(FakeDownloadRepo):
-        def set_state(self, ed2k_hash: str, state: DownloadState) -> None:
+        def set_state(self, file: FileKey, state: DownloadState) -> None:
             raise AssertionError("set_state must not be called (completed state)")
 
     client = FakeDownloadClient(queue=[(DownloadEntry(ed2k_hash=_A, size_done=3, size_full=10),)])
@@ -734,7 +738,7 @@ async def test_monitor_no_op_when_state_already_matches() -> None:
     downloads.states[_A] = DownloadState.DOWNLOADING
 
     class _NoSetStateRepo(FakeDownloadRepo):
-        def set_state(self, ed2k_hash: str, state: DownloadState) -> None:
+        def set_state(self, file: FileKey, state: DownloadState) -> None:
             raise AssertionError("set_state must not be called (state already up to date)")
 
     repo = _NoSetStateRepo()
@@ -888,7 +892,7 @@ async def test_emits_download_completed() -> None:
     await run_download_cycle(deps)
     completed = [e for e in telemetry.events if isinstance(e, DownloadCompleted)]
     # No observation, no decision left: the hash names the file, the queued row its target.
-    assert completed == [DownloadCompleted(_A, _A, (("062A", "t"),))]
+    assert completed == [DownloadCompleted(_key(_A), _A, (("062A", "t"),))]
 
 
 @pytest.mark.asyncio
@@ -919,7 +923,9 @@ async def test_a_completion_names_the_clean_file_and_every_download_target_of_th
     )
     await run_download_cycle(deps)
     completed = [e for e in telemetry.events if isinstance(e, DownloadCompleted)]
-    assert completed == [DownloadCompleted(_A, "Keroro é.avi", (("062A", "ta"), ("062B", "tb")))]
+    assert completed == [
+        DownloadCompleted(_key(_A), "Keroro é.avi", (("062A", "ta"), ("062B", "tb")))
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1009,7 +1015,7 @@ async def test_monitor_repo_failure_is_isolated_and_does_not_starve_candidates()
     # _monitor raises RepositoryError (set_state fails during reconciliation) → step 1 is
     # ISOLATED (log + continue), it does NOT starve step 3: _B is enqueued anyway.
     class _MonitorFailRepo(FakeDownloadRepo):
-        def set_state(self, ed2k_hash: str, state: DownloadState) -> None:
+        def set_state(self, file: FileKey, state: DownloadState) -> None:
             raise RepositoryError("set_state monitor failed")
 
     client = FakeDownloadClient(queue=[(DownloadEntry(ed2k_hash=_A, size_done=10, size_full=10),)])
@@ -1035,10 +1041,10 @@ async def test_add_links_repo_failure_is_tolerated_and_does_not_raise() -> None:
     # _add_links raises RepositoryError (set_state fails while marking a rejected link FAILED) →
     # tolerated (log), run_download_cycle does not raise. Contract "never raises".
     class _AddLinkSetStateFailRepo(FakeDownloadRepo):
-        def set_state(self, ed2k_hash: str, state: DownloadState) -> None:
+        def set_state(self, file: FileKey, state: DownloadState) -> None:
             if state is DownloadState.FAILED:
                 raise RepositoryError("set_state(FAILED) failed")
-            super().set_state(ed2k_hash, state)
+            super().set_state(file, state)
 
     # add_link rejected (EC_OP_FAILED) → _add_links tries set_state(FAILED), which raises
     # RepositoryError.
@@ -1093,7 +1099,7 @@ async def test_already_completed_shared_hash_is_not_recompleted() -> None:
     # A completed file stays in amuled's shared list forever. Without the terminal skip, every
     # cycle would re-stamp it and re-fire the community notification.
     class _NoSetStateRepo(FakeDownloadRepo):
-        def set_state(self, ed2k_hash: str, state: DownloadState) -> None:
+        def set_state(self, file: FileKey, state: DownloadState) -> None:
             raise AssertionError("must not re-stamp an already completed download")
 
     downloads = _NoSetStateRepo()

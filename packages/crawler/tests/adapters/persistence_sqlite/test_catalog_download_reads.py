@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from catalog_matching.engine import DownloadCandidate, Explanation, MatchDecision
+from catalog_matching.engine import Explanation, MatchDecision
 from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.catalog_repository import ObservedFile
+from mulewatch.ports.catalog_repository import DownloadCandidate, ObservedFile
 
 _A = FileKey(Network.ED2K, "a" * 32)
 _B = FileKey(Network.ED2K, "b" * 32)
@@ -67,9 +67,7 @@ def test_download_decisions_includes_hash_whose_latest_verdict_is_download(
     repository.record_observation(_obs(_A))
     repository.record_decision(_A, _decision("catalog"))
     repository.record_decision(_A, _decision("download"))  # more recent = download
-    assert repository.download_decisions() == (
-        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
-    )
+    assert repository.download_decisions() == (DownloadCandidate(file=_A, target_id="062A"),)
 
 
 def test_download_decisions_includes_a_single_download_only_decision(
@@ -77,9 +75,7 @@ def test_download_decisions_includes_a_single_download_only_decision(
 ) -> None:
     repository.record_observation(_obs(_A))
     repository.record_decision(_A, _decision("download"))  # a single decision, = download
-    assert repository.download_decisions() == (
-        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
-    )
+    assert repository.download_decisions() == (DownloadCandidate(file=_A, target_id="062A"),)
 
 
 def test_download_decisions_excludes_hash_whose_latest_verdict_is_not_download(
@@ -95,16 +91,14 @@ def test_download_decisions_isolates_per_hash(
     repository: SqliteCatalogRepository,
 ) -> None:
     # two distinct hashes in the same query: _A ends in download, _B ends in catalog.
-    # The PARTITION BY ed2k_hash window must isolate them → only _A is returned.
+    # The PARTITION BY file_id window must isolate them → only _A is returned.
     repository.record_observation(_obs(_A))
     repository.record_observation(_obs(_B))
     repository.record_decision(_A, _decision("catalog"))
     repository.record_decision(_A, _decision("download"))  # _A latest = download
     repository.record_decision(_B, _decision("download"))
     repository.record_decision(_B, _decision("catalog"))  # _B latest = catalog
-    assert repository.download_decisions() == (
-        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
-    )
+    assert repository.download_decisions() == (DownloadCandidate(file=_A, target_id="062A"),)
 
 
 def test_download_decisions_is_empty_with_no_decisions(
@@ -122,8 +116,8 @@ def test_download_decisions_returns_both_segments_of_one_hash(
     repository.record_decision(_A, _decision("download", "062A"))
     repository.record_decision(_A, _decision("download", "062B"))
     assert repository.download_decisions() == (
-        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
-        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062B"),
+        DownloadCandidate(file=_A, target_id="062A"),
+        DownloadCandidate(file=_A, target_id="062B"),
     )
 
 
@@ -134,9 +128,7 @@ def test_download_decisions_isolates_per_target_within_one_hash(
     repository.record_observation(_obs(_A))
     repository.record_decision(_A, _decision("download", "062A"))
     repository.record_decision(_A, _decision("catalog", "062B"))
-    assert repository.download_decisions() == (
-        DownloadCandidate(ed2k_hash=_A.native_id, target_id="062A"),
-    )
+    assert repository.download_decisions() == (DownloadCandidate(file=_A, target_id="062A"),)
 
 
 def test_last_observation_returns_filename_and_size(

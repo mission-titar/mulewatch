@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
-from catalog_matching.engine import DecisionRecord, DownloadCandidate, MatchDecision
+from catalog_matching.engine import DecisionRecord, MatchDecision
 from mulewatch.domain.file_key import FileKey
 from mulewatch.domain.observation import FileObservation
 
@@ -28,6 +28,14 @@ class ObservedFile:
 
     filename: str
     size_bytes: int
+
+
+@dataclass(frozen=True)
+class DownloadCandidate:
+    """A file whose latest verdict for ``target_id`` is tier=download, for the download loop."""
+
+    file: FileKey
+    target_id: str
 
 
 @dataclass(frozen=True)

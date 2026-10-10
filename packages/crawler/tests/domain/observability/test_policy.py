@@ -273,7 +273,7 @@ def test_a_backtick_in_the_name_cannot_close_its_code_span() -> None:
 
 
 def _completed(*targets: tuple[str, str]) -> ev.DownloadCompleted:
-    return ev.DownloadCompleted(_HASH, "Keroro `062`.avi", targets)
+    return ev.DownloadCompleted(FileKey(Network.ED2K, _HASH), "Keroro `062`.avi", targets)
 
 
 def test_a_completed_download_is_a_green_message_naming_its_targets_and_file() -> None:

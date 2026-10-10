@@ -16,6 +16,7 @@ import pytest
 from mulewatch.adapters.persistence_sqlite.connection import open_catalog, open_local
 from mulewatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
 from mulewatch.domain.download.states import DownloadState
+from mulewatch.domain.file_key import FileKey, Network
 
 _LOCAL_MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations/local"
 
@@ -77,6 +78,6 @@ def test_local_rewrites_a_legacy_quarantined_download_as_completed(tmp_path: Pat
     connection = open_local(path)
     try:
         repository = SqliteDownloadRepository(connection)
-        assert repository.active_states() == {"a1": DownloadState.COMPLETED}
+        assert repository.active_states() == {FileKey(Network.ED2K, "a1"): DownloadState.COMPLETED}
     finally:
         connection.close()

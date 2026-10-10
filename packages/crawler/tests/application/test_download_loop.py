@@ -3,12 +3,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from catalog_matching.engine import DownloadCandidate
 from mulewatch.application.run_download_cycle import (
     DOWNLOAD_NUDGE_SUBJECT,
     DownloadLoopDeps,
     download_loop,
 )
+from mulewatch.ports.catalog_repository import DownloadCandidate
 
 # Reuse the fakes from test_run_download_cycle (imported explicitly).
 from tests.application.fakes import RecordingTelemetry

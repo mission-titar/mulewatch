@@ -9,9 +9,10 @@ from mulewatch.adapters.persistence_sqlite.connection import open_local
 from mulewatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
 from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
 from mulewatch.domain.download.states import DownloadState
+from mulewatch.domain.file_key import FileKey, Network
 
-_A = "a" * 32
-_B = "b" * 32
+_A = FileKey(Network.ED2K, "a" * 32)
+_B = FileKey(Network.ED2K, "b" * 32)
 
 
 class _SettableClock:
@@ -73,7 +74,7 @@ def test_set_state_to_completed_stamps_completed_at(
     repository.record_queued(_A, "062A", 100)
     repository.set_state(_A, DownloadState.COMPLETED)
     stamped = connection.execute(
-        "SELECT completed_at FROM downloads WHERE ed2k_hash = ?", (_A,)
+        "SELECT completed_at FROM downloads WHERE ed2k_hash = ?", (_A.native_id,)
     ).fetchone()[0]
     assert stamped is not None
 
@@ -84,7 +85,7 @@ def test_set_state_non_completed_leaves_completed_at_null(
     repository.record_queued(_A, "062A", 100)
     repository.set_state(_A, DownloadState.DOWNLOADING)
     stamped = connection.execute(
-        "SELECT completed_at FROM downloads WHERE ed2k_hash = ?", (_A,)
+        "SELECT completed_at FROM downloads WHERE ed2k_hash = ?", (_A.native_id,)
     ).fetchone()[0]
     assert stamped is None
 
@@ -125,9 +126,9 @@ def test_get_target_id_is_none_for_unknown_hash(repository: SqliteDownloadReposi
     assert repository.get_target_id(_A) is None
 
 
-def _last_seen(connection: sqlite3.Connection, ed2k_hash: str) -> str:
+def _last_seen(connection: sqlite3.Connection, file: FileKey) -> str:
     row = connection.execute(
-        "SELECT last_seen_at FROM downloads WHERE ed2k_hash = ?", (ed2k_hash,)
+        "SELECT last_seen_at FROM downloads WHERE ed2k_hash = ?", (file.native_id,)
     ).fetchone()
     return str(row[0])
 
@@ -139,7 +140,7 @@ def test_record_queued_stamps_last_seen_at_with_queued_at(
     repository = SqliteDownloadRepository(connection, clock=_SettableClock())
     repository.record_queued(_A, "062A", 100)
     queued_at = connection.execute(
-        "SELECT queued_at FROM downloads WHERE ed2k_hash = ?", (_A,)
+        "SELECT queued_at FROM downloads WHERE ed2k_hash = ?", (_A.native_id,)
     ).fetchone()[0]
     assert _last_seen(connection, _A) == queued_at
 
