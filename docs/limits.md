@@ -9,7 +9,7 @@ assumés, dont voici les conséquences pratiques.
 
 ## Le disque se remplit, et rien ne le vide
 
-Les fichiers terminés restent dans `downloads/incoming` indéfiniment. Aucun ménage automatique
+Les fichiers terminés restent dans `ed2k/downloads/incoming` indéfiniment. Aucun ménage automatique
 n'existe, et il n'y en aura pas : p2pwatch n'ouvre jamais un fichier téléchargé, donc il ne peut
 pas juger lequel garder.
 
@@ -58,29 +58,40 @@ Les trois premières laissent le fichier à sa taille d'avant : l'espace libér�
 `0009` le rend au disque (`VACUUM`) puis vide le WAL, et le fichier retombe à la taille de ses
 données : 0,21 Go pour ce catalogue de 5,3 Go.
 
-## Le durcissement du conteneur s'arrête assez bas
+## Le durcissement des conteneurs s'arrête assez bas
 
-Le premier processus du conteneur tourne en root : il crée l'utilisateur `amule` à partir de vos
-`PUID`/`PGID`, prend possession des dossiers montés et écrit la configuration d'aMule. Cela exclut
-`user:`, `read_only:` et `cap_drop: ALL` ; chaque service abandonne ensuite ses privilèges de
-lui-même. Ce qui reste, et que les fichiers compose doivent conserver :
-`no-new-privileges:true`, `pids_limit: 512` et `mem_limit: 2g`.
+Le crawler, `p2pwatch`, tourne directement sous votre `PUID:PGID`, avec `no-new-privileges:true`,
+`pids_limit: 512` et `mem_limit: 2g`, et rien de plus. Pas de `read_only:` : une migration ou un
+gros tri de SQLite écrit des fichiers temporaires, et le petit tmpfs qu'il faudrait a déjà manqué
+une fois. Pas de `cap_drop: ALL` : il apporte peu à un processus qui tourne déjà sous votre
+identifiant.
 
-**Risque accepté** : la compromission de l'un des trois processus atteint tout ce qui est monté,
-c'est-à-dire `downloads/`, `data/` (votre catalogue) et `amule/`. Une isolation plus poussée
-(namespaces noyau, bac à sable) demanderait des privilèges ou des réglages système non portables :
-c'est hors périmètre, délibérément. Ne « corrigez » pas ce point sans rouvrir la décision, qui est
-documentée dans le dépôt.
+Le premier processus du conteneur `ed2k` tourne en root : il crée l'utilisateur `amule` à partir de
+vos `PUID`/`PGID`, prend possession des dossiers montés et écrit la configuration d'aMule. Cela
+exclut `user:`, `read_only:` et `cap_drop: ALL` ; chaque service abandonne ensuite ses privilèges de
+lui-même. Ce qui reste, et que les fichiers compose doivent conserver : `no-new-privileges:true`,
+`pids_limit: 512` et `mem_limit: 2g`.
 
-## Trois choses jamais éprouvées en conditions réelles
+**Risque accepté** : la compromission d'aMule, la pièce exposée aux pairs, atteint `ed2k/`, et
+celle du crawler atteint `data/` (votre catalogue) et lit `ed2k/downloads/`. Une isolation plus
+poussée (namespaces noyau, bac à sable) demanderait des privilèges ou des réglages système non
+portables : c'est hors périmètre, délibérément. Ne « corrigez » pas ce point sans rouvrir la
+décision, qui est documentée dans le dépôt.
 
-- **Le port-sync High-ID.** La boucle est construite et testée, mais personne ne l'a encore vue
-  obtenir un High-ID stable derrière un VPN à port forwarding, sur du vrai matériel.
-- **`no-new-privileges` combiné à l'abandon de privilèges** des trois services. Cohérent sur le
+## Quatre choses jamais éprouvées en conditions réelles
+
+- **Le port-sync High-ID.** Il est construit et testé, et ses commandes s6 sont vérifiées sur un
+  vrai conteneur, mais personne ne l'a encore vu obtenir un High-ID stable derrière un VPN à port
+  forwarding, sur du vrai matériel. Le temps qu'amuled met à s'arrêter avant l'écriture du port
+  n'est pas mesuré non plus : au-delà de 60 secondes, le port-sync renonce, relance amuled et
+  réessaie après 5 minutes.
+- **La variante VPN à deux conteneurs**, où le crawler joint aMule par le nom `ed2k`
+  d'`ed2k-gluetun`. Seul son rendu par `docker compose config` est vérifié.
+- **`no-new-privileges` combiné à l'abandon de privilèges** des services d'`ed2k`. Cohérent sur le
   papier, jamais confirmé sur une machine réelle.
-- **Les plafonds `mem_limit: 2g` et `pids_limit: 512`.** Ils ont été relevés pour loger trois
-  processus au lieu d'un, sans mesure sur un nœud en production. Si votre nœud se fait tuer sans
-  raison apparente, ce sont les deux premiers chiffres à regarder.
+- **Les plafonds `mem_limit: 2g` et `pids_limit: 512`.** Chaque conteneur garde celui que le crawler
+  et aMule partageaient dans un seul conteneur, sans mesure sur un nœud en production. Si un
+  conteneur se fait tuer sans raison apparente, ce sont les deux premiers chiffres à regarder.
 
 ## Ce qui n'est pas prévu
 

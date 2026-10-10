@@ -20,6 +20,7 @@ nav = [
     { "Régler le nœud" = "settings.md" },
     { "Migrer un nœud 1.x" = "migration-1x.md" },
     { "Migrer un nœud 2.x" = "migration-2x.md" },
+    { "Migrer un nœud 4.x" = "migration-4x.md" },
     { "Vérifier une image" = "verify-image.md" },
   ] },
   { "Quand ça coince" = [
