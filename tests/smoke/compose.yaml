@@ -4,43 +4,31 @@
 # Invoked with --project-directory <repo root>: every relative path resolves against the repo
 # root (context=., configs ./tests/smoke/*.yml).
 #
-# One service, like the real stacks: the crawler and amuled run under s6 in the same
-# container, so there is nothing left to wire between services.
+# Two services built from the tree, like the real stacks: the core reaches amuleapi at ed2k:4711.
+# No `restart:` on either (default `no`): a crash must show up as an exited container, not as a
+# backoff loop that makes the state check flap.
 services:
-  p2pwatch:
-    image: ghcr.io/mission-titar/p2pwatch:${IMAGE_TAG:-latest}
+  ed2k:
+    image: ghcr.io/mission-titar/p2pwatch-amule:${IMAGE_TAG:-latest}
     build:
       context: .
-      dockerfile: packages/crawler/Dockerfile
-    # PID 1 is root (it creates the amule user and takes the bind mounts), exactly as in
-    # deploy/base.compose.yml: `user:`, `read_only:` and `cap_drop: ALL` cannot survive here.
+      dockerfile: packages/amule/Dockerfile
+    # PID 1 is root: it creates the amule user and takes the bind mounts.
     security_opt:
       - "no-new-privileges:true"
     pids_limit: 512
     mem_limit: 2g
-    # No `restart:` on purpose (default `no`): a crash must show up as an exited container, not
-    # as a backoff loop that makes the state check flap. The real stacks restart; the smoke does
-    # not, because here a crash IS the result.
-    #
-    # PUID/PGID are the invoking user's, so the state directory below stays readable from the
-    # host — the very thing named volumes used to hide.
+    # PUID/PGID are the invoking user's, so the state directory below stays readable from the host.
     environment:
       PUID: ${PUID:?}
       PGID: ${PGID:?}
       AMULE_EC_PASSWORD: ${AMULE_EC_PASSWORD:?}
       AMULE_API_PASSWORD: ${AMULE_API_PASSWORD:?}
     volumes:
-      - ./tests/smoke/crawler.yml:/app/config/crawler.yml:ro
-      - ./tests/smoke/targets.yml:/app/config/targets.yml:ro
-      # The matcher policy has exactly ONE copy in the repo (AGENTS.md): the operator's.
-      - ./deploy/matcher.yml:/app/config/matcher.yml:ro
-      # Bind mounts, like the real stacks, so the PUID/PGID chown path is exercised for real
-      # (a root-owned mount point => `unable to open database file`). The test creates
-      # SMOKE_STATE and its three subdirectories, then throws them away.
+      # The test creates SMOKE_STATE and its three subdirectories, then throws them away.
       - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/amule:/home/amule/.aMule
-      - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/data:/data
       - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/downloads:/downloads
-    # PITFALL: s6-svstat exits 0 even for a stopped service — it prints `false`, and exit 1 means
+    # PITFALL: s6-svstat exits 0 even for a stopped service: it prints `false`, and exit 1 means
     # s6-supervise itself is not running. Test the printed output, not the exit code.
     healthcheck:
       test: ["CMD-SHELL", 'test "$$(s6-svstat -u /etc/services.d/amuled)" = true']
@@ -48,3 +36,25 @@ services:
       timeout: 3s
       retries: 3
       start_period: 30s
+
+  p2pwatch:
+    image: ghcr.io/mission-titar/p2pwatch:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: packages/crawler/Dockerfile
+    # No entrypoint runs as root, so `user:` is what makes data/ the operator's.
+    user: "${PUID:?}:${PGID:?}"
+    security_opt:
+      - "no-new-privileges:true"
+    pids_limit: 512
+    mem_limit: 2g
+    environment:
+      AMULE_API_PASSWORD: ${AMULE_API_PASSWORD:?}
+    volumes:
+      - ./tests/smoke/crawler.yml:/app/config/crawler.yml:ro
+      - ./tests/smoke/targets.yml:/app/config/targets.yml:ro
+      # The matcher policy has exactly ONE copy in the repo (AGENTS.md): the operator's.
+      - ./deploy/matcher.yml:/app/config/matcher.yml:ro
+      - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/data:/data
+      # Measured with statvfs for the disk floor, never written.
+      - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/downloads:/downloads:ro

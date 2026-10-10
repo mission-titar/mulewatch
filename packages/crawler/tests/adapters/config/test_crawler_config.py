@@ -158,7 +158,7 @@ def test_node_id_override_is_kept() -> None:
 def test_endpoint_is_derived_from_code_constants_and_the_password() -> None:
     config = parse_crawler_config(_minimal_raw(), _env())
     assert config.amule_endpoint == AmuleEndpoint(
-        name="amuled", host="127.0.0.1", port=4711, password="secret"
+        name="amuled", host="ed2k", port=4711, password="secret"
     )
 
 
@@ -188,7 +188,7 @@ def test_leftover_pool_keys_are_ignored() -> None:
         "amules": [{"name": "amule-1", "host": "amuled", "port": 4712, "password": "x"}],
     }
     config = parse_crawler_config(raw, _env())
-    assert config.amule_endpoint.host == "127.0.0.1"
+    assert config.amule_endpoint.host == "ed2k"
 
 
 def test_missing_db_path_is_fatal() -> None:

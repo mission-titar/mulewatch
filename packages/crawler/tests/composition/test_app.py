@@ -263,10 +263,9 @@ async def test_unreachable_client_at_startup_does_not_crash_the_run(
     tmp_path: Path, matcher_config: MatcherConfig, caplog: pytest.LogCaptureFixture
 ) -> None:
     # A client unreachable at setup (connect raises ClientUnreachableError) must NOT bring down
-    # run(): the composition root catches, warns, and CONTINUES. This matters MORE in one
-    # container, not less: the crawler, amuled and amuleweb start simultaneously under s6, so
-    # reaching EC before amuled listens is the normal cold start (design §4). The loops
-    # run anyway (the status read → the shutdown fires).
+    # run(): the composition root catches, warns, and CONTINUES. The core and the aMule
+    # container start together, so reaching amuleapi before it listens is the normal cold
+    # start. The loops run anyway (the status read → the shutdown fires).
     created: list[_UnreachableAtStartupClient] = []
     app_holder: dict[str, CrawlerApp] = {}
 

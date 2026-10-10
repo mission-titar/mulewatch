@@ -35,8 +35,8 @@ jobs:
         run: uv run poe test
 
   # One job per arch on its native runner: build the images (loaded locally, the crawler's
-  # pushed by digest when inputs.push), run the compose smoke stack against the crawler image
-  # and the daemon-facing suites against the aMule image, then upload the digest for the
+  # pushed by digest when inputs.push), run the compose smoke stack against both images and
+  # the daemon-facing suites against the aMule image, then upload the digest for the
   # release merge. The push exporter runs during the build, but only publish-manifest
   # publishes a tag, and it is downstream of this job's integration step, so no tag ever
   # references an image that failed integration.
@@ -104,9 +104,9 @@ jobs:
       - name: Read the aMule version pin
         id: amule
         run: |
-          version=$(sed -n 's/^ARG AMULE_VERSION=//p' packages/crawler/Dockerfile)
+          version=$(sed -n 's/^ARG AMULE_VERSION=//p' packages/amule/Dockerfile)
           if [ -z "$version" ]; then
-            echo "::error::no ARG AMULE_VERSION=<version> line in packages/crawler/Dockerfile"
+            echo "::error::no ARG AMULE_VERSION=<version> line in packages/amule/Dockerfile"
             exit 1
           fi
           echo "value=$version" >> "$GITHUB_OUTPUT"
@@ -114,17 +114,15 @@ jobs:
       - name: Check that the aMule binaries report the pinned version (${{ matrix.arch }})
         env:
           AMULE_VERSION: ${{ steps.amule.outputs.value }}
-          IMAGES: ${{ env.AMULE_IMAGE }}:ci-${{ github.sha }} ${{ env.IMAGE }}:ci-${{ github.sha }}
+          IMAGE: ${{ env.AMULE_IMAGE }}:ci-${{ github.sha }}
         # --version exits 255 even on success, so only its output is checked.
         run: |
-          for image in $IMAGES; do
-            amuled=$(docker run --rm --entrypoint amuled "$image" --version || true)
-            amuleapi=$(docker run --rm --entrypoint amuleapi "$image" --version || true)
-            echo "$image: $amuled"
-            echo "$image: $amuleapi"
-            grep -qF "aMuleD $AMULE_VERSION compiled" <<< "$amuled"
-            grep -qF "amuleapi $AMULE_VERSION compiled" <<< "$amuleapi"
-          done
+          amuled=$(docker run --rm --entrypoint amuled "$IMAGE" --version || true)
+          amuleapi=$(docker run --rm --entrypoint amuleapi "$IMAGE" --version || true)
+          echo "$amuled"
+          echo "$amuleapi"
+          grep -qF "aMuleD $AMULE_VERSION compiled" <<< "$amuled"
+          grep -qF "amuleapi $AMULE_VERSION compiled" <<< "$amuleapi"
       # The same action, Syft and cataloger selection as release.yml, so a PR proves what a
       # release will attest. The sbom-cataloger is not an image cataloger: off unless selected.
       - name: Generate the SBOM of the local aMule image (${{ matrix.arch }})
@@ -137,27 +135,15 @@ jobs:
           output-file: /tmp/sbom-amule.syft.json
           upload-artifact: "false"
           upload-release-assets: "false"
-      - name: Generate the SBOM of the local crawler image (${{ matrix.arch }})
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
-        env:
-          SYFT_SELECT_CATALOGERS: +sbom-cataloger
-        with:
-          image: docker:${{ env.IMAGE }}:ci-${{ github.sha }}
-          format: syft-json
-          output-file: /tmp/sbom-crawler.syft.json
-          upload-artifact: "false"
-          upload-release-assets: "false"
-      - name: Check that aMule is in the SBOMs at the pinned version (${{ matrix.arch }})
+      - name: Check that aMule is in the SBOM at the pinned version (${{ matrix.arch }})
         env:
           AMULE_VERSION: ${{ steps.amule.outputs.value }}
         run: |
-          for sbom in /tmp/sbom-amule.syft.json /tmp/sbom-crawler.syft.json; do
-            if ! grep -qF "\"pkg:generic/amule@${AMULE_VERSION}\"" "$sbom"; then
-              echo "::error::no pkg:generic/amule@${AMULE_VERSION} in $sbom: the declaration"
-              echo "::error::file is missing or stale, or the sbom-cataloger was not selected."
-              exit 1
-            fi
-          done
+          if ! grep -qF "\"pkg:generic/amule@${AMULE_VERSION}\"" /tmp/sbom-amule.syft.json; then
+            echo "::error::no pkg:generic/amule@${AMULE_VERSION} in the SBOM: the declaration"
+            echo "::error::file is missing or stale, or the sbom-cataloger was not selected."
+            exit 1
+          fi
       - name: Compose smoke stack integration (${{ matrix.arch }})
         run: ( cd packages/crawler && uv run pytest -m compose_integration --no-cov -q )
         env:

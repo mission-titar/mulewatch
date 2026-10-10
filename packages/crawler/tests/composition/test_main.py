@@ -129,8 +129,7 @@ def test_main_renders_runtime_config_error_from_run_as_clean_message(
 def test_main_returns_zero_when_the_shutdown_deadline_fires(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The bound FIRING is the app keeping its promise, not a crash: under s6 a non-zero exit
-    # tears the whole container down (contract documented in __main__.main).
+    # The bound FIRING is the app keeping its promise, not a crash (documented in __main__.main).
     def fake_run(coro: object) -> None:
         coro.close()  # type: ignore[attr-defined]  # close the coroutine without running it
         raise TimeoutError

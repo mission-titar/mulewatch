@@ -1,16 +1,16 @@
-"""e2e smoke of the ASSEMBLED docker compose stack, without VPN (single-container design §9).
+"""e2e smoke of the ASSEMBLED docker compose stack, without VPN (stage 3 D11).
 
 Dedicated run: ( cd packages/crawler && uv run pytest -m compose_integration --no-cov )
-Docker + docker compose v2 required. Brings up the ONE service of tests/smoke/compose.yaml —
-the crawler and amuled under s6 in a single container — and asserts the WIRING, NO real
-download (amuled has neither an eD2k server nor a VPN; only its EC server is exercised):
-  1. `docker compose build` succeeds (the image builds).
-  2. the container stays Up, turns `healthy`, supervises its two s6 services, answers on
-     amuleapi's /health (started by amuled, not by s6), and its in-process webui answers
-     /health.
-  3. both deployment entry points render with `docker compose config`, as one service each.
+Docker + docker compose v2 required. Brings up the TWO services of tests/smoke/compose.yaml,
+the core `p2pwatch` and the aMule container `ed2k`, and asserts the WIRING, NO real download
+(amuled has neither an eD2k server nor a VPN):
+  1. `docker compose build` succeeds (both images build).
+  2. both containers run, `ed2k` turns `healthy`, the core reaches amuleapi at `ed2k:4711` and
+     shows its first reading of `amuled` on the dashboard, and writes data/ as PUID.
+  3. both deployment entry points render with `docker compose config`.
   4. port-sync stays down with PORT_SYNC unset; started, its rights let `amule` restart amuled.
 Tear-down: `docker compose down -v` plus the throwaway state directory, in a finally.
+The suite refuses to run as root: a PUID of 0 would make the ownership check pass on a root file.
 
 The suite needs an engine whose bind mounts are REAL KERNEL MOUNTS. Under Docker Desktop on
 Linux the state lives in the Desktop VM's mediated mount, which does not keep SQLite's `-shm`
@@ -26,11 +26,12 @@ Mechanics established EMPIRICALLY (compose v5, Docker 29):
     file's directory). The `subprocess.run` calls also run `cwd=_REPO_ROOT`.
   * State lives in BIND MOUNTS under `SMOKE_STATE`, like the real stacks — named volumes are
     gone. The test creates the three subdirectories as the invoking user and passes its own
-    uid/gid as PUID/PGID, so the smoke exercises the real ownership path: the container's root
-    PID 1 chowns those mount points, then every service drops to the `amule` user and writes
-    there. A regression on that path shows up as `unable to open database file`.
-  * The image hard-requires PUID, PGID, AMULE_EC_PASSWORD and AMULE_API_PASSWORD: without them the
-    startup one-shot exits 1 and the container dies. They are supplied on every compose call,
+    uid/gid as PUID/PGID, so the smoke exercises the real ownership path: the aMule container's
+    root PID 1 chowns its mount points, then drops to the `amule` user, and the core runs as
+    `user: PUID:PGID` from the start. A regression on that path shows up as
+    `unable to open database file`.
+  * The aMule image hard-requires PUID, PGID, AMULE_EC_PASSWORD and AMULE_API_PASSWORD: without
+    them its boot step exits 1 and the container dies. They are supplied on every compose call,
     since the file is re-parsed each time (and each has a `:?` guard).
 """
 
@@ -53,8 +54,8 @@ pytestmark = pytest.mark.compose_integration
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _SMOKE = _REPO_ROOT / "tests/smoke/compose.yaml"
 
-_SERVICE = "p2pwatch"
-_S6_SERVICES = ("amuled", "p2pwatch")
+_CORE = "p2pwatch"
+_AMULE = "ed2k"
 
 # In CI, the build step pre-builds the image and passes IMAGE_TAG; the smoke then consumes it
 # WITHOUT a rebuild. Locally (IMAGE_TAG absent) we rebuild via compose, as before.
@@ -68,7 +69,7 @@ _ENTRY_POINTS: tuple[tuple[str, str], ...] = (
     ("gluetun", "deploy/gluetun.compose.yml"),
 )
 # No compose profile anywhere: every service of a stack starts unconditionally.
-_ALWAYS_ON_SERVICES = frozenset({_SERVICE})
+_ALWAYS_ON_SERVICES = frozenset({_CORE})
 # VPN-stack-only. The socket proxy that used to sit here is gone with the Docker API: port-sync
 # restarts amuled with `s6-svc` inside the container now (design §9).
 _GLUETUN_ONLY_SERVICES = frozenset({"gluetun"})
@@ -155,26 +156,26 @@ def _down(files: tuple[Path, ...]) -> None:
     _run("down", "-v", "--remove-orphans", files=files, timeout=180)
 
 
-def _ps_field(field: str, files: tuple[Path, ...]) -> str:
+def _ps_field(service: str, field: str, files: tuple[Path, ...]) -> str:
     """One field of the service's `ps -a --format json` entry (one JSON object per line)."""
-    result = _run("ps", "-a", "--format", "json", _SERVICE, files=files, timeout=60)
+    result = _run("ps", "-a", "--format", "json", service, files=files, timeout=60)
     for line in result.stdout.splitlines():
         line = line.strip()
         if not line:
             continue
         obj = json.loads(line)
-        if obj.get("Service") == _SERVICE:
+        if obj.get("Service") == service:
             return str(obj.get(field))
     return f"<absent from `ps`: {result.stdout!r}>"
 
 
-def _exec(*command: str, files: tuple[Path, ...]) -> str:
-    """Run a command in the container; on failure return the error AS the observed value.
+def _exec(service: str, *command: str, files: tuple[Path, ...]) -> str:
+    """Run a command in `service`; on failure return the error AS the observed value.
 
     Tolerant on purpose: every caller is a readiness probe polling for an expected output, and a
     container that is not ready yet fails the exec rather than printing something wrong.
     """
-    result = _run("exec", "-T", _SERVICE, *command, files=files, timeout=120)
+    result = _run("exec", "-T", service, *command, files=files, timeout=120)
     if result.returncode != 0:
         return f"<rc={result.returncode} {result.stderr.strip()}>"
     return result.stdout.strip()
@@ -191,9 +192,9 @@ def _wait_for(
 ) -> None:
     """Poll `probe` until it returns `target`; on exhaustion attach the container logs.
 
-    Everything here is a readiness probe: the three s6 services start at once and the container
-    reports `running` well before amuled listens on EC or uvicorn has bound its socket. With a
-    single container, its logs are THE diagnostic, so a failure carries them.
+    Everything here is a readiness probe: both containers report `running` well before amuled
+    listens or uvicorn has bound its socket. Their logs are THE diagnostic, so a failure carries
+    them.
     """
     last = "<never ran>"
     for _ in range(attempts):
@@ -201,10 +202,9 @@ def _wait_for(
         if last == target:
             return
         time.sleep(delay)
-    logs = _run("logs", "--no-color", "--tail", "80", _SERVICE, files=files, timeout=60)
+    logs = _run("logs", "--no-color", "--tail", "80", files=files, timeout=60)
     raise AssertionError(
-        f"{label}: expected {target!r}, last was {last!r}\n"
-        f"--- {_SERVICE} logs ---\n{logs.stdout}{logs.stderr}"
+        f"{label}: expected {target!r}, last was {last!r}\n--- logs ---\n{logs.stdout}{logs.stderr}"
     )
 
 
@@ -212,11 +212,18 @@ _WEBUI_HEALTH = (
     "import urllib.request;print(urllib.request.urlopen('http://localhost:8080/health').status)"
 )
 
-# amuleapi is supervised by amuled, not by s6, so s6-svstat says nothing about it. Its /health
-# needs no token and touches no EC, so it answers while amuled is still busy starting up.
+# amuleapi is supervised by amuled, not by s6, so s6-svstat says nothing about it. Read from the
+# core, by the service name the core itself uses, its /health proves the wiring.
 _AMULEAPI_HEALTH = (
     "import urllib.request;"
-    "print(urllib.request.urlopen('http://localhost:4711/api/v1/health').status)"
+    f"print(urllib.request.urlopen('http://{_AMULE}:4711/api/v1/health').status)"
+)
+
+# The core's own status reading of amuled: "No reading yet." or an unreachable client prints no.
+_DASHBOARD_READS_AMULED = (
+    "import urllib.request;"
+    "page = urllib.request.urlopen('http://localhost:8080/').read().decode();"
+    "print('<dt>API reachable</dt><dd>yes</dd>' in page)"
 )
 
 
@@ -228,6 +235,8 @@ def project_files() -> Iterator[tuple[Path, ...]]:
     daemon: compose would create a missing bind source as root, which is not the shape an
     operator's `deploy/` has.
     """
+    if os.getuid() == 0:
+        pytest.fail("run as a non-root user: PUID 0 would pass the data/ ownership check")
     base = (_SMOKE,)
     _down(base)
     shutil.rmtree(_STATE_DIR, ignore_errors=True)
@@ -274,41 +283,49 @@ def test_build_succeeds(project_files: tuple[Path, ...]) -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_one_container_supervises_the_two_services(project_files: tuple[Path, ...]) -> None:
-    """The single container runs, turns healthy, and holds amuled + amuleapi + the crawler."""
-    result = _run("up", "-d", *_BUILD_FLAGS, files=project_files, timeout=1800)
+def _up_until_ed2k_is_healthy(files: tuple[Path, ...]) -> None:
+    result = _run("up", "-d", *_BUILD_FLAGS, files=files, timeout=1800)
     assert result.returncode == 0, result.stderr
+    # The healthcheck tests s6-svstat's OUTPUT, not its exit code (it exits 0 for a stopped
+    # service too). `healthy` therefore means amuled really is up under s6.
+    _wait_for("health", lambda: _ps_field(_AMULE, "Health", files), "healthy", files)
 
-    _wait_for("state", lambda: _ps_field("State", project_files), "running", project_files)
-    # The compose healthcheck tests s6-svstat's OUTPUT, not its exit code (it exits 0 for a
-    # stopped service too). `healthy` therefore means amuled really is up under s6.
-    _wait_for("health", lambda: _ps_field("Health", project_files), "healthy", project_files)
-    for service in _S6_SERVICES:
-        svstat = partial(
-            _exec, "s6-svstat", "-u", f"/etc/services.d/{service}", files=project_files
-        )
-        _wait_for(f"s6-svstat {service}", svstat, "true", project_files)
-    # The crawler ALSO serves the read-only webui in-process (spec P4), on a bind fixed at
-    # 0.0.0.0:8080 in code. Polled from inside the container, so no host port is needed.
+
+def test_the_two_containers_work_together(project_files: tuple[Path, ...]) -> None:
+    """Both run, the core reads amuled at `ed2k:4711`, and writes data/ as PUID."""
+    _up_until_ed2k_is_healthy(project_files)
+    for service in (_CORE, _AMULE):
+        state = partial(_ps_field, service, "State", project_files)
+        _wait_for(f"{service} state", state, "running", project_files)
+    # The core serves the read-only webui in-process, on a bind fixed at 0.0.0.0:8080 in code.
+    # Polled from inside the container, so no host port is needed.
     _wait_for(
         "webui /health",
-        lambda: _exec("python", "-c", _WEBUI_HEALTH, files=project_files),
+        lambda: _exec(_CORE, "python", "-c", _WEBUI_HEALTH, files=project_files),
         "200",
         project_files,
     )
-    # amuleapi answering is the only proof that amuled's autorun worked and that the crawler has
-    # a transport at all: nothing else in this stack reaches it.
     _wait_for(
         "amuleapi /health",
-        lambda: _exec("python", "-c", _AMULEAPI_HEALTH, files=project_files),
+        lambda: _exec(_CORE, "python", "-c", _AMULEAPI_HEALTH, files=project_files),
         "200",
         project_files,
     )
+    _wait_for(
+        "dashboard reading of amuled",
+        lambda: _exec(_CORE, "python", "-c", _DASHBOARD_READS_AMULED, files=project_files),
+        "True",
+        project_files,
+        attempts=60,
+    )
+    # Read in the container: Docker Desktop's file sharing shows every file as the host user's.
+    owner = _exec(_CORE, "stat", "-c", "%u", "/data/catalog.db", files=project_files)
+    assert owner == str(os.getuid())
 
 
 def _as_amule(*command: str, files: tuple[Path, ...]) -> str:
     """Run `command` as `amule`, like port-sync, and return its stdout (fails loudly)."""
-    result = _run("exec", "-T", "-u", "amule", _SERVICE, *command, files=files, timeout=120)
+    result = _run("exec", "-T", "-u", "amule", _AMULE, *command, files=files, timeout=120)
     assert result.returncode == 0, f"{command}: rc={result.returncode} {result.stderr}"
     return result.stdout.strip()
 
@@ -320,26 +337,24 @@ def test_port_sync_stays_down_then_its_rights_let_amule_restart_amuled(
 
     As root the restart could not reveal a missing right, hence `-u amule`.
     """
-    result = _run("up", "-d", *_BUILD_FLAGS, files=project_files, timeout=1800)
-    assert result.returncode == 0, result.stderr
-    _wait_for("health", lambda: _ps_field("Health", project_files), "healthy", project_files)
+    _up_until_ed2k_is_healthy(project_files)
     time.sleep(30)
 
     # A run script respawned every second would read `true` wanted up and an updownfor under 2.
     port_sync, amuled = "/etc/services.d/port-sync", "/etc/services.d/amuled"
     fields = "up,wantedup,normallyup,updownfor"
     up, wantedup, normallyup, updownfor = _exec(
-        "s6-svstat", "-o", fields, port_sync, files=project_files
+        _AMULE, "s6-svstat", "-o", fields, port_sync, files=project_files
     ).split()
     assert (up, wantedup, normallyup) == ("false", "false", "false")
     assert int(updownfor) >= 25
-    assert _exec("s6-svstat", "-o", "up", amuled, files=project_files) == "true"
+    assert _exec(_AMULE, "s6-svstat", "-o", "up", amuled, files=project_files) == "true"
 
-    assert _exec("s6-svc", "-u", port_sync, files=project_files) == ""
+    assert _exec(_AMULE, "s6-svc", "-u", port_sync, files=project_files) == ""
     granted = "\n".join(
         f"{amuled} {right}: group amule" for right in ("status", "control", "events")
     )
-    svperms = partial(_exec, "s6-svperms", amuled, files=project_files)
+    svperms = partial(_exec, _AMULE, "s6-svperms", amuled, files=project_files)
     _wait_for("port-sync's s6-svperms", svperms, granted, project_files)
 
     pid = _as_amule("s6-svstat", "-o", "pid", amuled, files=project_files)
@@ -391,8 +406,8 @@ _INCOMING_DIR = "/downloads/incoming"
 _SEEDED_TARGET = "062A"
 _SEEDED_SIZE = 65536
 
-# The one amuleapi is in THIS container, at the address fixed in code (design §6).
-_API_HOST, _API_PORT = "127.0.0.1", 4711
+# Read from the core, at the address fixed in code (stage 3 D9).
+_API_HOST, _API_PORT = _AMULE, 4711
 
 _SHARED_HASHES = f"""
 import asyncio, json
@@ -436,19 +451,19 @@ print(row[0], bool(row[1]))
 
 def _exec_python(script: str, *args: str, files: tuple[Path, ...]) -> str:
     """Run `script` with the container's python and return its stdout (fails loudly)."""
-    result = _run("exec", "-T", _SERVICE, "python", "-c", script, *args, files=files, timeout=120)
+    result = _run("exec", "-T", _CORE, "python", "-c", script, *args, files=files, timeout=120)
     assert result.returncode == 0, f"{result.stdout}{result.stderr}"
     return result.stdout.strip()
 
 
 def _shared_hashes(files: tuple[Path, ...]) -> frozenset[str] | None:
-    """Hashes amuled currently shares, read over the API from inside the container.
+    """Hashes amuled currently shares, read over the API from the core.
 
     `None` means the call itself did not complete. That is a READINESS state, not a result:
     `s6-svc -r` takes amuleapi down with amuled and brings both back, and in between the API
     answers `503 ec_unavailable` or nothing at all. Callers poll on it.
     """
-    output = _exec("python", "-c", _SHARED_HASHES, files=files)
+    output = _exec(_CORE, "python", "-c", _SHARED_HASHES, files=files)
     try:
         return frozenset(json.loads(output))
     except json.JSONDecodeError:
@@ -480,18 +495,16 @@ def _wait_new_shared_hash(
 def test_a_file_amuled_shares_is_recorded_completed(project_files: tuple[Path, ...]) -> None:
     """End to end: amuled shares a file that left the queue, the crawler completes and notifies.
 
-    Drives the running container rather than an in-process cycle: the shipped image carries the
-    API adapter, amuled and the migrations, so the whole path (real HTTP call over loopback, real
-    amuled behind amuleapi, real local.db on a bind mount) is exercised without building a
-    parallel harness. The ed2k hash is never computed here; amuled computes it and we read it
-    back over the API, which is what makes seeding a matching row possible at all.
+    Drives the running containers rather than an in-process cycle, so the whole path (real HTTP
+    call from the core to `ed2k`, real amuled behind amuleapi, real local.db on a bind mount) is
+    exercised without building a parallel harness. The ed2k hash is never computed here; amuled
+    computes it and we read it back over the API, which is what makes seeding a matching row
+    possible at all.
     """
-    result = _run("up", "-d", *_BUILD_FLAGS, files=project_files, timeout=1800)
-    assert result.returncode == 0, result.stderr
-    _wait_for("health", lambda: _ps_field("Health", project_files), "healthy", project_files)
+    _up_until_ed2k_is_healthy(project_files)
     _wait_for(
         "webui /health",
-        lambda: _exec("python", "-c", _WEBUI_HEALTH, files=project_files),
+        lambda: _exec(_CORE, "python", "-c", _WEBUI_HEALTH, files=project_files),
         "200",
         project_files,
     )
@@ -501,7 +514,7 @@ def test_a_file_amuled_shares_is_recorded_completed(project_files: tuple[Path, .
     drop = _run(
         "exec",
         "-T",
-        _SERVICE,
+        _AMULE,
         "sh",
         "-c",
         f"head -c {_SEEDED_SIZE} /dev/urandom > {_INCOMING_DIR}/p2pwatch-smoke.bin",
@@ -509,12 +522,11 @@ def test_a_file_amuled_shares_is_recorded_completed(project_files: tuple[Path, .
         timeout=120,
     )
     assert drop.returncode == 0, f"{drop.stdout}{drop.stderr}"
-    # amuled only scans its IncomingDir at startup. It is an s6 service now, so the rescan is a
-    # process restart inside the container, and the container itself never goes down.
+    # amuled only scans its IncomingDir at startup, so the rescan is an s6 restart in `ed2k`.
     restart = _run(
         "exec",
         "-T",
-        _SERVICE,
+        _AMULE,
         "s6-svc",
         "-r",
         "/etc/services.d/amuled",
@@ -528,11 +540,11 @@ def test_a_file_amuled_shares_is_recorded_completed(project_files: tuple[Path, .
     _exec_python(_SEED_ROW, ed2k_hash, files=project_files)
     _wait_for(
         f"download {ed2k_hash}",
-        lambda: _exec("python", "-c", _READ_ROW, ed2k_hash, files=project_files),
+        lambda: _exec(_CORE, "python", "-c", _READ_ROW, ed2k_hash, files=project_files),
         "completed True",
         project_files,
     )
 
     # The completion also reached the observability pipeline (the notification, target-labelled).
-    logs = _run("logs", "--no-color", _SERVICE, files=project_files, timeout=60)
+    logs = _run("logs", "--no-color", _CORE, files=project_files, timeout=60)
     assert f"download completed: {_SEEDED_TARGET}" in logs.stdout, logs.stdout[-4000:]
