@@ -1,0 +1,13 @@
+# aMule on the default network. Low-ID by default; for High-ID, forward 4662/tcp and
+# 4672/udp from your router to this machine.
+
+services:
+  ed2k:
+    extends:
+      file: service.compose.yml
+      service: ed2k
+    # 4711 (aMule's own web UI) is protected by AMULE_API_PASSWORD.
+    ports:
+      - "4711:4711"
+      - "4662:4662"
+      - "4672:4672/udp"

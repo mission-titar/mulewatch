@@ -7,7 +7,7 @@ the core `p2pwatch` and the aMule container `ed2k`, and asserts the WIRING, NO r
   1. `docker compose build` succeeds (both images build).
   2. both containers run, `ed2k` turns `healthy`, the core reaches amuleapi at `ed2k:4711` and
      shows its first reading of `amuled` on the dashboard, and writes data/ as PUID.
-  3. both deployment entry points render with `docker compose config`.
+  3. deploy/'s layout renders with `docker compose config`, in both variants.
   4. port-sync stays down with PORT_SYNC unset; started, its rights let `amule` restart amuled.
 Tear-down: `docker compose down -v` plus the throwaway state directory, in a finally.
 The suite refuses to run as root: a PUID of 0 would make the ownership check pass on a root file.
@@ -45,9 +45,9 @@ import uuid
 from collections.abc import Callable, Iterator, Mapping
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 import pytest
-import yaml
 
 pytestmark = pytest.mark.compose_integration
 
@@ -63,17 +63,10 @@ _IMAGE_TAG = os.environ.get("IMAGE_TAG")
 _USES_PREBUILT = _IMAGE_TAG is not None
 _BUILD_FLAGS: tuple[str, ...] = () if _USES_PREBUILT else ("--build",)
 
-# Explicit (label, path) pairs: the two stack files share no naming pattern.
-_ENTRY_POINTS: tuple[tuple[str, str], ...] = (
-    ("compose", "deploy/compose.yml"),
-    ("gluetun", "deploy/gluetun.compose.yml"),
-)
-# No compose profile anywhere: every service of a stack starts unconditionally.
-_ALWAYS_ON_SERVICES = frozenset({_CORE})
-# VPN-stack-only. The socket proxy that used to sit here is gone with the Docker API: port-sync
-# restarts amuled with `s6-svc` inside the container now (design §9).
-_GLUETUN_ONLY_SERVICES = frozenset({"gluetun"})
-_DELETED_SERVICES = frozenset({"docker-proxy", "crawler", "amuled"})
+_DEPLOY = _REPO_ROOT / "deploy"
+# The include line an operator edits to switch variant (stage 3 D10).
+_DIRECT_INCLUDE = "ed2k/direct.compose.yml"
+_VARIANTS = ("direct", "vpn")
 
 # Isolated project (unique prefix per run) so we NEVER touch a real stack on the host.
 _PROJECT = f"emule_smoke_{uuid.uuid4().hex[:8]}"
@@ -97,12 +90,15 @@ _SMOKE_ENV = {
     "SMOKE_STATE": str(_STATE_DIR),
 }
 
-# `docker compose config` on the deployment entry points interpolates at PARSE time, gluetun's
-# variables included: stub them so a missing variable is not what fails.
-_CONFIG_ENV = {
-    **_SMOKE_ENV,
+# The `.env` the render test writes beside its copy of compose.yml, and ONLY there. Values no
+# default could produce, so a PUID that renders proves it came from this file.
+_RENDER_DOTENV = {
+    "PUID": "4242",
+    "PGID": "4343",
+    "AMULE_EC_PASSWORD": "x",
+    "AMULE_API_PASSWORD": "x",
     "WIREGUARD_PRIVATE_KEY": "x",
-    "SERVER_COUNTRIES": "",
+    "VPN_PORT_FORWARDING": "yes",
 }
 
 # The ONLY two variables of the caller's environment the docker CLI is allowed to see. They pick
@@ -366,35 +362,64 @@ def test_port_sync_stays_down_then_its_rights_let_amule_restart_amuled(
     assert new_pid != pid
 
 
-@pytest.mark.parametrize(
-    ("label", "path"), _ENTRY_POINTS, ids=[label for label, _ in _ENTRY_POINTS]
-)
-def test_entrypoint_config_renders(label: str, path: str) -> None:
-    """`docker compose -f <stack file> config` renders without error.
+def _render(variant: str, tmp_path: Path) -> Any:
+    """`docker compose config` of a copy of deploy/'s compose files, switched to `variant`.
 
-    Locks in include + interpolation + the `:?` guards (no daemon required; the bind-mount
-    sources need not exist for `config`). Also asserts the resulting topology: one `p2pwatch`
-    service, the VPN stack adding only gluetun, nothing left of the four-service shape, and NO
-    named volume — the operator must be able to `sqlite3 deploy/data/catalog.db` from the host.
+    Copied, so the `.env` it needs never lands in deploy/, where a developer's secrets live. No
+    PUID in the process environment: the included file can only take it from the parent's `.env`.
     """
-    command = ["docker", "compose", "-f", path, "config"]
+    for source in _DEPLOY.glob("**/*compose.yml"):
+        copy = tmp_path / source.relative_to(_DEPLOY)
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        copy.write_text(source.read_text())
+    compose = tmp_path / "compose.yml"
+    text = compose.read_text()
+    assert text.count(_DIRECT_INCLUDE) == 1, "compose.yml must name the direct include once"
+    compose.write_text(text.replace(_DIRECT_INCLUDE, f"ed2k/{variant}.compose.yml"))
+    (tmp_path / ".env").write_text("".join(f"{k}={v}\n" for k, v in _RENDER_DOTENV.items()))
+
     result = subprocess.run(
-        command,
-        cwd=_REPO_ROOT,
-        env=_docker_env(_CONFIG_ENV),
+        ["docker", "compose", "-f", str(compose), "config", "--format", "json"],
+        cwd=tmp_path,
+        env=_docker_env(),
         capture_output=True,
         text=True,
         timeout=120,
     )
     assert result.returncode == 0, result.stderr
+    rendered = json.loads(result.stdout)
+    assert not rendered.get("volumes"), f"named volumes are gone, got {rendered['volumes']}"
+    return rendered["services"]
 
-    rendered = yaml.safe_load(result.stdout)
-    assert isinstance(rendered, dict)
-    services = set(rendered.get("services", {}))
-    expected_gluetun = _GLUETUN_ONLY_SERVICES if label == "gluetun" else frozenset()
-    assert services == _ALWAYS_ON_SERVICES | expected_gluetun, f"{path}: got {services}"
-    assert not _DELETED_SERVICES & services, f"{path}: deleted service still declared, {services}"
-    assert not rendered.get("volumes"), f"{path}: named volumes are gone, got {rendered['volumes']}"
+
+def _binds(service: Any) -> dict[str, tuple[Path, bool]]:
+    """Each bind mount of a rendered service: target -> (source, read-only)."""
+    return {v["target"]: (Path(v["source"]), bool(v.get("read_only"))) for v in service["volumes"]}
+
+
+@pytest.mark.parametrize("variant", _VARIANTS)
+def test_the_deploy_layout_renders(variant: str, tmp_path: Path) -> None:
+    """The core and `ed2k` render from deploy/compose.yml, `ed2k` from its own directory."""
+    services = _render(variant, tmp_path)
+    ed2k_dir = tmp_path / "ed2k"
+    core, ed2k = services[_CORE], services[_AMULE]
+
+    assert ed2k["environment"]["PUID"] == _RENDER_DOTENV["PUID"]
+    assert core["user"] == f"{_RENDER_DOTENV['PUID']}:{_RENDER_DOTENV['PGID']}"
+    for source, _ in _binds(ed2k).values():
+        assert source.is_relative_to(ed2k_dir), f"{source} is outside {ed2k_dir}"
+    assert _binds(core)["/downloads"] == (ed2k_dir / "downloads", True)
+    assert _binds(core)["/data"] == (tmp_path / "data", False)
+    assert "network_mode" not in core  # the core stays outside the tunnel
+
+    if variant == "direct":
+        assert set(services) == {_CORE, _AMULE}
+        return
+    assert set(services) == {_CORE, _AMULE, "ed2k-gluetun"}
+    aliases = services["ed2k-gluetun"]["networks"]["default"]["aliases"]
+    assert _AMULE in aliases
+    assert ed2k["network_mode"] == "service:ed2k-gluetun"
+    assert ed2k["environment"]["PORT_SYNC"] == _RENDER_DOTENV["VPN_PORT_FORWARDING"]
 
 
 # --- Completion scenario (scope-reduction spec §4) ---------------------------------------------

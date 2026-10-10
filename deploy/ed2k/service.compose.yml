@@ -1,9 +1,9 @@
-# Shared service definition, pulled into compose.yml and gluetun.compose.yml with `extends:`.
-# Each stack adds its own `ports:`; this file declares none.
+# aMule's service, pulled into direct.compose.yml and vpn.compose.yml with `extends:`.
+# Each variant adds its own network; this file declares none. Paths resolve against ed2k/.
 
 services:
-  p2pwatch:
-    image: ghcr.io/mission-titar/p2pwatch:latest
+  ed2k:
+    image: ghcr.io/mission-titar/p2pwatch-amule:latest
     security_opt:
       - "no-new-privileges:true"
     pids_limit: 512
@@ -15,11 +15,7 @@ services:
       AMULE_EC_PASSWORD: ${AMULE_EC_PASSWORD:?}
       AMULE_API_PASSWORD: ${AMULE_API_PASSWORD:?}
     volumes:
-      - ./crawler.yml:/app/config/crawler.yml:ro
-      - ./targets.yml:/app/config/targets.yml:ro
-      - ./matcher.yml:/app/config/matcher.yml:ro
       - ./amule:/home/amule/.aMule
-      - ./data:/data
       - ./downloads:/downloads
     # s6-svstat exits 0 for a stopped service too, so test what it prints, not its exit code.
     healthcheck:

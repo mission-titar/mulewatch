@@ -302,7 +302,7 @@ def _parse_observability(raw: dict[str, Any], env: Mapping[str, str]) -> Observa
 # written before them must still boot. 24 h absorbs an amuled restart or a night of downtime.
 _DEFAULT_MIN_FREE_BYTES = 10_737_418_240  # 10 GiB
 _DEFAULT_LOST_AFTER_SECONDS = 86_400.0
-_DEFAULT_OUTPUT_DIR = "/downloads"  # the bind mount in deploy/base.compose.yml
+_DEFAULT_OUTPUT_DIR = "/downloads"  # the bind mount in deploy/compose.yml
 
 
 def _parse_download(raw: dict[str, Any]) -> DownloadConfig | None:
