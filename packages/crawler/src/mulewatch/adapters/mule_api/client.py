@@ -30,6 +30,7 @@ from mulewatch.adapters.mule_api.mapping import (
     map_search_results,
     map_shared_download,
 )
+from mulewatch.domain.file_key import Network
 from mulewatch.domain.observation import FileObservation
 from mulewatch.ports.client_status import ClientStatus
 from mulewatch.ports.clock import Clock
@@ -218,6 +219,8 @@ class AmuleApiClient:
     async def start(self, request: DownloadRequest) -> None:
         """Queues the file by its ed2k link. The route is a bulk one, so a refused link comes back
         per item INSIDE a 2xx: the envelope reports the failure, never the status code."""
+        if request.file.network is not Network.ED2K:
+            raise ApiRejectedError(f"aMule downloads ed2k files only, not {request.file.network}")
         link = build_ed2k_link(request.filename, request.size_bytes, request.file.native_id)
         payload = await self._call("POST", "/downloads", body={"links": [link]})
         results = payload.get("results")

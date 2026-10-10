@@ -3,6 +3,7 @@
 import asyncio
 import json
 from datetime import datetime
+from typing import cast
 
 import httpx
 import pytest
@@ -603,6 +604,19 @@ async def test_a_list_envelope_that_is_not_a_list_stops_the_sweep() -> None:
 
     assert await client.downloads() == ()
     await client.close()
+
+
+@pytest.mark.asyncio
+async def test_start_refuses_a_file_of_another_network_without_asking() -> None:
+    api = FakeAmuleApi()
+    client = await _connected(api)
+    other = FileKey(cast(Network, "soulseek"), "Keroro/095.avi")
+
+    with pytest.raises(DownloadRejectedError, match="soulseek"):
+        await client.start(DownloadRequest(file=other, filename="095.avi", size_bytes=10))
+    await client.close()
+
+    assert api.added_links == []
 
 
 @pytest.mark.asyncio
