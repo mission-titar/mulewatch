@@ -144,6 +144,8 @@ task (client, channel, keyword), forever:
   interchangeable workers, `domain/search/cycle.py` (the per-cycle keyword shuffle), `cycle_index`, the
   `SearchCycleCompleted` and `SearchTaskDropped` events, and the cycle's coverage sampling (replaced by D15).
 - **The pause control stays**: a paused task waits before its next search. A search in flight completes.
+  (Corrected: so does a search already waiting its network slot in the adapter, an accepted limit in
+  section 7)
 
 *Reasons. A cycle starts again only when its slowest channel is done, so a fast channel idles behind a slow
 one; the operator wants a design robust to that, not a setting that happens to hide it. "The important thing
@@ -216,6 +218,10 @@ The core keeps today's exponential backoff (`backoff.*` config) per client and p
 `amuled` and `amuled:ed2k` / `amuled:kad`. It is saved to `scheduler_state.channel_backoff` at each change
 (failure or reset) instead of at the end of a cycle that no longer exists. The old keys (`amuled:global`)
 are not carried over: local 0006 deletes the stored map (D19), which costs at most one reset backoff.
+(Corrected: a failure on a key already backed off counts no new attempt, since several searches of one
+channel can now fail together and each counting one would jump the delay from 2 s to 64 s at once, block
+100; the client key resets on a successful search only, never on a `connect()` that may not have touched
+the network, block 205)
 
 `SearchFailed` carries no `retry_after`.
 
@@ -229,7 +235,9 @@ answers nothing. A field no client fills is YAGNI; slskd adds it in stage 5 if i
 caller degrades and backs off the client), `SearchFailedError` (a search refused: the channel backs off),
 `DownloadRejectedError` (a download refused: that download fails). They replace `MuleClientError`,
 `MuleUnreachableError` and `MuleSearchFailedError`; the amuleapi errors re-parent onto them, and
-`ApiAuthError` stays outside the contract (fail fast).
+`ApiAuthError` stays outside the contract (fail fast). (Corrected: `ClientAuthError`, a refused password,
+joins the contract and `ApiAuthError` re-parents onto it, so the status loop can let it through while it
+reads every other client error as unreachable, block 205)
 
 *Reason: the download loop treats a rejected link through `MuleSearchFailedError`, an error named after
 search. Each port names its own failure, and the consumers catch a generic type.*
@@ -343,6 +351,16 @@ start without ever listing the download is bounded by the TTL.
   the crawler alone stopped with `s6-svc -d`, the write through `docker compose exec --user amule ...
   python -c "import sqlite3; ..."` (the webui console is read-only), the crawler started again with
   `s6-svc -u`. Block 180 writes this procedure into `docs/troubleshooting.md`.
+- **amuled never refuses a file it still holds** (Corrected: established by block 205 from aMule's source
+  at the pinned commit). `CDownloadQueue::AddED2KLink` (`src/DownloadQueue.cpp:1515`) finds a queued
+  partfile through `IsFileExisting` and `GetFileByID`, merges the link's AICH hash and sources into it and
+  returns true, whatever the entry's state (paused, error, completed awaiting clear); `EC_OP_ADD_LINK`
+  (`src/ExternalConn.cpp:3365`) answers `EC_OP_NOOP`, and `POST /downloads` (`src/webapi/Api.cpp:4770`)
+  `202`. Restarting a download amuled still holds costs one request. The one refusal of a known file is a
+  file complete, shared, still on disk and out of the queue: `400 amuled_rejected` ("Invalid link or
+  already on list."), the row fails once with `rejected`, and the next listing of `/shared` completes it,
+  since a `failed` row can still complete. A list answered without its envelope is unreachable, not
+  empty, so a misread list restarts nothing.
 - **Not handled: a completed file moved out of Incoming before the loop saw it** would be downloaded again
   in full. A lost-media watch keeps sharing what it finds, so its Incoming is not emptied under it; the
   `docs/troubleshooting.md` passage that names this cause of absence is rewritten in block 180.
@@ -365,8 +383,12 @@ class ClientStatus:
     channels: tuple[ChannelStatus, ...]
 
 class StatusClient(Protocol):
+    async def connect(self) -> None: ...
     async def status(self) -> ClientStatus: ...
 ```
+
+(Corrected: `connect()` added, which the status loop calls before each reading: the boot connect routinely
+fails, and with the crawl paused nothing else would reconnect the client, block 90, operator 2026-10-10)
 
 - **API reachable** is `status()` not raising `ClientUnreachableError`; no field carries it.
 - **`on_network`**: the channel has joined its network (an eD2k server, Kad, a Soulseek login).
@@ -400,6 +422,9 @@ status loop, per client, every 60 s (core constant):
     status() -> gauges per channel, alert clocks, last status kept for the webui (D21)
     ClientUnreachableError -> InstanceUnreachable (log and counter), alert clock of the client
 ```
+
+(Corrected: any `ClientError` but `ClientAuthError` reads as unreachable, so a route a weekly aMule bump
+renames degrades instead of ending the crawler; a refused password still fails fast, block 205)
 
 - **An alert fires when a degraded state has lasted**, whatever came before it and whenever it began,
   boot included:
@@ -448,7 +473,7 @@ so it needs a loop of its own.*
 | `emule_decisions{tier}` | `p2pwatch_decisions{tier}` |
 | `emule_downloads_queued`, `emule_downloads_completed`, `emule_download_disk_free_bytes` | `p2pwatch_downloads_queued`, `p2pwatch_downloads_completed`, `p2pwatch_download_disk_free_bytes` |
 | `emule_crawler_up` | `p2pwatch_crawler_up` |
-| `emule_mule_unreachable` | `p2pwatch_client_unreachable` |
+| `emule_mule_unreachable` | `p2pwatch_client_unreachable{client}` (Corrected: labelled `client` too, by this decision's own reason, block 205) |
 | `emule_search_cycles`, `emule_search_cycle_duration_seconds`, `emule_search_blind_cycles`, `emule_search_tasks_dropped` | removed (no cycle, no shared queue) |
 | `emule_connected_instances{network}`, `emule_search_capable` | removed, replaced by `p2pwatch_channel_on_network{client, network}` and `p2pwatch_channel_connectable{client, network}` (1 or 0; the series is removed while unknown) |
 | `emule_port_sync_triggered`, `emule_high_id_recovered`, `emule_port_mismatch` | unchanged |
@@ -599,6 +624,10 @@ Block 10 adds `(Corrected: ...)` markers to the umbrella spec:
 - **ed2k**: starts are at least 60 s apart, and no start happens while the previous search reports
   `running`, unless that search has run past one budget;
 - **Kad**: starts on one target are at least 60 s apart, whatever keywords share it.
+  (Corrected: one exception, found by block 30. A start delayed by Kad's "already on search list" retries
+  (D5) can land less than 60 s before its target's next reserved slot. Kad's own refusal bounds it: a
+  target stays on Kad's list for its 45 s life and we stop no search (D6), so two starts on one target are
+  never less than 45 s apart, still above a node's one request per 20 s)
 
 It is the only new behaviour that can harm the node (a 1 h server blacklist, a 2 h Kad ban), and it cannot be
 watched on the node before a release. It is proved by tests driving all tasks against `FakeAmuleApi` with a
@@ -764,6 +793,11 @@ Each criterion names the output that would prove it wrong.
 - **Accepted limit: a crawler restart restarts the alert clocks.** They live in memory, so a degraded state
   ongoing across a restart alerts at most one delay later.
 - **Accepted limit: a download cancelled by hand in aMule's UI comes back within a round** (D13).
+- **Accepted limit: a pause takes effect after the searches already waiting their network slot**
+  (Corrected: holistic finding 16). A task waiting on the adapter's ed2k lock or on a Kad target's slot
+  is in flight from the core's view, so after a pause up to K-1 ed2k starts, 60 s apart, and each Kad
+  target's next start still go out: about one more minute with the two default keywords. The adapter
+  taking the pause gate would put a core rule in it. The dashboard's banner and `docs/operate.md` say so.
 - **Accepted limit: at most 9 distinct Kad targets** before amuled's ring of 20 evicts a search still read
   (D6).
 - **Accepted loss: an ed2k answer later than 750 ms after the sweep's last request is not read** (D3).
