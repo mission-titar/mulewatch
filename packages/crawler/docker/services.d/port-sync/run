@@ -1,0 +1,13 @@
+#!/bin/sh
+exec 2>&1
+set -eu
+
+# All services start together: wait for amuled's supervise directory.
+until [ -e /etc/services.d/amuled/supervise/control ]; do
+	sleep 0.1
+done
+# The amule group may control amuled (-d, -u) and subscribe to its events (s6-svc -wD).
+s6-svperms -G amule -E amule /etc/services.d/amuled
+
+exec setpriv --reuid amule --regid amule --init-groups \
+	env HOME=/home/amule python -m p2pwatch_amule.port_sync

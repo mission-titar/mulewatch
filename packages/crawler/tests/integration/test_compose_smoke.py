@@ -9,6 +9,7 @@ download (amuled has neither an eD2k server nor a VPN; only its EC server is exe
      amuleapi's /health (started by amuled, not by s6), and its in-process webui answers
      /health.
   3. both deployment entry points render with `docker compose config`, as one service each.
+  4. port-sync stays down with PORT_SYNC unset; started, its rights let `amule` restart amuled.
 Tear-down: `docker compose down -v` plus the throwaway state directory, in a finally.
 
 The suite needs an engine whose bind mounts are REAL KERNEL MOUNTS. Under Docker Desktop on
@@ -303,6 +304,51 @@ def test_one_container_supervises_the_two_services(project_files: tuple[Path, ..
         "200",
         project_files,
     )
+
+
+def _as_amule(*command: str, files: tuple[Path, ...]) -> str:
+    """Run `command` as `amule`, like port-sync, and return its stdout (fails loudly)."""
+    result = _run("exec", "-T", "-u", "amule", _SERVICE, *command, files=files, timeout=120)
+    assert result.returncode == 0, f"{command}: rc={result.returncode} {result.stderr}"
+    return result.stdout.strip()
+
+
+def test_port_sync_stays_down_then_its_rights_let_amule_restart_amuled(
+    project_files: tuple[Path, ...],
+) -> None:
+    """PORT_SYNC unset keeps port-sync down; started, its run script grants what it needs.
+
+    As root the restart could not reveal a missing right, hence `-u amule`.
+    """
+    result = _run("up", "-d", *_BUILD_FLAGS, files=project_files, timeout=1800)
+    assert result.returncode == 0, result.stderr
+    _wait_for("health", lambda: _ps_field("Health", project_files), "healthy", project_files)
+    time.sleep(30)
+
+    # A run script respawned every second would read `true` wanted up and an updownfor under 2.
+    port_sync, amuled = "/etc/services.d/port-sync", "/etc/services.d/amuled"
+    fields = "up,wantedup,normallyup,updownfor"
+    up, wantedup, normallyup, updownfor = _exec(
+        "s6-svstat", "-o", fields, port_sync, files=project_files
+    ).split()
+    assert (up, wantedup, normallyup) == ("false", "false", "false")
+    assert int(updownfor) >= 25
+    assert _exec("s6-svstat", "-o", "up", amuled, files=project_files) == "true"
+
+    assert _exec("s6-svc", "-u", port_sync, files=project_files) == ""
+    granted = "\n".join(
+        f"{amuled} {right}: group amule" for right in ("status", "control", "events")
+    )
+    svperms = partial(_exec, "s6-svperms", amuled, files=project_files)
+    _wait_for("port-sync's s6-svperms", svperms, granted, project_files)
+
+    pid = _as_amule("s6-svstat", "-o", "pid", amuled, files=project_files)
+    _as_amule("s6-svc", "-wD", "-T", "60000", "-d", amuled, files=project_files)
+    assert _as_amule("s6-svstat", "-o", "up", amuled, files=project_files) == "false"
+    _as_amule("s6-svc", "-wu", "-T", "60000", "-u", amuled, files=project_files)
+    up, new_pid = _as_amule("s6-svstat", "-o", "up,pid", amuled, files=project_files).split()
+    assert up == "true"
+    assert new_pid != pid
 
 
 @pytest.mark.parametrize(

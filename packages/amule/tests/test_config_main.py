@@ -41,6 +41,8 @@ class Boot:
         self.incoming = tmp_path / "downloads/incoming"
         self.temp = tmp_path / "downloads/temp"
         self.conf = self.config / "amule.conf"
+        self.port_sync_down = tmp_path / "services.d/port-sync/down"
+        self.port_sync_down.parent.mkdir(parents=True)
         self.amule_exists = False
         self.calls: list[Call] = []
         self.chowns: list[tuple[str, int, int]] = []
@@ -52,6 +54,7 @@ class Boot:
         monkeypatch.setattr(entry, "CONFIG_DIR", str(self.config))
         monkeypatch.setattr(entry, "INCOMING_DIR", str(self.incoming))
         monkeypatch.setattr(entry, "TEMP_DIR", str(self.temp))
+        monkeypatch.setattr(entry, "PORT_SYNC_DOWN", str(self.port_sync_down))
         monkeypatch.setattr(grp, "getgrnam", self._lookup)
         monkeypatch.setattr(pwd, "getpwnam", self._lookup)
         monkeypatch.setattr(subprocess, "run", self._run)
@@ -202,3 +205,31 @@ def test_a_password_may_hold_spaces_and_non_ascii_letters(
     monkeypatch.setenv("AMULE_API_PASSWORD", "mot de passé")
     entry.main()
     assert "--set-admin-pass=mot de passé" in boot.calls[-1][0]
+
+
+@pytest.mark.parametrize("value", ["off", "", None])
+def test_port_sync_off_or_unset_keeps_its_service_down(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> None:
+    if value is not None:
+        monkeypatch.setenv("PORT_SYNC", value)
+    entry.main()
+    assert boot.port_sync_down.is_file()
+
+
+@pytest.mark.parametrize("value", ["yes", "On"])
+def test_port_sync_on_lets_s6_start_its_service(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    boot.port_sync_down.touch()
+    monkeypatch.setenv("PORT_SYNC", value)
+    entry.main()
+    assert not boot.port_sync_down.exists()
+
+
+def test_port_sync_on_without_a_down_file_boots(
+    boot: Boot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PORT_SYNC", "on")
+    entry.main()
+    assert not boot.port_sync_down.exists()
