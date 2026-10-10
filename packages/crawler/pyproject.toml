@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "Crawler eMule — surveillance, catalogue, auto-download (Keroro VF lost media)"
 requires-python = ">=3.13"
 dependencies = [
-    "apprise>=2.0.0",
+    "apprise>=2.0.1",
     "catalog-matching",
     "pyyaml>=6.0.3",
     "httpx>=0.28",
