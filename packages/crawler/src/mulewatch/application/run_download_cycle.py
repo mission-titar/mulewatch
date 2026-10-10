@@ -22,10 +22,9 @@ import logging
 from collections.abc import Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, assert_never
 
 from catalog_matching.ed2k_link import build_ed2k_link
-from catalog_matching.engine import DownloadCandidate
 from catalog_matching.models import TargetSegment
 from mulewatch.application.edge_state import EdgeState
 from mulewatch.domain.download.policy import DownloadVerdict, download_policy
@@ -37,7 +36,7 @@ from mulewatch.domain.observability.events import (
     DownloadQueued,
     FreeSpaceSampled,
 )
-from mulewatch.ports.catalog_repository import ObservedFile
+from mulewatch.ports.catalog_repository import DownloadCandidate, ObservedFile
 from mulewatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
 from mulewatch.ports.clock import Clock
 from mulewatch.ports.decision_signal import DecisionSignal
@@ -66,19 +65,19 @@ class DownloadRepository(Protocol):
     structurally. Stubs on ONE line (the ``def`` is covered when the class is created).
     """
 
-    def record_queued(self, ed2k_hash: str, target_id: str, size_bytes: int) -> bool: ...
+    def record_queued(self, file: FileKey, target_id: str, size_bytes: int) -> bool: ...
 
-    def set_state(self, ed2k_hash: str, state: DownloadState) -> None: ...
+    def set_state(self, file: FileKey, state: DownloadState) -> None: ...
 
-    def is_downloaded(self, ed2k_hash: str) -> bool: ...
+    def is_downloaded(self, file: FileKey) -> bool: ...
 
-    def mark_seen(self, ed2k_hashes: Iterable[str]) -> None: ...
+    def mark_seen(self, files: Iterable[FileKey]) -> None: ...
 
-    def expire_lost(self, max_age_seconds: float) -> tuple[str, ...]: ...
+    def expire_lost(self, max_age_seconds: float) -> tuple[FileKey, ...]: ...
 
-    def active_states(self) -> dict[str, DownloadState]: ...
+    def active_states(self) -> dict[FileKey, DownloadState]: ...
 
-    def get_target_id(self, ed2k_hash: str) -> str | None: ...
+    def get_target_id(self, file: FileKey) -> str | None: ...
 
 
 class CatalogReader(Protocol):
@@ -139,8 +138,13 @@ def _target_status(targets: Sequence[TargetSegment], target_id: str) -> str:
     return "complete"
 
 
+def _key(ed2k_hash: str) -> FileKey:
+    """A file of the client's snapshot: ``MuleDownloadClient`` still names it by its hash."""
+    return FileKey(Network.ED2K, ed2k_hash)
+
+
 async def _monitor(
-    deps: DownloadDeps, states: dict[str, DownloadState], queue: tuple[DownloadEntry, ...]
+    deps: DownloadDeps, states: dict[FileKey, DownloadState], queue: tuple[DownloadEntry, ...]
 ) -> None:
     """Reconciles ``downloads`` with the queue: QUEUED→DOWNLOADING, and nothing else.
 
@@ -148,47 +152,48 @@ async def _monitor(
     one, so its notification never fires twice.
     """
     for entry in queue:
-        current = states.get(entry.ed2k_hash)
+        file = _key(entry.ed2k_hash)
+        current = states.get(file)
         if current is None:
             continue  # download outside the crawler: ignored
         if current is DownloadState.COMPLETED:
             continue  # already notified: don't regress and don't re-fire
         if current is not DownloadState.DOWNLOADING:
-            deps.downloads.set_state(entry.ed2k_hash, DownloadState.DOWNLOADING)
-            states[entry.ed2k_hash] = DownloadState.DOWNLOADING
+            deps.downloads.set_state(file, DownloadState.DOWNLOADING)
+            states[file] = DownloadState.DOWNLOADING
 
 
 async def _record_completion(
-    deps: DownloadDeps, ed2k_hash: str, states: dict[str, DownloadState]
+    deps: DownloadDeps, file: FileKey, states: dict[FileKey, DownloadState]
 ) -> None:
     """Marks ``completed`` (stamps completed_at) and notifies (step 2, §5).
 
     ``completed`` is terminal: the file stays in amuled's IncomingDir, nothing moves it and
-    nothing opens it. The caller skips hashes already ``completed``, so the notification fires
+    nothing opens it. The caller skips files already ``completed``, so the notification fires
     exactly once per download.
     """
-    deps.downloads.set_state(ed2k_hash, DownloadState.COMPLETED)
-    states[ed2k_hash] = DownloadState.COMPLETED
-    # Every download target of the hash, else the one it was queued for (the decision may have
-    # dropped since); the hash names a file whose observations are gone.
-    decided = [c.target_id for c in deps.catalog.download_decisions() if c.ed2k_hash == ed2k_hash]
-    target_ids = decided or [deps.downloads.get_target_id(ed2k_hash) or "unknown"]
+    deps.downloads.set_state(file, DownloadState.COMPLETED)
+    states[file] = DownloadState.COMPLETED
+    # Every download target of the file, else the one it was queued for (the decision may have
+    # dropped since); the native id names a file whose observations are gone.
+    decided = [c.target_id for c in deps.catalog.download_decisions() if c.file == file]
+    target_ids = decided or [deps.downloads.get_target_id(file) or "unknown"]
     titles = {target.target_id: target.title for target in deps.targets}
-    best = deps.catalog.best_observation(FileKey(Network.ED2K, ed2k_hash))
+    best = deps.catalog.best_observation(file)
     await deps.telemetry.emit(
         DownloadCompleted(
-            ed2k_hash,
-            ed2k_hash if best is None else best.filename,
+            file,
+            file.native_id if best is None else best.filename,
             tuple((target_id, titles.get(target_id, "")) for target_id in target_ids),
         )
     )
-    _logger.info("hash=%s completed", ed2k_hash)
+    _logger.info("file=%s completed", file.native_id)
 
 
 async def _handle_completions(
     deps: DownloadDeps,
-    states: dict[str, DownloadState],
-    transferring: frozenset[str],
+    states: dict[FileKey, DownloadState],
+    transferring: frozenset[FileKey],
     shared: tuple[SharedFileEntry, ...],
 ) -> None:
     """Completes each tracked hash that is SHARED **and** no longer transferring.
@@ -198,19 +203,20 @@ async def _handle_completions(
     the persistent shared signal makes harmless. A repo failure on one hash skips that hash only.
     """
     for entry in shared:
-        current = states.get(entry.ed2k_hash)
+        file = _key(entry.ed2k_hash)
+        current = states.get(file)
         if current is None:
             continue  # shared file outside the crawler: ignored
         if current is DownloadState.COMPLETED:
             continue  # already completed: the notification fired once
-        if entry.ed2k_hash in transferring:
+        if file in transferring:
             continue  # still downloading (partial): NOT a completion
         try:
-            await _record_completion(deps, entry.ed2k_hash, states)
+            await _record_completion(deps, file, states)
         except RepositoryError as error:
             _logger.error(
-                "completion hash=%s repo failure (%s): hash skipped, continues",
-                entry.ed2k_hash,
+                "completion file=%s repo failure (%s): file skipped, continues",
+                file.native_id,
                 error,
             )
 
@@ -223,10 +229,10 @@ def _expire_lost(deps: DownloadDeps) -> None:
     before the next poll. ``is_downloaded`` stays state-blind, so a ``failed`` row still blocks
     automatic re-queuing; the manual retry is deleting the row.
     """
-    for ed2k_hash in deps.downloads.expire_lost(deps.lost_after_seconds):
+    for file in deps.downloads.expire_lost(deps.lost_after_seconds):
         _logger.warning(
-            "hash=%s unseen by amuled for %ss: marked failed",
-            ed2k_hash,
+            "file=%s unseen by amuled for %ss: marked failed",
+            file.native_id,
             deps.lost_after_seconds,
         )
 
@@ -244,13 +250,13 @@ async def _queue_new_candidates(deps: DownloadDeps, outstanding: int) -> None:
     elif deps.edge.enter("disk_low"):
         await deps.telemetry.emit(DiskSpaceLow(free_bytes=free, min_free_bytes=deps.min_free_bytes))
     for candidate in deps.catalog.download_decisions():
-        if deps.downloads.is_downloaded(candidate.ed2k_hash):
+        if deps.downloads.is_downloaded(candidate.file):
             continue
-        observation = deps.catalog.last_observation(FileKey(Network.ED2K, candidate.ed2k_hash))
+        observation = deps.catalog.last_observation(candidate.file)
         if observation is None:
             _logger.warning(
-                "candidate hash=%s without observation: link impossible, skipped",
-                candidate.ed2k_hash,
+                "candidate file=%s without observation: link impossible, skipped",
+                candidate.file.native_id,
             )
             continue
         verdict = download_policy(
@@ -264,17 +270,15 @@ async def _queue_new_candidates(deps: DownloadDeps, outstanding: int) -> None:
         )
         if verdict is not DownloadVerdict.DOWNLOAD:
             _logger.info(
-                "candidate hash=%s → %s (skipped/deferred)", candidate.ed2k_hash, verdict.value
+                "candidate file=%s → %s (skipped/deferred)", candidate.file.native_id, verdict.value
             )
             continue
         # record_queued ONLY here (sync DB write); the ed2k link is built and emitted by
         # _add_links (network I/O) for every 'queued' - the write precedes the network, and an
         # add_link that raises leaves the download 'queued' in the DB (caught up next round).
-        deps.downloads.record_queued(
-            candidate.ed2k_hash, candidate.target_id, observation.size_bytes
-        )
+        deps.downloads.record_queued(candidate.file, candidate.target_id, observation.size_bytes)
         outstanding += observation.size_bytes  # not in amuled's queue yet: carried in memory
-        _logger.info("candidate hash=%s queued for download", candidate.ed2k_hash)
+        _logger.info("candidate file=%s queued for download", candidate.file.native_id)
         await deps.telemetry.emit(DownloadQueued(target_id=candidate.target_id))
 
 
@@ -295,19 +299,25 @@ async def _add_links(deps: DownloadDeps) -> None:
     # FRESH re-read of active_states: _queue_new_candidates wrote new QUEUED rows this cycle,
     # absent from the dict passed to _monitor/_handle_completions (frozen at the start).
     states = deps.downloads.active_states()
-    for ed2k_hash, state in states.items():
+    for file, state in states.items():
         if state is not DownloadState.QUEUED:
             continue
-        observation = deps.catalog.last_observation(FileKey(Network.ED2K, ed2k_hash))
+        observation = deps.catalog.last_observation(file)
         if observation is None:
             continue
-        link = build_ed2k_link(observation.filename, observation.size_bytes, ed2k_hash)
+        match file.network:
+            case Network.ED2K:
+                link = build_ed2k_link(observation.filename, observation.size_bytes, file.native_id)
+            case _:  # pragma: no cover
+                assert_never(file.network)
         try:
             await deps.client.add_link(link)
         except DownloadRejectedError as error:
-            deps.downloads.set_state(ed2k_hash, DownloadState.FAILED)
+            deps.downloads.set_state(file, DownloadState.FAILED)
             _logger.warning(
-                "add_link rejected by amuled for hash=%s (%s): marked failed", ed2k_hash, error
+                "add_link rejected by amuled for file=%s (%s): marked failed",
+                file.native_id,
+                error,
             )
 
 
@@ -348,11 +358,11 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     except ClientUnreachableError as error:
         _logger.warning("download daemon unreachable (%s): iteration skipped, retry", error)
         return
-    queued = frozenset(entry.ed2k_hash for entry in queue)
+    queued = frozenset(_key(entry.ed2k_hash) for entry in queue)
     # `status=all` puts amuled's completed-but-not-yet-cleared entries in the snapshot too, so
     # "in the queue" is no longer "still transferring". The completion rule needs the narrower
     # set; presence (step 2b) and the disk cap keep the whole queue.
-    transferring = frozenset(entry.ed2k_hash for entry in queue if not entry.is_complete)
+    transferring = frozenset(_key(entry.ed2k_hash) for entry in queue if not entry.is_complete)
     outstanding = sum(entry.remaining_bytes for entry in queue)
     # Step 1 - MONITOR: NO client I/O left (the queue came from step 0) → only RepositoryError.
     # Steps 1 and 2 share that ONE snapshot: a second read could only contradict the first.
@@ -381,7 +391,7 @@ async def run_download_cycle(deps: DownloadDeps) -> None:
     # Step 2b - PRESENCE + TTL: stamp FIRST, condemn after. The reverse order would fail a row
     # amuled is showing us right now.
     try:
-        deps.downloads.mark_seen(queued | {entry.ed2k_hash for entry in shared})
+        deps.downloads.mark_seen(queued | {_key(entry.ed2k_hash) for entry in shared})
         _expire_lost(deps)
     except RepositoryError as error:
         _logger.error("download presence repo failure (%s): step skipped, continues", error)

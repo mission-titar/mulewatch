@@ -1,14 +1,14 @@
 from collections.abc import Iterator
 
-from catalog_matching.engine import (
-    DecisionRecord,
-    DownloadCandidate,
-    Explanation,
-    MatchDecision,
-)
+from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision
 from mulewatch.domain.file_key import FileKey, Network
 from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.catalog_repository import CatalogRepository, ObservedFile, ReevalRow
+from mulewatch.ports.catalog_repository import (
+    CatalogRepository,
+    DownloadCandidate,
+    ObservedFile,
+    ReevalRow,
+)
 
 _KEY = FileKey(Network.ED2K, "31d6cfe0d16ae931b73c59d7e0c089c0")
 

@@ -60,9 +60,9 @@ class DownloadQueued:
 
 @dataclass(frozen=True)
 class DownloadCompleted:
-    ed2k_hash: str
+    file: FileKey
     filename: str  # the clean name, the most sourced
-    targets: tuple[tuple[str, str], ...]  # (target_id, title), every download target of the hash
+    targets: tuple[tuple[str, str], ...]  # (target_id, title), every download target of the file
 
 
 type ChannelField = Literal["on_network", "connectable"]

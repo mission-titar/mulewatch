@@ -39,7 +39,7 @@ class MatchDecision:
     """File decision (cf. spec §8.5). Carries the 3 match_decisions columns (§11).
 
     ``target_id``/``rule_name``/``tier`` = exactly the columns that ``match_decisions``
-    will persist (§11). ``decided_at``/``node_id``/``ed2k_hash`` are NOT here: they are
+    will persist (§11). ``decided_at``/``node_id``/``file_id`` are NOT here: they are
     persistence columns (clock + identity + content key) injected by the DB adapter of a
     later plan. ``explanation`` carries the explainability (§8.5).
     """
@@ -75,21 +75,6 @@ def to_record(decision: MatchDecision) -> DecisionRecord:
     return DecisionRecord(
         target_id=decision.target_id, rule_name=decision.rule_name, tier=decision.tier
     )
-
-
-@dataclass(frozen=True)
-class DownloadCandidate:
-    """READ form of a tier=download decision: ``ed2k_hash`` + ``target_id``.
-
-    This is what ``CatalogRepository.download_decisions`` returns (download spec §5): the
-    hashes whose LATEST verdict is tier=download, to be replayed by the download loop.
-    Distinct from :class:`MatchDecision`/:class:`DecisionRecord`: the download loop only
-    needs the hash (content key) and the ``target_id`` (for the target status lookup).
-    Frozen → trivial value comparison in tests.
-    """
-
-    ed2k_hash: str
-    target_id: str
 
 
 # Re-export of the tier rank (source of truth ``catalog_matching.config.TIER_RANK``, shared
