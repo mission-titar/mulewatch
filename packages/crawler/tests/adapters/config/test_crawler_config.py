@@ -305,7 +305,7 @@ def test_download_space_and_ttl_knobs_have_defaults() -> None:
     assert cfg.download is not None
     assert cfg.download.min_free_bytes == 10_737_418_240  # 10 GiB
     assert cfg.download.lost_after_seconds == 86_400.0  # 24 h
-    assert cfg.download.output_dir == "/downloads"  # what base.compose.yml mounts
+    assert cfg.download.output_dir == "/downloads"  # what deploy/compose.yml mounts
 
 
 def test_download_output_dir_must_be_a_string() -> None:

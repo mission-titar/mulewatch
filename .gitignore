@@ -14,14 +14,14 @@ dist/
 # Secrets de déploiement (EC password, clé VPN) — JAMAIS versionnés.
 # Seul deploy/.env.example est versionné ; deploy/.env (et tout .env) est ignoré.
 .env
-deploy/amule/*
-!deploy/amule/.gitkeep
 deploy/data/*
 !deploy/data/.gitkeep
-deploy/downloads/incoming/*
-!deploy/downloads/incoming/.gitkeep
-deploy/downloads/temp/*
-!deploy/downloads/temp/.gitkeep
+deploy/ed2k/amule/*
+!deploy/ed2k/amule/.gitkeep
+deploy/ed2k/downloads/incoming/*
+!deploy/ed2k/downloads/incoming/.gitkeep
+deploy/ed2k/downloads/temp/*
+!deploy/ed2k/downloads/temp/.gitkeep
 vendor/
 # Worktrees créés par EnterWorktree (checkouts liés, hors versionnement)
 .claude/worktrees/

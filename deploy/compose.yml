@@ -1,19 +1,32 @@
-# Default stack: no VPN, one container on the default network.
-# Low-ID by default; for High-ID, forward 4662 (TCP and UDP) from your router to this machine.
+# The core, plus one include per network. Every service starts; there is no compose profile.
 # Run (from deploy/):
 #   docker compose up -d
 name: p2pwatch
 
+include:
+  # eD2k and Kad through aMule. For the VPN variant, write ed2k/vpn.compose.yml here instead.
+  - ed2k/direct.compose.yml
+
 services:
   p2pwatch:
-    extends:
-      file: base.compose.yml
-      service: p2pwatch
-    # Change the left-hand number if a port is already taken on this machine.
+    image: ghcr.io/mission-titar/p2pwatch:latest
+    # data/ must exist and be yours before the first `up`: Docker would create it as root.
+    user: "${PUID:?}:${PGID:?}"
+    security_opt:
+      - "no-new-privileges:true"
+    pids_limit: 512
+    mem_limit: 2g
+    restart: unless-stopped
+    environment:
+      AMULE_API_PASSWORD: ${AMULE_API_PASSWORD:?}
+    # Change the left-hand number if the port is already taken on this machine.
     # 8080 (the catalog) has NO password: put it behind a reverse proxy or a VPN.
-    # 4711 (aMule's own web UI) is protected by AMULE_API_PASSWORD.
     ports:
       - "8080:8080"
-      - "4711:4711"
-      - "4662:4662"
-      - "4662:4662/udp"
+    volumes:
+      - ./crawler.yml:/app/config/crawler.yml:ro
+      - ./targets.yml:/app/config/targets.yml:ro
+      - ./matcher.yml:/app/config/matcher.yml:ro
+      - ./data:/data
+      # Measured for the disk floor, never written.
+      - ./ed2k/downloads:/downloads:ro
