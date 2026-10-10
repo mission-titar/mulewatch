@@ -12,7 +12,7 @@ from catalog_matching.config import MatcherConfig
 from catalog_matching.engine import Explanation
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
-from mulewatch.webui.adapters.matching_read import MatchingExplainer
+from p2pwatch.webui.adapters.matching_read import MatchingExplainer
 
 # ---------------------------------------------------------------------------
 # Parsed-config minimal helpers

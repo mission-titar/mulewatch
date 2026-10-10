@@ -8,8 +8,8 @@ SQLite/engine needed: the gate is pure orchestration over the port + the injecte
 
 import pytest
 
-from mulewatch.application.reevaluate_catalog import ReevalSummary
-from mulewatch.application.run_backfill import run_backfill_if_policy_changed
+from p2pwatch.application.reevaluate_catalog import ReevalSummary
+from p2pwatch.application.run_backfill import run_backfill_if_policy_changed
 
 _SUMMARY = ReevalSummary(evaluated=3, written=1)
 

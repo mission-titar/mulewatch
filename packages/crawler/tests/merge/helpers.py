@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
 from tests.catalog_rows import insert_decision, insert_file, insert_observation
 
 # Natural-key reads, a file named by its native id; an observation with its variant's columns.

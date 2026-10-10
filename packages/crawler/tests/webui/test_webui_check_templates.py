@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mulewatch.webui._dev.check_templates import find_logic_violations
+from p2pwatch.webui._dev.check_templates import find_logic_violations
 
 
 def test_clean_template_has_no_violation(tmp_path: Path) -> None:
@@ -101,7 +101,7 @@ def test_main_exits_0_when_no_violations(
         patch("sys.argv", ["check_templates", str(tmp_path)]),
         pytest.raises(SystemExit) as exc_info,
     ):
-        from mulewatch.webui._dev.check_templates import main
+        from p2pwatch.webui._dev.check_templates import main
 
         main()
     assert exc_info.value.code == 0
@@ -114,7 +114,7 @@ def test_main_exits_1_when_violations(tmp_path: Path, capsys: pytest.CaptureFixt
         patch("sys.argv", ["check_templates", str(tmp_path)]),
         pytest.raises(SystemExit) as exc_info,
     ):
-        from mulewatch.webui._dev.check_templates import main
+        from p2pwatch.webui._dev.check_templates import main
 
         main()
     assert exc_info.value.code == 1
@@ -128,7 +128,7 @@ def test_main_exits_with_usage_when_no_arg(capsys: pytest.CaptureFixture[str]) -
         patch("sys.argv", ["check_templates"]),
         pytest.raises(SystemExit) as exc_info,
     ):
-        from mulewatch.webui._dev.check_templates import main
+        from p2pwatch.webui._dev.check_templates import main
 
         main()
     assert exc_info.value.code != 0

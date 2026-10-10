@@ -1,4 +1,4 @@
-"""TDD tests for the ``python -m mulewatch.merge`` CLI (safe-by-default), design §6/§7.
+"""TDD tests for the ``python -m p2pwatch.merge`` CLI (safe-by-default), design §6/§7.
 
 We call ``main(argv)`` directly (returns an ``int``); usage/merge errors return ``2`` with a
 clear message on ``stderr`` (never a traceback); argparse itself returns ``2`` (via
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.merge.__main__ import main
+from p2pwatch.merge.__main__ import main
 
 from .helpers import HASH_A, HASH_B, count, make_catalog
 
@@ -132,7 +132,7 @@ def test_t13_missing_source_file_errors_before_output_created(tmp_path: Path) ->
 def test_cli_logs_the_output_once_done(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     src = _seed(tmp_path / "a.db", "a")
     out = tmp_path / "out.db"
-    caplog.set_level("INFO", logger="mulewatch.merge")
+    caplog.set_level("INFO", logger="p2pwatch.merge")
 
     assert main(["--output", str(out), str(src)]) == 0
 

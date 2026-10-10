@@ -7,8 +7,8 @@
 # One service, like the real stacks: the crawler and amuled run under s6 in the same
 # container, so there is nothing left to wire between services.
 services:
-  mulewatch:
-    image: ghcr.io/mission-titar/mulewatch:${IMAGE_TAG:-latest}
+  p2pwatch:
+    image: ghcr.io/mission-titar/p2pwatch:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: packages/crawler/Dockerfile
@@ -37,9 +37,9 @@ services:
       # Bind mounts, like the real stacks, so the PUID/PGID chown path is exercised for real
       # (a root-owned mount point => `unable to open database file`). The test creates
       # SMOKE_STATE and its three subdirectories, then throws them away.
-      - ${SMOKE_STATE:-/tmp/mulewatch-smoke}/amule:/home/amule/.aMule
-      - ${SMOKE_STATE:-/tmp/mulewatch-smoke}/data:/data
-      - ${SMOKE_STATE:-/tmp/mulewatch-smoke}/downloads:/downloads
+      - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/amule:/home/amule/.aMule
+      - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/data:/data
+      - ${SMOKE_STATE:-/tmp/p2pwatch-smoke}/downloads:/downloads
     # PITFALL: s6-svstat exits 0 even for a stopped service — it prints `false`, and exit 1 means
     # s6-supervise itself is not running. Test the printed output, not the exit code.
     healthcheck:

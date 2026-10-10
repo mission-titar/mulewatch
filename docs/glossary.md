@@ -34,11 +34,11 @@ IncomingDir
 
 s6
 :   Le petit superviseur qui, à l'intérieur du conteneur, fait tourner deux programmes (`amuled` et
-    `mulewatch`) et en relance un s'il meurt. Vous le croisez surtout dans les journaux.
+    `p2pwatch`) et en relance un s'il meurt. Vous le croisez surtout dans les journaux.
 
 amuleapi
 :   L'interface web et REST livrée avec aMule, qu'`amuled` démarre et arrête avec lui. C'est elle
-    que vous ouvrez sur le port 4711, et c'est par elle que `mulewatch` pilote le client eMule :
+    que vous ouvrez sur le port 4711, et c'est par elle que `p2pwatch` pilote le client eMule :
     lancer une recherche, mettre un fichier en file, lire l'état. Une erreur d'authentification
     signifie presque toujours un `AMULE_API_PASSWORD` qui ne correspond pas.
 
@@ -56,7 +56,7 @@ pile
 
 service
 :   Une brique de la pile : un conteneur géré par `docker compose`. Un nœud est un service,
-    `mulewatch` — deux avec le VPN.
+    `p2pwatch`, deux avec le VPN.
 
 dossier de travail
 :   Le dossier qui contient votre `compose.yml`, votre `.env` et vos données (`data/`, `amule/`,
@@ -69,5 +69,5 @@ dossier de travail
 *[Low-ID]: Nœud non joignable de l'extérieur : moins de sources, mais tout fonctionne
 *[IncomingDir]: Le dossier où le client eMule dépose un fichier terminé, ici downloads/incoming
 *[s6]: Le superviseur qui fait tourner les trois programmes du conteneur et les relance
-*[EC]: External Connection, le canal par lequel mulewatch pilote le client eMule
+*[EC]: External Connection, le canal par lequel p2pwatch pilote le client eMule
 --8<-- [end:abbr]

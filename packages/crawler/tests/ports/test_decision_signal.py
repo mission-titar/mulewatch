@@ -1,4 +1,4 @@
-from mulewatch.ports.decision_signal import DecisionSignal
+from p2pwatch.ports.decision_signal import DecisionSignal
 
 
 class _StubSignal:

@@ -2,7 +2,7 @@
 description: "Lancer les suites de tests, leurs prérequis et ce qu'il faut attendre en sortie."
 ---
 
-# Guide des tests : mulewatch
+# Guide des tests : p2pwatch
 
 Ce guide décrit **comment lancer les suites d'intégration** (les lourdes, désélectionnées par
 défaut), leurs **prérequis exacts** et **ce qu'il faut attendre** en sortie. Il complète
@@ -67,7 +67,7 @@ Le projet a **deux niveaux** :
 
 | Marker | Paquet | Ce qu'il valide | Docker ? | Autres prérequis | Commande |
 |---|---|---|---|---|---|
-| `api_integration` | crawler | L'adapter amuleapi (login, statut réseau, une recherche, get/set du port) face à un vrai démon | **Oui** (à lancer soi-même) | Un démon que vous fournissez, désigné par `MULEWATCH_TEST_API_HOST` (§3.0) | `( cd packages/crawler && uv run pytest -m api_integration --no-cov )` |
+| `api_integration` | crawler | L'adapter amuleapi (login, statut réseau, une recherche, get/set du port) face à un vrai démon | **Oui** (à lancer soi-même) | Un démon que vous fournissez, désigné par `P2PWATCH_TEST_API_HOST` (§3.0) | `( cd packages/crawler && uv run pytest -m api_integration --no-cov )` |
 | `download_integration` | crawler | La mécanique du téléchargement (`start`, puis le fichier listé par `downloads`) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m download_integration --no-cov )` |
 | `orchestration_integration` | crawler | Une boucle de crawl complète (une recherche menée par les tâches, puis un arrêt borné) face à un vrai démon | **Oui** (à lancer soi-même) | Le même démon que ci-dessus (§3.0) | `( cd packages/crawler && uv run pytest -m orchestration_integration --no-cov )` |
 | `compose_integration` | crawler | Smoke e2e de la pile docker compose assemblée (sans VPN) : câblage uniquement | **Oui** (compose v2) | docker compose v2 ; un build d'image | `( cd packages/crawler && uv run pytest -m compose_integration --no-cov )` |
@@ -93,28 +93,28 @@ processus, donc les fichiers de config du smoke sont montés pour que le crawler
 
 | Variable | Requise | Défaut | Signification |
 |---|---|---|---|
-| `MULEWATCH_TEST_API_HOST` | **Oui** | aucun | Hôte d'amuleapi. **Absente, les trois suites sont ignorées (SKIP)**, avec un message qui reprend la commande ci-dessous. |
-| `MULEWATCH_TEST_API_PORT` | Non | `4711` | Port HTTP d'amuleapi. |
-| `MULEWATCH_TEST_API_PASSWORD` | Non | `indexer-api-test` | Mot de passe admin d'amuleapi (`AMULE_API_PASSWORD` du démon). |
+| `P2PWATCH_TEST_API_HOST` | **Oui** | aucun | Hôte d'amuleapi. **Absente, les trois suites sont ignorées (SKIP)**, avec un message qui reprend la commande ci-dessous. |
+| `P2PWATCH_TEST_API_PORT` | Non | `4711` | Port HTTP d'amuleapi. |
+| `P2PWATCH_TEST_API_PASSWORD` | Non | `indexer-api-test` | Mot de passe admin d'amuleapi (`AMULE_API_PASSWORD` du démon). |
 
 Lancez un démon jetable, attendez qu'il réponde, lancez les suites, jetez-le :
 
 ```bash
-docker run -d --rm --name mulewatch-test-amuled -p 4711:4711 \
+docker run -d --rm --name p2pwatch-test-amuled -p 4711:4711 \
     -e PUID="$(id -u)" -e PGID="$(id -g)" \
     -e AMULE_EC_PASSWORD=indexer-ec-test -e AMULE_API_PASSWORD=indexer-api-test \
     -v "$PWD/tests/smoke/crawler.yml:/app/config/crawler.yml:ro" \
     -v "$PWD/tests/smoke/targets.yml:/app/config/targets.yml:ro" \
     -v "$PWD/deploy/matcher.yml:/app/config/matcher.yml:ro" \
-    ghcr.io/mission-titar/mulewatch:latest
+    ghcr.io/mission-titar/p2pwatch:latest
 until curl -fsS http://127.0.0.1:4711/api/v1/health >/dev/null; do sleep 2; done
 
-export MULEWATCH_TEST_API_HOST=127.0.0.1
-export MULEWATCH_TEST_API_PORT=4711
-export MULEWATCH_TEST_API_PASSWORD=indexer-api-test
+export P2PWATCH_TEST_API_HOST=127.0.0.1
+export P2PWATCH_TEST_API_PORT=4711
+export P2PWATCH_TEST_API_PASSWORD=indexer-api-test
 ( cd packages/crawler && uv run pytest -m "api_integration or download_integration or orchestration_integration" --no-cov )
 
-docker rm -f mulewatch-test-amuled
+docker rm -f p2pwatch-test-amuled
 ```
 
 Le démon est à état (il persiste ses préférences et sa file de téléchargement dans son conteneur), si
@@ -138,7 +138,7 @@ second fichier (`test_amuled_preferences.py`) valide le **get/set du port d'éco
 High-ID) : `get_listen_port()` lit un port plausible, et l'aller-retour `set -> get` renvoie la
 valeur qui a été posée.
 
-**Prérequis exacts.** Un démon lancé selon le **§3.0** et `MULEWATCH_TEST_API_HOST` exportée. Sans
+**Prérequis exacts.** Un démon lancé selon le **§3.0** et `P2PWATCH_TEST_API_HOST` exportée. Sans
 elle, la suite est ignorée (elle n'échoue jamais sur une absence, et ne passe jamais silencieusement).
 
 > Le conteneur éphémère **n'a aucun accès au réseau eD2k** : une recherche peut être refusée ou
@@ -212,7 +212,7 @@ VPN ; seule son API est sollicitée). Quatre choses :
 3. un fichier qu'amuled partage et qui a quitté sa file est enregistré `completed` par le crawler :
    le vrai chemin HTTP par loopback, face au vrai amuled de l'image livrée ;
 4. les deux points d'entrée de déploiement se rendent avec `docker compose config`, et la topologie
-   rendue est vérifiée : un service `mulewatch`, la pile VPN n'ajoutant que `gluetun`, **rien** qui
+   rendue est vérifiée : un service `p2pwatch`, la pile VPN n'ajoutant que `gluetun`, **rien** qui
    subsiste de `crawler` / `amuled` / `docker-proxy`, et **aucun volume nommé** nulle part.
 
 Le smoke sollicite **délibérément** le vrai chemin de propriété : l'état vit dans des **bind mounts**
@@ -234,7 +234,7 @@ service redescend ensuite vers l'utilisateur `amule`. Une régression là-dessus
 - Fichiers compose utilisés : `tests/smoke/compose.yaml` (autonome) plus `deploy/compose.yml` et
   `deploy/gluetun.compose.yml` pour `test_entrypoint_config_renders` ; les configs du smoke vivent
   sous `tests/smoke/`.
-- Le test n'importe **aucun** module `mulewatch` (cela préserve les 100 % de couverture de branches
+- Le test n'importe **aucun** module `p2pwatch` (cela préserve les 100 % de couverture de branches
   du paquet).
 - **Un moteur dont les montages liés sont de vrais montages du noyau.** C'est la seule exigence qui
   ne saute pas aux yeux, et elle porte sur un test : voir l'encadré ci-dessous.
@@ -283,7 +283,7 @@ timeouts de 900 s).
 > **Jamais exécutée.** Au 2026-09-16 il n'y a aucun runtime de conteneurs sur la machine de
 > développement : cette suite (et l'image qu'elle construit) n'a donc pas été lancée une seule fois.
 > Voir le
-> [handoff mono-conteneur](https://github.com/mission-titar/mulewatch/blob/main/agents/handoffs/2026-09-16%20-%20handoff%20-%20single%20container%20with%20embedded%20aMule.md),
+> [handoff mono-conteneur](https://github.com/mission-titar/p2pwatch/blob/main/agents/handoffs/2026-09-16%20-%20handoff%20-%20single%20container%20with%20embedded%20aMule.md),
 > section 5.
 
 ---

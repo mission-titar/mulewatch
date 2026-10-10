@@ -1,8 +1,8 @@
 import pytest
 
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.client_status import ClientStatus
-from mulewatch.ports.mule_client import MuleClient
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.client_status import ClientStatus
+from p2pwatch.ports.mule_client import MuleClient
 
 
 class _StubClient:

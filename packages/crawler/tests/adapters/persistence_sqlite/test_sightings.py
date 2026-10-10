@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite import sightings
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import Sighting
+from p2pwatch.adapters.persistence_sqlite import sightings
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observation import Sighting
 from tests.catalog_rows import insert_file, insert_observation
 
 _A, _B, _C = "a" * 32, "b" * 32, "c" * 32

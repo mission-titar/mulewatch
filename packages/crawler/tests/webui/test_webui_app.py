@@ -13,9 +13,9 @@ from starlette.applications import Starlette
 from catalog_matching.config import MatcherConfig
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config, parse_targets
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.ports.client_status import ChannelStatus, ClientReading, ClientStatus
-from mulewatch.webui.composition.app import (
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.ports.client_status import ChannelStatus, ClientReading, ClientStatus
+from p2pwatch.webui.composition.app import (
     _normalize_dir,
     _normalize_sort,
     _resolve_target_display,
@@ -25,7 +25,7 @@ from mulewatch.webui.composition.app import (
     _to_display_rows,
     build_app,
 )
-from mulewatch.webui.domain.views import (
+from p2pwatch.webui.domain.views import (
     DecisionCell,
     FileDecision,
     FileRow,
@@ -153,10 +153,10 @@ def populated_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -196,10 +196,10 @@ def app_no_decision(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -251,10 +251,10 @@ def app_retracted_decision(catalog_db: Path, local_db: Path) -> tuple[Starlette,
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -287,10 +287,10 @@ def app_no_observations(catalog_db: Path, local_db: Path) -> tuple[Starlette, st
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -331,10 +331,10 @@ def app_unknown_target(catalog_db: Path, local_db: Path) -> tuple[Starlette, str
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -375,10 +375,10 @@ def app_download_tier_known_target(catalog_db: Path, local_db: Path) -> tuple[St
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -419,10 +419,10 @@ def app_download_tier_unknown_target(catalog_db: Path, local_db: Path) -> tuple[
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -666,9 +666,9 @@ def app_vetoed_alias(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]:
         }
     )
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    webui_dir = Path(mulewatch.webui.__file__).parent / "adapters"
+    webui_dir = Path(p2pwatch.webui.__file__).parent / "adapters"
     app = build_app(
         catalog_db=catalog_db,
         local_db=local_db,
@@ -913,10 +913,10 @@ def app_with_media_obs(catalog_db: Path, local_db: Path) -> tuple[Starlette, str
     matcher_config = _matcher()
     targets = _targets()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
 
     app = build_app(
         catalog_db=catalog_db,
@@ -974,10 +974,10 @@ def app_with_hostile_filename(catalog_db: Path, local_db: Path) -> tuple[Starlet
         conn.commit()
     matcher_config = _matcher()
     targets = _targets()
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
     app = build_app(
         catalog_db=catalog_db,
         local_db=local_db,
@@ -1051,10 +1051,10 @@ async def test_files_page_shows_pagination_navigation(catalog_db: Path, local_db
         conn.commit()
     matcher_config = _matcher()
     targets = _targets()
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
     app = build_app(
         catalog_db=catalog_db,
         local_db=local_db,
@@ -1369,10 +1369,10 @@ def app_whole_episode(catalog_db: Path, local_db: Path) -> tuple[Starlette, str]
     matcher_config = _matcher()
     targets = _targets_ab()
 
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
     app = build_app(
         catalog_db=catalog_db,
         local_db=local_db,
@@ -1441,9 +1441,9 @@ async def test_file_detail_whole_episode_shows_both_targets(
 def _dashboard_app(
     catalog_db: Path, local_db: Path, control: _RecordingControl, status: _Readings
 ) -> Starlette:
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    webui_dir = Path(mulewatch.webui.__file__).parent
+    webui_dir = Path(p2pwatch.webui.__file__).parent
     return build_app(
         catalog_db=catalog_db,
         local_db=local_db,
@@ -1683,10 +1683,10 @@ def sortable_app(catalog_db: Path, local_db: Path) -> tuple[Starlette, list[str]
             insert_file(conn, h, size)
             insert_observation(conn, h, name, size_bytes=size)
             insert_decision(conn, h, "062A", "download")
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    templates_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "templates"
-    static_dir = Path(mulewatch.webui.__file__).parent / "adapters" / "static"
+    templates_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "templates"
+    static_dir = Path(p2pwatch.webui.__file__).parent / "adapters" / "static"
     app = build_app(
         catalog_db=catalog_db,
         local_db=local_db,
@@ -1898,11 +1898,11 @@ async def test_nav_links_to_the_amule_web_ui(populated_app: tuple[Starlette, str
 
 @pytest.mark.asyncio
 async def test_nav_amule_link_uses_the_configured_base(catalog_db: Path, local_db: Path) -> None:
-    """The base is configurable so the link survives a reverse proxy in front of 8080: mulewatch
+    """The base is configurable so the link survives a reverse proxy in front of 8080: p2pwatch
     cannot infer from the request how amuleweb is reachable from the operator's browser."""
-    import mulewatch.webui
+    import p2pwatch.webui
 
-    webui_dir = Path(mulewatch.webui.__file__).parent
+    webui_dir = Path(p2pwatch.webui.__file__).parent
     app = build_app(
         catalog_db=catalog_db,
         local_db=local_db,

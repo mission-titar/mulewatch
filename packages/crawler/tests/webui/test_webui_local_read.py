@@ -3,8 +3,8 @@
 import sqlite3
 from pathlib import Path
 
-from mulewatch.webui.adapters.local_read import LocalReader
-from mulewatch.webui.domain.views import DownloadRow, NodeState
+from p2pwatch.webui.adapters.local_read import LocalReader
+from p2pwatch.webui.domain.views import DownloadRow, NodeState
 
 # ---------------------------------------------------------------------------
 # Helpers

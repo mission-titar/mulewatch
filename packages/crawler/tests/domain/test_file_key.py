@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from mulewatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.file_key import FileKey, Network
 
 _HASH = "31d6cfe0d16ae931b73c59d7e0c089c0"
 
@@ -19,10 +19,10 @@ def test_file_key_is_frozen() -> None:
         key.native_id = "autre"  # type: ignore[misc]
 
 
-def test_file_id_is_the_uuid5_of_network_and_native_id_in_the_mulewatch_namespace() -> None:
-    namespace = uuid.uuid5(uuid.NAMESPACE_URL, "https://mission-titar.github.io/mulewatch/file")
-    assert namespace == uuid.UUID("7d16bb87-5b2f-5aa5-9262-c007b2ab0db4")
-    assert FileKey(Network.ED2K, _HASH).file_id == bytes.fromhex("25f66e02cb665d60854b7687954a0c08")
+def test_file_id_is_the_uuid5_of_network_and_native_id_in_the_p2pwatch_namespace() -> None:
+    namespace = uuid.uuid5(uuid.NAMESPACE_URL, "https://mission-titar.github.io/p2pwatch/file")
+    assert namespace == uuid.UUID("d30da1ca-776a-5106-b046-daf77302c1af")
+    assert FileKey(Network.ED2K, _HASH).file_id == bytes.fromhex("c4fc9d8fa5405352b25f4460edb66353")
 
 
 def test_file_id_differs_per_native_id() -> None:

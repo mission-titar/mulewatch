@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from mulewatch.ports.client_status import ChannelStatus, ClientStatus, StatusClient
+from p2pwatch.ports.client_status import ChannelStatus, ClientStatus, StatusClient
 
 
 def test_a_client_status_is_frozen_and_holds_its_channels() -> None:

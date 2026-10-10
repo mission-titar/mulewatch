@@ -12,7 +12,7 @@ permissions:
   security-events: write  # required to upload SARIF to GitHub code scanning
 
 env:
-  IMAGE: ghcr.io/mission-titar/mulewatch
+  IMAGE: ghcr.io/mission-titar/p2pwatch
 
 jobs:
   scan:

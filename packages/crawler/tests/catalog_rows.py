@@ -2,8 +2,8 @@
 
 import sqlite3
 
-from mulewatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
-from mulewatch.domain.file_key import FileKey, Network
+from p2pwatch.adapters.persistence_sqlite.variants import content_hash, iso_to_micros
+from p2pwatch.domain.file_key import FileKey, Network
 
 SEEN_AT = "2026-06-22T10:00:00.000000+00:00"
 

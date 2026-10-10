@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from mulewatch.adapters.decision_signal_asyncio import AsyncioDecisionSignal
+from p2pwatch.adapters.decision_signal_asyncio import AsyncioDecisionSignal
 
 
 @pytest.mark.asyncio

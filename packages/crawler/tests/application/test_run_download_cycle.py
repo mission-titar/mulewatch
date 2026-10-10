@@ -6,30 +6,30 @@ from pathlib import Path
 import pytest
 
 from catalog_matching.models import TargetSegment
-from mulewatch.adapters.persistence_sqlite.connection import open_local
-from mulewatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
-from mulewatch.application.run_download_cycle import (
+from p2pwatch.adapters.persistence_sqlite.connection import open_local
+from p2pwatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
+from p2pwatch.application.run_download_cycle import (
     DownloadDeps,
     DownloadRepository,
     run_download_cycle,
 )
-from mulewatch.domain.download.states import DownloadState
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability.events import (
+from p2pwatch.domain.download.states import DownloadState
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observability.events import (
     DiskSpaceLow,
     DownloadCompleted,
     DownloadQueued,
     FreeSpaceSampled,
 )
-from mulewatch.ports.catalog_repository import DownloadCandidate, ObservedFile
-from mulewatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
-from mulewatch.ports.download_client import (
+from p2pwatch.ports.catalog_repository import DownloadCandidate, ObservedFile
+from p2pwatch.ports.client_errors import ClientUnreachableError, DownloadRejectedError
+from p2pwatch.ports.download_client import (
     DownloadRequest,
     DownloadStatus,
     FailureReason,
     WaitingReason,
 )
-from mulewatch.ports.repository_errors import RepositoryError
+from p2pwatch.ports.repository_errors import RepositoryError
 from tests.application.fakes import RecordingTelemetry
 
 _A = "a" * 32

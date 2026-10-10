@@ -2,8 +2,8 @@
 # Each stack adds its own `ports:`; this file declares none.
 
 services:
-  mulewatch:
-    image: ghcr.io/mission-titar/mulewatch:latest
+  p2pwatch:
+    image: ghcr.io/mission-titar/p2pwatch:latest
     security_opt:
       - "no-new-privileges:true"
     pids_limit: 512

@@ -1,9 +1,9 @@
-from mulewatch.adapters.mule_api.errors import (
+from p2pwatch.adapters.mule_api.errors import (
     ApiAuthError,
     ApiRejectedError,
     ApiUnreachableError,
 )
-from mulewatch.ports.client_errors import (
+from p2pwatch.ports.client_errors import (
     ClientError,
     ClientUnreachableError,
     DownloadRejectedError,

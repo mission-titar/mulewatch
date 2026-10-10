@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.adapters.persistence_sqlite.variants import content_hash
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import FileObservation
+from p2pwatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from p2pwatch.adapters.persistence_sqlite.variants import content_hash
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observation import FileObservation
 from tests.adapters.persistence_sqlite.older_catalog import forcing_secure_delete, open_catalog_at
 
 _A, _B = "a" * 32, "b" * 32

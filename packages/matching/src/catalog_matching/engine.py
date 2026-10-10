@@ -78,7 +78,7 @@ def to_record(decision: MatchDecision) -> DecisionRecord:
 
 
 # Re-export of the tier rank (source of truth ``catalog_matching.config.TIER_RANK``, shared
-# with ``mulewatch.webui.domain.coverage``). The internal name stays ``_TIER_RANK`` so as not
+# with ``p2pwatch.webui.domain.coverage``). The internal name stays ``_TIER_RANK`` so as not
 # to break historical imports on the internal-test side.
 _TIER_RANK = TIER_RANK
 

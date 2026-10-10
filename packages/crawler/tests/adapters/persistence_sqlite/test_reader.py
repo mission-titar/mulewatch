@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog
-from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
-from mulewatch.adapters.persistence_sqlite.reader import ReaderProvider, open_reader
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog
+from p2pwatch.adapters.persistence_sqlite.errors import PersistenceError
+from p2pwatch.adapters.persistence_sqlite.reader import ReaderProvider, open_reader
 from tests.catalog_rows import insert_file
 
 _HASH_A = "a" * 32

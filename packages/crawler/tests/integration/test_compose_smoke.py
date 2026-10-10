@@ -52,8 +52,8 @@ pytestmark = pytest.mark.compose_integration
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _SMOKE = _REPO_ROOT / "tests/smoke/compose.yaml"
 
-_SERVICE = "mulewatch"
-_S6_SERVICES = ("amuled", "mulewatch")
+_SERVICE = "p2pwatch"
+_S6_SERVICES = ("amuled", "p2pwatch")
 
 # In CI, the build step pre-builds the image and passes IMAGE_TAG; the smoke then consumes it
 # WITHOUT a rebuild. Locally (IMAGE_TAG absent) we rebuild via compose, as before.
@@ -260,11 +260,11 @@ def test_a_chosen_daemon_that_answers_nothing_fails_the_call(
     machine's default daemon and SUCCEEDS, which is how a run meant for one engine ends up
     exercising another. Pointing it at a socket nothing listens on must therefore fail.
     """
-    monkeypatch.setenv("DOCKER_HOST", "unix:///nonexistent/mulewatch-smoke.sock")
+    monkeypatch.setenv("DOCKER_HOST", "unix:///nonexistent/p2pwatch-smoke.sock")
     result = _run("ps", files=(_SMOKE,), timeout=120)
 
     assert result.returncode != 0, result.stdout
-    assert "mulewatch-smoke.sock" in result.stderr + result.stdout
+    assert "p2pwatch-smoke.sock" in result.stderr + result.stdout
 
 
 @pytest.mark.skipif(_USES_PREBUILT, reason="image prebuilt in CI - nothing to build")
@@ -312,7 +312,7 @@ def test_entrypoint_config_renders(label: str, path: str) -> None:
     """`docker compose -f <stack file> config` renders without error.
 
     Locks in include + interpolation + the `:?` guards (no daemon required; the bind-mount
-    sources need not exist for `config`). Also asserts the resulting topology: one `mulewatch`
+    sources need not exist for `config`). Also asserts the resulting topology: one `p2pwatch`
     service, the VPN stack adding only gluetun, nothing left of the four-service shape, and NO
     named volume — the operator must be able to `sqlite3 deploy/data/catalog.db` from the host.
     """
@@ -350,8 +350,8 @@ _API_HOST, _API_PORT = "127.0.0.1", 4711
 
 _SHARED_HASHES = f"""
 import asyncio, json
-from mulewatch.adapters.clock_asyncio import AsyncioClock
-from mulewatch.adapters.mule_api.client import AmuleApiClient
+from p2pwatch.adapters.clock_asyncio import AsyncioClock
+from p2pwatch.adapters.mule_api.client import AmuleApiClient
 
 async def main() -> None:
     client = AmuleApiClient({_API_HOST!r}, {_API_PORT}, {_API_PASSWORD!r}, clock=AsyncioClock())
@@ -365,7 +365,7 @@ asyncio.run(main())
 
 _SEED_ROW = f"""
 import datetime, sqlite3, sys
-from mulewatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.file_key import FileKey, Network
 now = datetime.datetime.now(datetime.UTC).isoformat()
 file = FileKey(Network.ED2K, sys.argv[1])
 conn = sqlite3.connect("/data/local.db", timeout=30)
@@ -458,7 +458,7 @@ def test_a_file_amuled_shares_is_recorded_completed(project_files: tuple[Path, .
         _SERVICE,
         "sh",
         "-c",
-        f"head -c {_SEEDED_SIZE} /dev/urandom > {_INCOMING_DIR}/mulewatch-smoke.bin",
+        f"head -c {_SEEDED_SIZE} /dev/urandom > {_INCOMING_DIR}/p2pwatch-smoke.bin",
         files=project_files,
         timeout=120,
     )

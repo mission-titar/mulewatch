@@ -13,19 +13,19 @@ import pytest
 
 from catalog_matching.models import TargetSegment
 from catalog_matching.validation import parse_matcher_config
-from mulewatch.adapters.clock_asyncio import AsyncioClock, SeededRng
-from mulewatch.adapters.config.crawler_config import (
+from p2pwatch.adapters.clock_asyncio import AsyncioClock, SeededRng
+from p2pwatch.adapters.config.crawler_config import (
     AmuleEndpoint,
     BackoffConfig,
     CrawlerConfig,
     WebuiConfig,
 )
-from mulewatch.adapters.config.yaml_loader import load_yaml
-from mulewatch.adapters.decision_signal_asyncio import AsyncioDecisionSignal
-from mulewatch.composition.app import CrawlerApp
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.client_status import ClientStatus
-from mulewatch.ports.clock import Clock
+from p2pwatch.adapters.config.yaml_loader import load_yaml
+from p2pwatch.adapters.decision_signal_asyncio import AsyncioDecisionSignal
+from p2pwatch.composition.app import CrawlerApp
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.client_status import ClientStatus
+from p2pwatch.ports.clock import Clock
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.orchestration_integration
@@ -79,7 +79,7 @@ class _ShutdownAfterFirstSearchClient:
 async def test_real_loop_runs_one_search_and_stops(amuled: ApiEndpoint, tmp_path: Path) -> None:
     import asyncio
 
-    from mulewatch.adapters.mule_api.client import AmuleApiClient
+    from p2pwatch.adapters.mule_api.client import AmuleApiClient
 
     matcher_config = parse_matcher_config(load_yaml(_MATCHER))
     crawler_config = CrawlerConfig(

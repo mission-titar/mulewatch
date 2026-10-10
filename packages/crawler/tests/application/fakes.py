@@ -11,10 +11,10 @@ a real wait (determinism). ``FakeRng``: FIXED jitter (determinism).
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from mulewatch.domain.observability.events import Event
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.client_errors import ClientUnreachableError, SearchFailedError
-from mulewatch.ports.client_status import ChannelStatus, ClientStatus
+from p2pwatch.domain.observability.events import Event
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.client_errors import ClientUnreachableError, SearchFailedError
+from p2pwatch.ports.client_status import ChannelStatus, ClientStatus
 
 
 class FakeClock:

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}File {{ file.native_id }} · p2pwatch{% endblock %}
+{% block content %}
+<h1>File detail</h1>
+
+<section>
+  <h2>General information</h2>
+  <dl>
+    <dt>Network</dt>
+    <dd>{{ file.network }}</dd>
+    <dt>Native ID</dt>
+    <dd>{{ file.native_id }}</dd>
+    <dt>Size</dt>
+    <dd>{{ file.size_bytes }}</dd>
+    <dt>eD2k link</dt>
+    <dd><a href="{{ file.ed2k_link }}">{{ file.ed2k_link }}</a></dd>
+  </dl>
+</section>
+
+<section>
+  <h2>Matching decision</h2>
+  {% for d in file.decisions %}
+  <dl>
+    <dt>Target</dt>
+    <dd>{{ d.target_id }}</dd>
+    <dt>Rule</dt>
+    <dd>{{ d.rule_name }}</dd>
+    <dt>Tier</dt>
+    <dd>{{ d.tier }}</dd>
+    <dt>Decided at</dt>
+    <dd>{{ d.decided_at }}</dd>
+  </dl>
+  {% else %}
+  <p>No matching decision.</p>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Explanation</h2>
+  {% for note in file.explanation_notes %}
+  <p>{{ note }}</p>
+  <p>Target: {{ file.explanation_target_id }}</p>
+  <p>Rules fired:</p>
+  <ul>
+    {% for rule in file.explanation_rules_fired %}
+    <li>{{ rule }}</li>
+    {% endfor %}
+  </ul>
+  <p>Matched tokens:</p>
+  <ul>
+    {% for token in file.explanation_tokens_matched %}
+    <li>{{ token }}</li>
+    {% endfor %}
+  </ul>
+  <p>Vetoes fired:</p>
+  <ul>
+    {% for veto in file.explanation_vetoes_fired %}
+    <li>{{ veto }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No explanation available.</p>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Observations</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Size</th>
+        <th>Sources</th>
+        <th>Keyword</th>
+        <th>Observed at</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in file.timeline %}
+      <tr>
+        <td>{{ row.name }}</td>
+        <td>{{ row.size_bytes }}</td>
+        <td>{{ row.sources }}</td>
+        <td>{{ row.keyword }}</td>
+        <td>{{ row.observed_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No observations.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

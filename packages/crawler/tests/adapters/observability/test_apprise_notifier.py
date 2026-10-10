@@ -5,8 +5,8 @@ import apprise
 import pytest
 from apprise.plugins.discord import USER_ROLE_DETECTION_RE
 
-from mulewatch.adapters.observability.apprise_notifier import AppriseNotifier
-from mulewatch.domain.observability.policy import Audience, Severity
+from p2pwatch.adapters.observability.apprise_notifier import AppriseNotifier
+from p2pwatch.domain.observability.policy import Audience, Severity
 
 
 class _FakeApprise:
@@ -49,8 +49,8 @@ def test_targets_are_added_with_tags_to_the_prefixed_or_the_bare_group() -> None
 def test_both_groups_name_the_node_and_send_no_image() -> None:
     _, prefixed, bare = _notifier()
     for asset in (prefixed.asset, bare.asset):
-        assert asset.app_id == "Mulewatch - titar-node-1"
-        assert asset.app_url == "https://github.com/mission-titar/mulewatch"
+        assert asset.app_id == "p2pwatch - titar-node-1"
+        assert asset.app_url == "https://github.com/mission-titar/p2pwatch"
         assert asset.image_url(apprise.NotifyType.INFO) is None
         assert asset.image_url(apprise.NotifyType.INFO, logo=True) is None
 

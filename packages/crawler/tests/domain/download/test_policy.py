@@ -1,4 +1,4 @@
-from mulewatch.domain.download.policy import DownloadVerdict, download_policy
+from p2pwatch.domain.download.policy import DownloadVerdict, download_policy
 
 
 def _verdict(

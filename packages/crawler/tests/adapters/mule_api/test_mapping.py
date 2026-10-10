@@ -4,16 +4,16 @@ from typing import Any
 
 import pytest
 
-from mulewatch.adapters.mule_api.mapping import (
+from p2pwatch.adapters.mule_api.mapping import (
     map_client_status,
     map_download_status,
     map_search_results,
     map_shared_download,
 )
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.client_status import ChannelStatus, ClientStatus
-from mulewatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.client_status import ChannelStatus, ClientStatus
+from p2pwatch.ports.download_client import DownloadStatus, FailureReason, WaitingReason
 
 _HASH = "8b54a3c20fae9e4b9f7e0c2c8c01b6b1"
 _KEY = FileKey(Network.ED2K, _HASH)

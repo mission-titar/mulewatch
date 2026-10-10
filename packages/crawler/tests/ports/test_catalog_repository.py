@@ -1,9 +1,9 @@
 from collections.abc import Iterator
 
 from catalog_matching.engine import DecisionRecord, Explanation, MatchDecision
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.catalog_repository import (
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.catalog_repository import (
     CatalogRepository,
     DownloadCandidate,
     ObservedFile,

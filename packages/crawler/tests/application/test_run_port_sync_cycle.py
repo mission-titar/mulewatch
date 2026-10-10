@@ -11,22 +11,22 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from mulewatch.adapters.mule_api.errors import ApiRejectedError, ApiUnreachableError
-from mulewatch.application.edge_state import EdgeState
-from mulewatch.application.port_sync_loop import (
+from p2pwatch.adapters.mule_api.errors import ApiRejectedError, ApiUnreachableError
+from p2pwatch.application.edge_state import EdgeState
+from p2pwatch.application.port_sync_loop import (
     _MISMATCH,
     PortSyncDeps,
     _PortSyncState,
     run_port_sync_cycle,
 )
-from mulewatch.domain.observability.events import (
+from p2pwatch.domain.observability.events import (
     HighIdRecovered,
     PortMismatchUnresolved,
     PortSyncTriggered,
 )
-from mulewatch.ports.client_errors import ClientUnreachableError
-from mulewatch.ports.client_status import ChannelStatus, ClientStatus
-from mulewatch.ports.mule_restarter import RestarterError
+from p2pwatch.ports.client_errors import ClientUnreachableError
+from p2pwatch.ports.client_status import ChannelStatus, ClientStatus
+from p2pwatch.ports.mule_restarter import RestarterError
 from tests.application.fakes import RecordingTelemetry
 
 

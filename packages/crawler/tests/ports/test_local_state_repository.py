@@ -1,4 +1,4 @@
-from mulewatch.ports.local_state_repository import LocalStateRepository
+from p2pwatch.ports.local_state_repository import LocalStateRepository
 
 
 class _StubRepository:

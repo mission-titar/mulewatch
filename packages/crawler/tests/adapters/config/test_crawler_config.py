@@ -2,7 +2,7 @@ from typing import Any
 
 import pytest
 
-from mulewatch.adapters.config.crawler_config import (
+from p2pwatch.adapters.config.crawler_config import (
     AmuleEndpoint,
     BackoffConfig,
     ConfigError,
@@ -15,7 +15,7 @@ from mulewatch.adapters.config.crawler_config import (
     WebuiConfig,
     parse_crawler_config,
 )
-from mulewatch.domain.observability.policy import Audience
+from p2pwatch.domain.observability.policy import Audience
 
 
 def _minimal_raw() -> dict[str, Any]:
@@ -564,7 +564,7 @@ def test_webui_enabled_non_bool_is_fatal() -> None:
 
 
 def test_webui_amule_url_defaults_to_the_published_port() -> None:
-    # Both web surfaces are published by default (design §9): mulewatch on 8080, amuleweb on
+    # Both web surfaces are published by default (design §9): p2pwatch on 8080, amuleweb on
     # 4711. The default is the no-proxy case; anything else is the operator's to set.
     assert parse_crawler_config(_minimal_raw(), _env()).webui.amule_url == "http://localhost:4711"
 

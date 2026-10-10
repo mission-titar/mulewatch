@@ -4,8 +4,8 @@ import dataclasses
 
 import pytest
 
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.domain.observability.events import DownloadCompleted, ObservationRecorded
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.domain.observability.events import DownloadCompleted, ObservationRecorded
 
 
 def test_observation_recorded_carries_client_and_network() -> None:

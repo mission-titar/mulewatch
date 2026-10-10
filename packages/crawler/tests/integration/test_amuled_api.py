@@ -6,9 +6,9 @@ Without eD2k access the results are empty: what is validated is the cycle, not t
 
 import pytest
 
-from mulewatch.adapters.clock_asyncio import AsyncioClock
-from mulewatch.adapters.mule_api.client import AmuleApiClient
-from mulewatch.adapters.mule_api.errors import ApiAuthError, ApiRejectedError
+from p2pwatch.adapters.clock_asyncio import AsyncioClock
+from p2pwatch.adapters.mule_api.client import AmuleApiClient
+from p2pwatch.adapters.mule_api.errors import ApiAuthError, ApiRejectedError
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.api_integration

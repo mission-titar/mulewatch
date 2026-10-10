@@ -30,8 +30,8 @@ def test_empty_violations_yields_valid_sarif_with_no_results() -> None:
 def test_one_violation_yields_one_error_result_pointing_at_the_vex_file() -> None:
     violation = Violation(
         cve="CVE-2026-11940",
-        message="tarfile is imported at src/mulewatch/foo.py",
-        location="packages/crawler/src/mulewatch/foo.py",
+        message="tarfile is imported at src/p2pwatch/foo.py",
+        location="packages/crawler/src/p2pwatch/foo.py",
     )
 
     doc = build_sarif(_RULE_ID, [violation], _VEX_RELPATH)

@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from mulewatch.application.edge_state import EdgeState
-from mulewatch.application.port_sync_loop import PortSyncLoopDeps, port_sync_loop
+from p2pwatch.application.edge_state import EdgeState
+from p2pwatch.application.port_sync_loop import PortSyncLoopDeps, port_sync_loop
 from tests.application.fakes import RecordingTelemetry
 from tests.application.test_run_port_sync_cycle import (
     FakeClock,

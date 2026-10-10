@@ -81,7 +81,7 @@ causes connues d'un coup :
    fait s'écraser mutuellement les renouvellements NAT-PMP.
 
 Remplacez ensuite `WIREGUARD_PRIVATE_KEY` dans `.env` et recréez les deux services. Le conteneur
-mulewatch vit dans le namespace réseau de gluetun, il doit donc être recréé avec lui :
+p2pwatch vit dans le namespace réseau de gluetun, il doit donc être recréé avec lui :
 
 ```bash
 docker compose -f gluetun.compose.yml up -d --force-recreate

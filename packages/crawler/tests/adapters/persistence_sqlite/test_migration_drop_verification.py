@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_catalog, open_local
-from mulewatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
-from mulewatch.domain.download.states import DownloadState
-from mulewatch.domain.file_key import FileKey, Network
+from p2pwatch.adapters.persistence_sqlite.connection import open_catalog, open_local
+from p2pwatch.adapters.persistence_sqlite.download_repository import SqliteDownloadRepository
+from p2pwatch.domain.download.states import DownloadState
+from p2pwatch.domain.file_key import FileKey, Network
 
-_LOCAL_MIGRATIONS = resources.files("mulewatch.adapters.persistence_sqlite") / "migrations/local"
+_LOCAL_MIGRATIONS = resources.files("p2pwatch.adapters.persistence_sqlite") / "migrations/local"
 
 
 def _names(connection: sqlite3.Connection, kind: str) -> set[str]:

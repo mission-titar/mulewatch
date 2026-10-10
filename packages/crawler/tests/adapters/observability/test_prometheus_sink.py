@@ -2,8 +2,8 @@
 
 from prometheus_client import CollectorRegistry
 
-from mulewatch.adapters.observability.prometheus_sink import PrometheusSink
-from mulewatch.domain.observability.policy import MetricInstruction, MetricName, describe
+from p2pwatch.adapters.observability.prometheus_sink import PrometheusSink
+from p2pwatch.domain.observability.policy import MetricInstruction, MetricName, describe
 from tests.domain.observability.test_policy import CASES
 
 

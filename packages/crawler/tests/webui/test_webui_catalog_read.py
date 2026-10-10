@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from catalog_matching.config import TIER_RANK
-from mulewatch.adapters.persistence_sqlite.reader import open_reader
-from mulewatch.domain.file_key import FileKey, Network
-from mulewatch.webui.adapters.catalog_read import (
+from p2pwatch.adapters.persistence_sqlite.reader import open_reader
+from p2pwatch.domain.file_key import FileKey, Network
+from p2pwatch.webui.adapters.catalog_read import (
     _JOIN_DECISIONS,
     _JOIN_LATEST_SIGHTING,
     _SQL_COUNT_FILES_BASE,
@@ -23,7 +23,7 @@ from mulewatch.webui.adapters.catalog_read import (
     CatalogReader,
     _tier_rank_case,
 )
-from mulewatch.webui.domain.views import FileRow
+from p2pwatch.webui.domain.views import FileRow
 from tests.catalog_rows import file_id, insert_decision, insert_file, insert_observation
 
 # Selects the CTE under test on its own: SQLite drops the CTEs a query does not reference, so
@@ -657,14 +657,14 @@ def test_list_files_sort_injection_is_rejected_not_interpolated(catalog_db: Path
 def test_list_files_sort_tiebreak_is_file_id(catalog_db: Path) -> None:
     """Two files with the same sort key keep a deterministic order via the file_id tiebreak."""
     with sqlite3.connect(catalog_db) as conn:
-        for h in ("b" * 32, "a" * 32):  # inserted b-first on purpose
+        for h in ("a" * 32, "e" * 32):  # inserted a-first on purpose
             insert_file(conn, h)
             insert_observation(conn, h, "same.avi", observed_at="2026-01-01T10:00:00.000000+00:00")
     reader = CatalogReader(open_reader(catalog_db))
     rows = reader.list_files(
         target=None, tier=None, query=None, page=1, sort="size", direction="asc"
     )
-    assert _hashes(rows) == ["b" * 32, "a" * 32]  # b's file_id sorts first
+    assert _hashes(rows) == ["e" * 32, "a" * 32]  # e's file_id sorts first
 
 
 def test_tier_rank_case_matches_tier_rank() -> None:

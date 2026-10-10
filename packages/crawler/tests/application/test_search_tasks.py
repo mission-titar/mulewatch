@@ -14,22 +14,22 @@ from typing import Any
 import pytest
 
 from catalog_matching.engine import MatchingEngine
-from mulewatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
-from mulewatch.adapters.persistence_sqlite.connection import open_local
-from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
+from p2pwatch.adapters.persistence_sqlite.catalog_repository import SqliteCatalogRepository
+from p2pwatch.adapters.persistence_sqlite.connection import open_local
+from p2pwatch.adapters.persistence_sqlite.scheduler_state_repository import (
     SqliteSchedulerStateRepository,
 )
-from mulewatch.application.search_tasks import SearchTasks
-from mulewatch.application.search_worker import (
+from p2pwatch.application.search_tasks import SearchTasks
+from p2pwatch.application.search_worker import (
     BackoffRegistry,
     SearchWorker,
     WorkerDeps,
     WorkerPolicy,
 )
-from mulewatch.domain.observation import FileObservation
-from mulewatch.ports.client_errors import SearchFailedError
-from mulewatch.ports.repository_errors import RepositoryError
-from mulewatch.ports.scheduler_state_repository import ChannelBackoff
+from p2pwatch.domain.observation import FileObservation
+from p2pwatch.ports.client_errors import SearchFailedError
+from p2pwatch.ports.repository_errors import RepositoryError
+from p2pwatch.ports.scheduler_state_repository import ChannelBackoff
 from tests.application.fakes import FakeRng, RecordingSignal, RecordingTelemetry, make_unreachable
 from tests.virtual_time import LoopClock, run_virtual
 
@@ -194,7 +194,7 @@ def test_a_failed_save_is_logged_and_retried_after_the_next_search(
     tasks.state.failures = 1
     refused: list[Exception] = [SearchFailedError("refused"), SearchFailedError("refused")]
     client = _TimedClient({"kad": 30.0}, search_failures=refused)
-    with caplog.at_level(logging.ERROR, logger="mulewatch.application.search_tasks"):
+    with caplog.at_level(logging.ERROR, logger="p2pwatch.application.search_tasks"):
         tasks.run_for(100.0, client, ["keroro"])
     assert "database is locked" in caplog.text
     assert tasks.state.saved == [

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Node · p2pwatch{% endblock %}
+{% block content %}
+<section>
+  <h2>Identity</h2>
+  <dl>
+    <dt>Identifier</dt>
+    <dd>{{ node_state.node_id }}</dd>
+    <dt>Created at</dt>
+    <dd>{{ node_state.created_at }}</dd>
+  </dl>
+</section>
+
+<section>
+  <h2>Downloads</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Native ID</th>
+        <th>Target</th>
+        <th>State</th>
+        <th>Queued at</th>
+        <th>Completed at</th>
+        <th>Last progress</th>
+        <th>Waiting</th>
+        <th>Failure</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for dl in node_state.downloads %}
+      <tr>
+        <td>{{ dl.native_id }}</td>
+        <td>{{ dl.target_id }}</td>
+        <td>{{ dl.state }}</td>
+        <td>{{ dl.queued_at }}</td>
+        <td>{{ dl.completed_at or "" }}</td>
+        <td>{{ dl.last_progress_at or "" }}</td>
+        <td>{{ dl.waiting_reason or "" }}</td>
+        <td>{{ dl.failure_reason or "" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No downloads.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>Scheduling</h2>
+  <dl>
+    {% for entry in scheduler_entries %}
+    <dt>{{ entry.key }}</dt>
+    <dd>{{ entry.value }}</dd>
+    {% else %}
+    <dd>No scheduling entry.</dd>
+    {% endfor %}
+  </dl>
+</section>
+{% endblock %}

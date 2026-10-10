@@ -28,7 +28,7 @@ Pour masquer votre IP aux autres pairs eD2k/Kad, faites passer le nœud par un V
    ```
 
 Cette pile ajoute exactement un service, `gluetun`, donc `docker compose -f gluetun.compose.yml ps`
-montre **deux** services au lieu d'un. mulewatch n'y a pas de réseau propre : il partage celui de
+montre **deux** services au lieu d'un. p2pwatch n'y a pas de réseau propre : il partage celui de
 gluetun (`network_mode: service:gluetun`), donc tout son trafic (celui du client eMule compris)
 passe par le tunnel, et ses deux pages web sont publiées **sur le service gluetun** à la place.
 

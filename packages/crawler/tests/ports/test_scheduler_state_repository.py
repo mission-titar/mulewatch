@@ -2,7 +2,7 @@ import dataclasses
 
 import pytest
 
-from mulewatch.ports.scheduler_state_repository import (
+from p2pwatch.ports.scheduler_state_repository import (
     ChannelBackoff,
     SchedulerStateRepository,
 )

@@ -13,7 +13,7 @@ model the two facets:
 import asyncio
 from collections.abc import Callable
 
-from mulewatch.adapters.crawler_control_loop import LoopCrawlerControl
+from p2pwatch.adapters.crawler_control_loop import LoopCrawlerControl
 
 
 class _ImmediateLoop:

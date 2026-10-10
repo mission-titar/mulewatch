@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.persistence_sqlite.connection import open_local
-from mulewatch.adapters.persistence_sqlite.errors import PersistenceError
-from mulewatch.adapters.persistence_sqlite.scheduler_state_repository import (
+from p2pwatch.adapters.persistence_sqlite.connection import open_local
+from p2pwatch.adapters.persistence_sqlite.errors import PersistenceError
+from p2pwatch.adapters.persistence_sqlite.scheduler_state_repository import (
     SqliteSchedulerStateRepository,
 )
-from mulewatch.ports.scheduler_state_repository import ChannelBackoff
+from p2pwatch.ports.scheduler_state_repository import ChannelBackoff
 
 _BACKOFF = {
     "amule-1:kad": ChannelBackoff(attempts=2, retry_after="2026-06-12T10:05:00.000000+00:00"),

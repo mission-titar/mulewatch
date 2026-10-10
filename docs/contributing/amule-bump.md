@@ -59,12 +59,12 @@ d'installation d'une **App GitHub**, limité à ce dépôt et de courte durée.
 4. *Where can this GitHub App be installed?* : **Only on this account**. Créez l'App.
 5. Sur la page de l'App, notez le **Client ID**, puis *Generate a private key* : un fichier `.pem`
    est téléchargé.
-6. *Install App*, sur **mission-titar**, avec **Only select repositories** : `mulewatch` seul.
+6. *Install App*, sur **mission-titar**, avec **Only select repositories** : `p2pwatch` seul.
 7. Rangez les deux valeurs dans les secrets Actions du dépôt, puis supprimez le `.pem` local :
 
     ```bash
-    gh secret set AMULE_BUMP_APP_CLIENT_ID --repo mission-titar/mulewatch --body '<Client ID>'
-    gh secret set AMULE_BUMP_APP_PRIVATE_KEY --repo mission-titar/mulewatch < chemin/vers/cle.pem
+    gh secret set AMULE_BUMP_APP_CLIENT_ID --repo mission-titar/p2pwatch --body '<Client ID>'
+    gh secret set AMULE_BUMP_APP_PRIVATE_KEY --repo mission-titar/p2pwatch < chemin/vers/cle.pem
     ```
 
 8. Vérifiez : *Actions*, *aMule bump*, *Run workflow*. Sans nouvelle release, le journal se termine

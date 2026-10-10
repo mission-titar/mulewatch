@@ -13,7 +13,7 @@ inputs:
     description: Single target platform (e.g. linux/amd64 or linux/arm64).
     required: true
   image:
-    description: Fully-qualified image name without a tag (e.g. ghcr.io/owner/mulewatch-crawler).
+    description: Fully-qualified image name without a tag (e.g. ghcr.io/owner/p2pwatch-crawler).
     required: true
   local-tag:
     description: Tag under which the built image is loaded into the local Docker daemon.

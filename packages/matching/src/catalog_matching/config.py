@@ -103,7 +103,7 @@ TIERS: frozenset[str] = frozenset({"catalog", "notify", "download"})
 
 # Tier rank (spec §8.5: "highest tier, download>notify>catalog"). Higher integer =
 # STRONGER tier. Source of truth shared by ``engine.MatchingEngine`` (best-decision
-# selection) AND ``mulewatch.webui.domain.coverage`` (display: strongest tier → best
+# selection) AND ``p2pwatch.webui.domain.coverage`` (display: strongest tier → best
 # coverage). Without this sharing, the webui reinvented its own rank with a divergent
 # convention: a 4th tier or a rename would have silently skewed the display.
 # Tested invariant: ``set(TIER_RANK) == TIERS``.

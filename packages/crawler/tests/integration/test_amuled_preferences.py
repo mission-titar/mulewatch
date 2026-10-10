@@ -7,8 +7,8 @@ the real High-ID belong to the e2e suite.
 
 import pytest
 
-from mulewatch.adapters.clock_asyncio import AsyncioClock
-from mulewatch.adapters.mule_api.client import AmuleApiClient
+from p2pwatch.adapters.clock_asyncio import AsyncioClock
+from p2pwatch.adapters.mule_api.client import AmuleApiClient
 from tests.integration.conftest import ApiEndpoint
 
 pytestmark = pytest.mark.api_integration

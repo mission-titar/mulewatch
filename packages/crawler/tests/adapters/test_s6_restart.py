@@ -6,8 +6,8 @@ path instead. Reading what the child did is the adapter's whole job, so it stays
 
 import pytest
 
-from mulewatch.adapters.s6_restart import _RESTART_COMMAND, S6MuleRestarter
-from mulewatch.ports.mule_restarter import RestarterError
+from p2pwatch.adapters.s6_restart import _RESTART_COMMAND, S6MuleRestarter
+from p2pwatch.ports.mule_restarter import RestarterError
 
 
 @pytest.mark.asyncio

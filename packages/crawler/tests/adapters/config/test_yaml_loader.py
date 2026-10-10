@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mulewatch.adapters.config.yaml_loader import YamlLoadError, load_yaml
+from p2pwatch.adapters.config.yaml_loader import YamlLoadError, load_yaml
 
 
 def test_load_yaml_reads_mapping(tmp_path: Path) -> None:
