@@ -1,9 +1,9 @@
-"""reconcile_conf: minimal conf on a fresh install, EC and amuleapi keys reconciled every boot."""
+"""reconcile_conf, listen_port and with_listen_port: amule.conf for the boot step and port-sync."""
 
 import configparser
 import hashlib
 
-from p2pwatch_amule.config.conf import reconcile_conf
+from p2pwatch_amule.config.conf import listen_port, reconcile_conf, with_listen_port
 
 DIGEST = hashlib.md5(b"hunter2").hexdigest()
 
@@ -89,3 +89,29 @@ def test_a_percent_sign_survives_without_interpolation() -> None:
 def test_a_duplicate_key_does_not_abort_and_the_last_value_wins() -> None:
     content = reconcile_conf("[eMule]\nMaxUpload=1\nMaxUpload=42\n", DIGEST)
     assert _section(content, "eMule") == {"MaxUpload": "42"}
+
+
+def test_the_listen_port_is_read_from_the_emule_section() -> None:
+    assert listen_port("[Obfuscation]\nPort=1\n\n[eMule]\nPort=51820\n") == 51820
+
+
+def test_an_absent_listen_port_is_amules_default() -> None:
+    assert listen_port("[eMule]\nMaxUpload=42\n") == 4662
+    assert listen_port("") == 4662
+
+
+def test_the_listen_port_is_written_to_both_tcp_and_udp() -> None:
+    content = with_listen_port("[eMule]\nPort=4662\nUDPPort=4672\n", 51820)
+    assert _section(content, "eMule") == {"Port": "51820", "UDPPort": "51820"}
+
+
+def test_writing_the_listen_port_keeps_every_other_key_and_section() -> None:
+    existing = reconcile_conf("[eMule]\nMaxUpload=42\nNick=100%s\n", DIGEST)
+    content = with_listen_port(existing, 51820)
+    assert content == existing.replace("Nick=100%s\n", "Nick=100%s\nPort=51820\nUDPPort=51820\n")
+
+
+def test_writing_the_listen_port_adds_a_missing_emule_section() -> None:
+    content = with_listen_port("[AmuleApi]\nEnabled=1\n", 51820)
+    assert _section(content, "eMule") == {"Port": "51820", "UDPPort": "51820"}
+    assert _section(content, "AmuleApi") == {"Enabled": "1"}
